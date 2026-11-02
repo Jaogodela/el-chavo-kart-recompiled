@@ -26,3 +26,6 @@ add_executable(eck_ui_text_tests
 )
 target_include_directories(eck_ui_text_tests PRIVATE "${ECK_SRC_DIR}")
 target_compile_definitions(eck_ui_text_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
+add_executable(eck_achievements_tests achievements_tests.cpp)
+target_include_directories(eck_achievements_tests PRIVATE "${ECK_SRC_DIR}" stubs)

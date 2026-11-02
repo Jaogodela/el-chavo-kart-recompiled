@@ -177,6 +177,7 @@ get_directory_property(ECK_TRG_VERSION DIRECTORY "${_trg_patched_dir}" DEFINITIO
 
 set(ECK_SOURCES
     src/main.cpp
+    src/achievements_menu.cpp
     src/achievements_overlay.cpp
     src/active_log.cpp
     src/crash_report.cpp

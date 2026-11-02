@@ -19,6 +19,7 @@
 #include <rex/ui/flags.h>
 #include <rex/ui/windowed_app_context.h>
 
+#include "achievements_menu.h"
 #include "achievements_overlay.h"
 #include "active_log.h"
 #include "diagnostics.h"
@@ -103,7 +104,7 @@ class ElChavoKartApp : public rex::ReXApp {
     REXLOG_INFO("{}", eck::FormatApplicationVersion(identity));
     REXLOG_INFO("{}", eck::FormatBuildIdentity(identity));
     REXLOG_INFO("{}", eck::GameFilesLogText(eck::CheckGameFiles(game_data_root())));
-    REXLOG_INFO("Save data: <user data>/<profile XUID>/{:08X}/00000001; achievements: <user data>/achievements/{:08X}.toml",
+    REXLOG_INFO("Profile settings: <user data>/{:08X}/profile/User; achievements: <user data>/achievements/{:08X}.toml",
                 eck::kTitleId, eck::kTitleId);
     eck::ApplyGraphicsAdapter();
   }
@@ -226,6 +227,7 @@ class ElChavoKartApp : public rex::ReXApp {
         input->SetActiveCallback([] { return !eck::ModalDialog::AnyOpen(); });
       }
       eck::ModalDialog::AttachEscapeKey(window());
+      eck::SetAchievementsMenuHandler([this] { app_context().CallInUIThreadDeferred([this] { OpenAchievements(); }); });
     }
   }
 
@@ -234,6 +236,7 @@ class ElChavoKartApp : public rex::ReXApp {
     if (auto* input = runtime() ? runtime()->input_system() : nullptr) {
       input->Shutdown();
     }
+    eck::SetAchievementsMenuHandler({});
     eck::ModalDialog::DetachEscapeKey();
     delete achievements_;
     DetachWindowHost();
@@ -287,8 +290,12 @@ class ElChavoKartApp : public rex::ReXApp {
         !immediate_drawer()) {
       return;
     }
+    REXLOG_INFO("[DEBUG_SAULO][Achievement] overlay open");
     achievements_ = new eck::AchievementsOverlay(imgui_drawer(), immediate_drawer(), runtime(), &achievements(),
-                                                 [this] { achievements_ = nullptr; });
+                                                 [this] {
+                                                   REXLOG_INFO("[DEBUG_SAULO][Achievement] overlay closed");
+                                                   achievements_ = nullptr;
+                                                 });
   }
 
   eck::GameSettings game_settings_;

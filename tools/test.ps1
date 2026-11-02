@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Runs the project's lightweight, headless checks: no game files, no ReXGlue SDK, no GUI.
-    - builds and runs the pure-logic tests in tests\ (installer/extractor and PT-BR translation table)
+    - builds and runs the pure-logic tests in tests\ (installer/extractor, PT-BR translation table, achievement list and overlay rules)
     - validates the ReXGlue SDK patch set (unique numbering, deterministic order)
     - checks for overlapping addresses between config\overrides.toml and config\discovered-functions.toml
     - reports generated\default codegen freshness, if it has been generated at all
@@ -30,7 +30,7 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
     catch { $Failures.Add("${Name}: $($_.Exception.Message)"); Write-Host "  FAILED: $($_.Exception.Message)" -ForegroundColor Red }
 }
 
-if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests' -match $Filter) {
+if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests' -match $Filter) {
     Test-Step 'Console tests (tests\CMakeLists.txt)' {
         $Toolchain = Get-BuildToolchain
         $SavedEnv = Save-BuildEnvironment
@@ -43,7 +43,7 @@ if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests' -match $Filter) {
             & $Toolchain.CMake --build $BuildDir | Out-Host
             if ($LASTEXITCODE) { throw "Test build failed ($LASTEXITCODE)" }
         } finally { Restore-BuildEnvironment $SavedEnv }
-        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests')) {
+        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests')) {
             if ($Filter -and $name -notmatch $Filter) { continue }
             $exe = Join-Path $BuildDir "$name.exe"
             Write-Host "Running $name..."
