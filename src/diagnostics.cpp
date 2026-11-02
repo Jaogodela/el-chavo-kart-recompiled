@@ -32,6 +32,10 @@ std::string DisplayText(const DisplayIdentity& display) {
 std::string GraphicsText(const GraphicsIdentity& graphics) {
   std::string text = "render=" + std::to_string(graphics.render_width) + "x" + std::to_string(graphics.render_height) +
                      " | guest=" + std::to_string(graphics.guest_width) + "x" + std::to_string(graphics.guest_height);
+  if (graphics.host_quarters > 0) {
+    text += " | internal=" + std::to_string(graphics.render_percent) + "% (host " +
+            std::to_string(graphics.host_quarters) + "/4, resolve " + std::to_string(graphics.resolve_scale) + "x)";
+  }
   if (!graphics.msaa.empty()) {
     text += " | msaa=" + graphics.msaa;
   }
@@ -66,10 +70,14 @@ std::vector<std::string> FormatStartupDiagnostics(const StartupDiagnostics& diag
                   " | Monitor=" + diagnostics.launcher_display.monitor +
                   " | VSync=" + diagnostics.launcher_display.vsync);
   lines.push_back("Launcher Gameplay: Language=" + diagnostics.launcher_gameplay.language +
+                  " | Skip intro=" + diagnostics.launcher_gameplay.skip_intro +
+                  " | Frame rate=" + diagnostics.launcher_gameplay.frame_rate +
                   " | Frame rate in title=" + diagnostics.launcher_gameplay.frame_rate_in_title +
+                  " | Render resolution in title=" + diagnostics.launcher_gameplay.render_resolution_in_title +
                   " | Frame counter=" + diagnostics.launcher_gameplay.frame_counter);
   lines.push_back("Launcher Graphics: Graphics card=" + diagnostics.launcher_graphics.graphics_card +
                   " | Render resolution=" + diagnostics.launcher_graphics.render_resolution +
+                  " | Internal render resolution=" + diagnostics.launcher_graphics.internal_render_resolution +
                   " | Anti-aliasing=" + diagnostics.launcher_graphics.anti_aliasing +
                   " | Multisampling=" + diagnostics.launcher_graphics.multisampling +
                   " | Texture filtering=" + diagnostics.launcher_graphics.texture_filtering);
@@ -113,7 +121,7 @@ std::vector<std::string> FormatStartupDiagnostics(const StartupDiagnostics& diag
   lines.push_back("Runtime language: " + diagnostics.language.label + " | package=" + diagnostics.language.package +
                   " | user_language=" + std::to_string(diagnostics.language.user_language) +
                   " | user_country=" + std::to_string(diagnostics.language.user_country));
-  lines.push_back("Runtime timing: frame_rate=60 | present=" + diagnostics.gameplay.present);
+  lines.push_back("Runtime frame pacing: frame rate=" + diagnostics.gameplay.frame_rate + " | simulation=real-time delta | interpolation=off | present=" + diagnostics.gameplay.present);
 
   lines.push_back("Runtime renderer: " + GraphicsText(diagnostics.graphics));
 
@@ -138,7 +146,7 @@ std::string FileNameOnly(std::string_view path) {
 }
 
 std::string PresentationText(bool vsync_off) {
-  return vsync_off ? "guest 60Hz | host Immediate (tearing allowed)" : "guest 60Hz | host VBlank (VSync On)";
+  return vsync_off ? "immediate flip | host Immediate (tearing allowed)" : "immediate flip | host VBlank (VSync On)";
 }
 
 std::string FormatCleanExit(std::string_view uptime) {

@@ -25,8 +25,8 @@ been confirmed in a running game yet; the [known limitations](#known-limitations
   English.
 - **Disc image import**: the launcher and `tools\build.ps1` read your `.iso` directly, check its `default.xex` by SHA-256 and
   copy the game files (about 2 GB). Other games and other builds are refused with a clear message.
-- **Original 60 FPS**: the game presents without VSync and paces itself to 62 FPS on the console; the port holds its
-  swaps to exactly 60 per second. There are no high frame rate options.
+- **Frame rate**: 30 (the console rate), 60, 90, 120, 144, 165, 240 or Unlimited, in the launcher; game speed follows real
+  time. Rates above 60 are new and still being validated.
 - **Graphics options**: render resolution 1x to 4x of the game's 1280x720, FXAA, 2x/4x MSAA, anisotropic filtering,
   graphics card selection, Windowed or Borderless Fullscreen (F11), VSync.
 - **Controller and keyboard**: Xbox and SDL-compatible controllers work without setup; the keyboard drives the same

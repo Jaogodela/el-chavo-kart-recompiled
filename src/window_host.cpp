@@ -32,7 +32,8 @@
 #include <rex/ui/windowed_app_context.h>
 
 #include "cursor_input.h"
-#include "frame_pacer.h"
+#include "debug_telemetry.h"
+#include "frame_limiter.h"
 #include "input_activity.h"
 #include "settings.h"
 #include "window_title.h"
@@ -71,10 +72,18 @@ uint64_t g_sample_frames = 0;
 uint64_t g_total_frames = 0;
 GuestFrameStats g_stats;
 
+std::optional<std::string> TitleResolution() {
+  if (!REXCVAR_GET(eck_show_render_resolution)) {
+    return std::nullopt;
+  }
+  const int scale = std::max(1, std::atoi(rex::cvar::GetFlagByName("resolution_scale").c_str()));
+  return eck::RenderResolutionText(scale);
+}
+
 // Composes all title parts together, so one update never drops another.
 void RefreshTitle() {
   const std::optional<double> fps = REXCVAR_GET(eck_show_fps) ? g_title_fps : std::nullopt;
-  std::string title = eck::WindowTitleText(fps);
+  std::string title = eck::WindowTitleText(TitleResolution(), fps);
   if (title != g_shown_title) {
     g_shown_title = title;
     g_window->SetTitle(title);
@@ -291,7 +300,9 @@ GuestFrameStats GetGuestFrameStats() {
 
 // Named like the SDK's export, so REX_EXTERN would call this hook again: the original is called by its entry point.
 REX_HOOK_RAW(__imp__VdSwap) {
-  eck::PaceGuestSwap();
+  eck::PaceGuestFrame();
+  const auto swap_begin = Clock::now();  // DEBUG_SAULO
   rex::ppc::HostToGuestFunction<rex::kernel::xboxkrnl::VdSwap_entry>(ctx, base);
+  eck::debug::OnSwap(std::chrono::duration<double, std::milli>(Clock::now() - swap_begin).count());  // DEBUG_SAULO
   CountGuestFrame();
 }

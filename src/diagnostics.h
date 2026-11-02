@@ -62,13 +62,17 @@ struct LauncherDisplayIdentity {
 
 struct LauncherGameplayIdentity {
   std::string language;
+  std::string skip_intro;
+  std::string frame_rate;
   std::string frame_rate_in_title;
+  std::string render_resolution_in_title;
   std::string frame_counter;
 };
 
 struct LauncherGraphicsIdentity {
   std::string graphics_card;
   std::string render_resolution;
+  std::string internal_render_resolution;
   std::string anti_aliasing;
   std::string multisampling;
   std::string texture_filtering;
@@ -82,6 +86,7 @@ struct LanguageIdentity {
 };
 
 struct GameplayIdentity {
+  std::string frame_rate;
   std::string present;
 };
 
@@ -90,6 +95,9 @@ struct GraphicsIdentity {
   int render_height = 0;
   int guest_width = 0;
   int guest_height = 0;
+  int render_percent = 100;
+  int host_quarters = 0;
+  int resolve_scale = 0;
   std::string msaa;
   std::string anti_aliasing;
   std::string texture_filtering;

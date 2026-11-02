@@ -50,7 +50,15 @@ FXAA Extreme	FXAA Extreme
 Multisampling	Multisampling
 Texture filtering	Filtragem de texturas
 Game	Jogo
+Skip intro	Pular introdução
+Start directly at the title screen	Começar direto na tela de título
+Frame rate	Taxa de quadros
+The maximum frame rate the game renders. The game's clock follows real time, so game speed does not change. 30 is the console rate. Unlimited stops at 300.	A taxa máxima de quadros que o jogo renderiza. O relógio do jogo segue o tempo real, então a velocidade do jogo não muda. 30 é a taxa do console. Ilimitado para em 300.
+30 Original	30 Original
+Unlimited	Ilimitado
 Frame rate in title	FPS no título
+Render resolution in title	Resolução de render no título
+Shows the game's render resolution in the window title	Mostra a resolução de render do jogo no título da janela
 Frame counter	Contador de FPS
 Shows the game's frame rate in the corner. F2 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F2 liga e desliga durante o jogo.
 Hidden	Oculto
@@ -107,6 +115,8 @@ English	Inglês
 Up to 15 characters.	Até 15 caracteres.
 Player 1	Jogador 1
 Player 2	Jogador 2
+Player 3	Jogador 3
+Player 4	Jogador 4
 Enter a name.	Digite um nome.
 Maximum 15 characters.	Máximo de 15 caracteres.
 Name is too long for the game (15-byte limit).	O nome é longo demais para o jogo (limite de 15 bytes).
@@ -165,20 +175,25 @@ Xbox 360 disc image	Imagem de disco do Xbox 360
 Reading disc image...	Lendo a imagem de disco...
 Checking the game version...	Verificando a versão do jogo...
 Copying game files...	Copiando os arquivos do jogo...
-On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays. The game always runs at 60 FPS.	Ligado mantém a imagem sem tearing. Desligado permite tearing, para telas G-Sync/FreeSync. O jogo sempre roda a 60 FPS.
+On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays.	Ligado evita rasgos na imagem. Desligado permite rasgos, para telas G-Sync/FreeSync.
 on screen	na tela
 (not connected)	(desconectada)
 (primary)	(principal)
-Draws the game at a multiple of its own 1280x720 picture, then scales it to the window. Higher is sharper and costs more GPU time. Window size is separate.	Desenha o jogo em um múltiplo da imagem original de 1280x720 e depois a ajusta à janela. Valores maiores deixam a imagem mais nítida e exigem mais da GPU. O tamanho da janela é separado.
+Draws the game at a multiple of its own picture, then scales it to the window. Higher is sharper and costs more GPU time. Window size is separate.	Desenha o jogo em um múltiplo da própria imagem e depois a ajusta à janela. Valores maiores ficam mais nítidos e exigem mais da GPU. O tamanho da janela é separado.
+Recommended for 1440p	Recomendado para 1440p
+Internal render resolution	Resolução interna de render
+Renders the game internally at a lower resolution, then scales it to the selected render resolution. Lower values improve GPU performance but reduce image sharpness.	Renderiza o jogo internamente em uma resolução menor e depois a ajusta à resolução de render escolhida. Valores menores melhoram o desempenho da GPU, mas reduzem a nitidez da imagem.
+100% Native	100% Nativa
+75% Performance	75% Desempenho
+50% Low-end	50% PCs fracos
 Use 2× MSAA for best performance. Try 4× only if you see graphics problems with 2×.	Use 2× MSAA para o melhor desempenho. Tente 4× só se notar problemas gráficos com 2×.
 4× MSAA (Compatibility)	4× MSAA (Compatibilidade)
-Anisotropic filtering keeps textures sharp at oblique angles. Game uses the game's own setting.	A filtragem anisotrópica mantém as texturas nítidas em ângulos inclinados. Jogo usa a configuração do próprio jogo.
+Anisotropic filtering keeps textures sharp at oblique angles. Game leaves it to the game.	A filtragem anisotrópica mantém as texturas nítidas em ângulos inclinados. Jogo deixa a cargo do próprio jogo.
 Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00	Mostra a taxa de quadros do jogo no título da janela: El Chavo Kart Recompiled | FPS: 60.00
-Player names	Nomes dos jogadores
-Changes the name shown in-game. Save data is not affected.	Muda o nome mostrado no jogo. Os jogos salvos não são afetados.
+Local player names	Nomes dos jogadores locais
+Names shown for local players. Save data is not affected.	Nomes mostrados para os jogadores locais. Os jogos salvos não são afetados.
 The language of the game's text and menus, and of this launcher. Applied when the game starts.	O idioma dos textos e menus do jogo e deste launcher. Aplicado quando o jogo inicia.
-Automatic: Xbox and other SDL-compatible controllers work without setup.	Automático: controles de Xbox e outros compatíveis com SDL funcionam sem configuração.
-Race: left stick steers, RT accelerates, LT brakes and reverses, A jumps and drifts, B boosts, X uses the item, Y looks back, Back returns you to the track, Start pauses.	Na corrida: o analógico esquerdo dirige, RT acelera, LT freia e dá ré, A pula e derrapa, B usa o turbo, X usa o item, Y olha para trás, Back devolve você à pista e Start pausa.
+Automatic: Xbox controllers work without setup.	Automático: controles de Xbox funcionam sem configuração.
 Accelerate (RT)	Acelerar (RT)
 Brake / reverse (LT)	Frear / ré (LT)
 Steer left	Virar à esquerda

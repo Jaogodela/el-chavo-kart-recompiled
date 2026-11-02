@@ -31,9 +31,9 @@ United States. The port sets ReXGlue's `user_language` and `user_country` accord
 ## Frame rate
 
 The runtime configuration (`Coalesced_INT.bin`) has `UseVsync=False`, `bSmoothFrameRate=TRUE` and
-`MaxSmoothedFrameRate=62`, at 1280x720. UE3 runs a variable time step, so the presentation rate does not change game
-speed; without VSync the title would present up to 62 frames per second. The port paces every `VdSwap` to 60 per second
-(`src/frame_pacer.cpp`, hooked in `src/window_host.cpp`; cvar `eck_frame_pacing`).
+`MaxSmoothedFrameRate=62`, at 1280x720. UE3 runs a variable time step. The title's default present interval is two vblanks,
+which is the 30 FPS console cadence; see `docs/launcher-graphics-gameplay.md` for the hooks (`src/frame_limiter.cpp`) that
+replace it with an immediate flip and a selectable 30/60 limiter.
 
 ## Recompilation
 

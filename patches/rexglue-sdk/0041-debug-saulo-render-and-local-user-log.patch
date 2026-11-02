@@ -1,0 +1,252 @@
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index 2da515f..87581f7 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -37,6 +37,30 @@
+ 
+ REXCVAR_DEFINE_BOOL(vsync, true, "GPU", "Enable vertical sync");
+ 
++// DEBUG_SAULO: microseconds the command processor had no commands to run, published once a second.
++REXCVAR_DEFINE_INT32(dbg_saulo_cp_idle_us, 0, "GPU", "DEBUG_SAULO: microseconds without commands in the last second");
++
++namespace {
++
++struct DebugSauloIdle {
++  uint64_t idle_us = 0;
++  std::chrono::steady_clock::time_point published = std::chrono::steady_clock::now();
++};
++
++DebugSauloIdle g_debug_saulo_idle;
++
++void DebugSauloAddIdle(std::chrono::steady_clock::time_point begin) {
++  const auto now = std::chrono::steady_clock::now();
++  g_debug_saulo_idle.idle_us += uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(now - begin).count());
++  if (now - g_debug_saulo_idle.published >= std::chrono::seconds(1)) {
++    g_debug_saulo_idle.published = now;
++    rex::cvar::SetFlagByName("dbg_saulo_cp_idle_us", std::to_string(g_debug_saulo_idle.idle_us));
++    g_debug_saulo_idle.idle_us = 0;
++  }
++}
++
++}  // namespace
++
+ REXCVAR_DEFINE_BOOL(clear_memory_page_state, true, "GPU",
+                     "Refresh page-valid state from GPU-written memory at frame end. "
+                     "Disable for minor CPU overhead reduction, but may break memory coherency.")
+@@ -213,6 +237,7 @@ void CommandProcessor::WorkerThreadMain() {
+     uint32_t write_ptr_index = write_ptr_index_.load();
+     if (write_ptr_index == 0xBAADF00D || read_ptr_index_ == write_ptr_index) {
+       SCOPE_profile_cpu_i("gpu", "rex::graphics::CommandProcessor::Stall");
++      const auto debug_idle_begin = std::chrono::steady_clock::now();  // DEBUG_SAULO
+       // We've run out of commands to execute.
+       // A short yield burst catches back-to-back submissions, then sleep on the write pointer
+       // event so the core is free for the guest threads feeding the ring.
+@@ -237,6 +262,7 @@ void CommandProcessor::WorkerThreadMain() {
+       } while (worker_running_ && pending_fns_.empty() &&
+                (write_ptr_index == 0xBAADF00D || read_ptr_index_ == write_ptr_index));
+       ReturnFromWait();
++      DebugSauloAddIdle(debug_idle_begin);  // DEBUG_SAULO
+       if (!worker_running_ || !pending_fns_.empty()) {
+         continue;
+       }
+diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
+index 3da81c6..b84fdae 100644
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -10,6 +10,7 @@
+  */
+ 
+ #include <algorithm>
++#include <chrono>
+ #include <cstdarg>
+ #include <cstring>
+ #include <sstream>
+@@ -47,6 +48,57 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
+                     "Submit command list when PM4 primary buffer ends")
+     .lifecycle(rex::cvar::Lifecycle::kHotReload);
+ 
++// DEBUG_SAULO: microseconds the command processor spends per phase, published once a second.
++REXCVAR_DEFINE_INT32(dbg_saulo_cp_draw_us, 0, "GPU", "DEBUG_SAULO: microseconds issuing draws in the last second");
++REXCVAR_DEFINE_INT32(dbg_saulo_cp_copy_us, 0, "GPU", "DEBUG_SAULO: microseconds issuing resolves in the last second");
++REXCVAR_DEFINE_INT32(dbg_saulo_cp_swap_us, 0, "GPU", "DEBUG_SAULO: microseconds issuing swaps in the last second");
++REXCVAR_DEFINE_INT32(dbg_saulo_cp_fence_us, 0, "GPU", "DEBUG_SAULO: microseconds waiting on GPU fences in the last second");
++
++namespace {
++
++struct DebugSauloTotals {
++  uint64_t draw_us = 0;
++  uint64_t copy_us = 0;
++  uint64_t swap_us = 0;
++  uint64_t fence_us = 0;
++  std::chrono::steady_clock::time_point published = std::chrono::steady_clock::now();
++};
++
++DebugSauloTotals g_debug_saulo;
++
++class DebugSauloTimer {
++ public:
++  explicit DebugSauloTimer(uint64_t& total) : total_(total), begin_(std::chrono::steady_clock::now()) {}
++  ~DebugSauloTimer() {
++    total_ += uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begin_)
++                           .count());
++  }
++
++ private:
++  uint64_t& total_;
++  std::chrono::steady_clock::time_point begin_;
++};
++
++void DebugSauloWaitForFence(HANDLE event) {
++  DebugSauloTimer timer(g_debug_saulo.fence_us);
++  WaitForSingleObject(event, INFINITE);
++}
++
++void DebugSauloPublish() {
++  const auto now = std::chrono::steady_clock::now();
++  if (now - g_debug_saulo.published < std::chrono::seconds(1)) {
++    return;
++  }
++  g_debug_saulo.published = now;
++  rex::cvar::SetFlagByName("dbg_saulo_cp_draw_us", std::to_string(g_debug_saulo.draw_us));
++  rex::cvar::SetFlagByName("dbg_saulo_cp_copy_us", std::to_string(g_debug_saulo.copy_us));
++  rex::cvar::SetFlagByName("dbg_saulo_cp_swap_us", std::to_string(g_debug_saulo.swap_us));
++  rex::cvar::SetFlagByName("dbg_saulo_cp_fence_us", std::to_string(g_debug_saulo.fence_us));
++  g_debug_saulo.draw_us = g_debug_saulo.copy_us = g_debug_saulo.swap_us = g_debug_saulo.fence_us = 0;
++}
++
++}  // namespace
++
+ namespace rex::graphics::d3d12 {
+ 
+ // Generated with `xb buildshaders`.
+@@ -940,6 +992,13 @@ bool D3D12CommandProcessor::SetupContext() {
+       *register_file_, *memory_, draw_resolution_scale_x, draw_resolution_scale_y, *this,
+       bindless_resources_used_);
+   render_target_cache_->SetHostScaleQuarters(host_scale_quarters_x, host_scale_quarters_y);
++  // DEBUG_SAULO
++  REXGPU_INFO(
++      "[DEBUG_SAULO][RENDER] resolve_scale={}x{} host_scale_quarters={}x{} internal={}% (host targets are {}/4 of the "
++      "guest picture, resolves and textures at {}x)",
++      draw_resolution_scale_x, draw_resolution_scale_y, host_scale_quarters_x, host_scale_quarters_y,
++      host_scale_quarters_x * 100 / (4 * std::max(draw_resolution_scale_x, 1u)), host_scale_quarters_x,
++      draw_resolution_scale_x);
+   if (!render_target_cache_->Initialize()) {
+     REXGPU_ERROR("Failed to initialize the render target cache");
+     return false;
+@@ -1900,6 +1959,8 @@ void D3D12CommandProcessor::OnGammaRampPWLValueWritten() {
+ 
+ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbuffer_width,
+                                       uint32_t frontbuffer_height) {
++  DebugSauloPublish();  // DEBUG_SAULO
++  DebugSauloTimer debug_timer(g_debug_saulo.swap_us);  // DEBUG_SAULO
+   SCOPE_profile_cpu_f("gpu");
+   vertex_buffers_in_sync_[0] = 0;
+   vertex_buffers_in_sync_[1] = 0;
+@@ -2310,6 +2371,7 @@ Shader* D3D12CommandProcessor::LoadShader(xenos::ShaderType shader_type, uint32_
+ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint32_t index_count,
+                                       IndexBufferInfo* index_buffer_info,
+                                       bool major_mode_explicit) {
++  DebugSauloTimer debug_timer(g_debug_saulo.draw_us);  // DEBUG_SAULO
+ #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
+   SCOPE_profile_cpu_f("gpu");
+ #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
+@@ -2907,6 +2969,7 @@ bool D3D12CommandProcessor::IssueDraw_MemexportReadbackFastPath(uint32_t total_s
+ }
+ 
+ bool D3D12CommandProcessor::IssueCopy() {
++  DebugSauloTimer debug_timer(g_debug_saulo.copy_us);  // DEBUG_SAULO
+ #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
+   SCOPE_profile_cpu_f("gpu");
+ #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
+@@ -3156,7 +3219,7 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
+                     SUCCEEDED(queue_operations_since_submission_fence_->SetEventOnCompletion(
+                         fence_value, fence_completion_event_)))) {
+         PROFILE_CMD_BUFFER_STALL();
+-        WaitForSingleObject(fence_completion_event_, INFINITE);
++        DebugSauloWaitForFence(fence_completion_event_);
+         queue_operations_done_since_submission_signal_ = false;
+       } else {
+         REXGPU_ERROR(
+@@ -3175,7 +3238,7 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
+     if (SUCCEEDED(
+             submission_fence_->SetEventOnCompletion(await_submission, fence_completion_event_))) {
+       PROFILE_CMD_BUFFER_STALL();
+-      WaitForSingleObject(fence_completion_event_, INFINITE);
++      DebugSauloWaitForFence(fence_completion_event_);
+       submission_completed_ = submission_fence_->GetCompletedValue();
+     }
+   }
+diff --git a/src/graphics/d3d12/render_target_cache.cpp b/src/graphics/d3d12/render_target_cache.cpp
+index 1519943..679a53a 100644
+--- a/src/graphics/d3d12/render_target_cache.cpp
++++ b/src/graphics/d3d12/render_target_cache.cpp
+@@ -17,6 +17,7 @@
+ #include <cstring>
+ #include <iterator>
+ #include <memory>
++#include <set>
+ #include <string>
+ #include <tuple>
+ #include <utility>
+@@ -1575,6 +1576,24 @@ RenderTargetCache::RenderTarget* D3D12RenderTargetCache::CreateRenderTarget(Rend
+   resource_desc.Width = GuestToHostX(key.GetWidth());
+   resource_desc.Height =
+       GuestToHostY(GetRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples));
++  // DEBUG_SAULO
++  {
++    static std::set<std::tuple<uint64_t, uint32_t, bool, uint32_t>> logged;
++    const uint64_t debug_width = resource_desc.Width;
++    const uint32_t debug_height = resource_desc.Height;
++    const bool debug_depth = key.is_depth != 0;
++    const uint32_t debug_samples = 1u << uint32_t(key.msaa_samples);
++    const uint32_t debug_guest_width = key.GetWidth();
++    const uint32_t debug_guest_height = GetRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples);
++    if (logged.emplace(debug_width, debug_height, debug_depth, debug_samples).second) {
++      const uint32_t debug_scale = std::max(draw_resolution_scale_x(), 1u);
++      REXGPU_INFO(
++          "[DEBUG_SAULO][RENDER] output={}x{} guest={}x{} internal={}x{} scale={}% {} msaa={}x",
++          debug_guest_width * debug_scale, debug_guest_height * draw_resolution_scale_y(), debug_guest_width,
++          debug_guest_height, debug_width, debug_height,
++          host_scale_quarters_x() * 100 / (4 * debug_scale), debug_depth ? "depth" : "color", debug_samples);
++    }
++  }
+   resource_desc.DepthOrArraySize = 1;
+   resource_desc.MipLevels = 1;
+   if (key.is_depth) {
+diff --git a/src/kernel/xam/xam_user.cpp b/src/kernel/xam/xam_user.cpp
+index 2e1fe08..d314b8d 100644
+--- a/src/kernel/xam/xam_user.cpp
++++ b/src/kernel/xam/xam_user.cpp
+@@ -92,6 +92,24 @@ i32 XamUserGetXUID_entry(u32 user_index, u32 type_mask, mapped_u64 xuid_ptr) {
+   return result;
+ }
+ 
++// DEBUG_SAULO
++static void LogLocalUserState(uint32_t user_index, uint32_t signin_state) {
++  static uint32_t last[4] = {0xFF, 0xFF, 0xFF, 0xFF};
++  if (user_index >= 4 || last[user_index] == signin_state) {
++    return;
++  }
++  last[user_index] = signin_state;
++  const bool controller = IsGuestUser(user_index) || (user_index == 0 && signin_state != 0);
++  std::string name;
++  REX_KERNEL_STATE()->user_profile()->display_name(user_index, &name);
++  if (name.empty() && signin_state != 0) {
++    name = GuestName(user_index);
++  }
++  REXLOG_INFO("[DEBUG_SAULO][LOCAL-USER] slot={} controller={} signin={} xuid_valid={} name={}", user_index,
++              controller ? "yes" : "no", signin_state == 0 ? "none" : "local", signin_state != 0 ? "yes" : "no",
++              name.empty() ? "-" : name);
++}
++
+ u32 XamUserGetSigninState_entry(u32 user_index) {
+   uint32_t signin_state = 0;
+   if (user_index < 4) {
+@@ -101,6 +119,7 @@ u32 XamUserGetSigninState_entry(u32 user_index) {
+     } else if (IsGuestUser(user_index)) {
+       signin_state = 1;
+     }
++    LogLocalUserState(user_index, signin_state);
+   }
+   return signin_state;
+ }

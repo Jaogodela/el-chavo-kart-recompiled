@@ -21,8 +21,10 @@
 #include "crash_report.h"
 #include "diagnostics.h"
 #include "dpi.h"
+#include "frame_limiter.h"
 #include "game_files.h"
 #include "graphics_adapters.h"
+#include "internal_render_scale.h"
 #include "input_summary.h"
 #include "language_setting.h"
 #include "keybinds.h"
@@ -40,7 +42,10 @@ REXCVAR_DEFINE_BOOL(eck_skip_launcher, false, "El Chavo Kart",
 REXCVAR_DEFINE_STRING(eck_language, "pt-BR", "El Chavo Kart",
                       "Game and launcher language: pt-BR, en-US, es-MX or es-ES (sets user_language and user_country "
                       "at start)");
+REXCVAR_DEFINE_BOOL(eck_skip_intro, false, "El Chavo Kart", "Skip the startup logos and intro movies");
 REXCVAR_DEFINE_BOOL(eck_show_fps, true, "El Chavo Kart", "Show the frame rate in the window title");
+REXCVAR_DEFINE_BOOL(eck_show_render_resolution, false, "El Chavo Kart",
+                    "Show the render resolution in the window title");
 REXCVAR_DEFINE_BOOL(eck_show_frame_counter, false, "El Chavo Kart",
                     "Show the frame counter in the corner (F2 toggles it)");
 REXCVAR_DEFINE_BOOL(eck_msaa_compatibility, false, "El Chavo Kart",
@@ -52,6 +57,10 @@ REXCVAR_DEFINE_STRING(eck_player_1_name, "Player 1", "El Chavo Kart",
                       "Name shown for local player 1; save data is not affected");
 REXCVAR_DEFINE_STRING(eck_player_2_name, "Player 2", "El Chavo Kart",
                       "Name shown for local player 2; save data is not affected");
+REXCVAR_DEFINE_STRING(eck_player_3_name, "Player 3", "El Chavo Kart",
+                      "Name shown for local player 3; save data is not affected");
+REXCVAR_DEFINE_STRING(eck_player_4_name, "Player 4", "El Chavo Kart",
+                      "Name shown for local player 4; save data is not affected");
 REXCVAR_DEFINE_INT32(eck_launcher_x, 0, "El Chavo Kart", "Launcher window left edge, written by the launcher");
 REXCVAR_DEFINE_INT32(eck_launcher_y, 0, "El Chavo Kart", "Launcher window top edge, written by the launcher");
 REXCVAR_DEFINE_INT32(eck_launcher_width, 0, "El Chavo Kart", "Launcher window restored width, written by the launcher");
@@ -76,16 +85,22 @@ std::vector<std::string> GameSettingKeys() {
       kTearingSetting,
       "eck_graphics_adapter",
       "resolution_scale",
+      "eck_internal_render_scale",
       "swap_post_effect",
       "eck_msaa_compatibility",
       "anisotropic_override",
+      "eck_frame_rate",
+      "eck_skip_intro",
       "eck_show_fps",
+      "eck_show_render_resolution",
       "eck_show_frame_counter",
       kLanguageSetting,
       "detailed_logging",
       "mnk_mode",
       "eck_player_1_name",
       "eck_player_2_name",
+      "eck_player_3_name",
+      "eck_player_4_name",
   };
   for (const KeyboardAction& action : kKeyboardActions) {
     keys.emplace_back(action.key);
@@ -214,6 +229,17 @@ std::string TextureFilteringName(std::string_view value) {
     return "16x";
   }
   return std::string(value);
+}
+
+std::string InternalRenderLabel(int percent) {
+  switch (NormalizeInternalRenderScale(percent)) {
+    case kInternalRenderScalePerformance:
+      return "75% Performance";
+    case kInternalRenderScaleLowEnd:
+      return "50% Low-end";
+    default:
+      return "100% Native";
+  }
 }
 
 std::string GameStateName(GameFiles state) {
@@ -380,6 +406,7 @@ void GameSettings::Apply() const {
     rex::cvar::SetFlagByName(key, value);
   }
   ApplyMultisampling();
+  ApplyInternalRenderPath();
   ApplyLanguage();
   ApplyPlayerNames();
 }
@@ -407,6 +434,17 @@ void ApplyPlayerNames() {
   }
 }
 
+void ApplyInternalRenderPath() {
+#if defined(_WIN32)
+  const std::optional<std::string_view> path = RequiredRenderTargetPath(
+      std::atoi(rex::cvar::GetFlagByName("eck_internal_render_scale").c_str()),
+      rex::cvar::GetFlagByName("render_target_path_d3d12"));
+  if (path && rex::cvar::SetFlagByName("render_target_path_d3d12", *path)) {
+    REXLOG_INFO("Internal render resolution: using D3D12 host render targets");
+  }
+#endif
+}
+
 void ApplyGraphicsAdapter() {
 #if defined(_WIN32)
   const std::string setting = REXCVAR_GET(eck_graphics_adapter);
@@ -430,7 +468,11 @@ void ApplyGraphicsAdapter() {
 
 void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& display, int monitor,
                            const std::filesystem::path& game_dir, const StartupWindowInfo& window) {
+  const int frame_rate = FrameRateFromText(settings.Get("eck_frame_rate", "60"));
   const int scale = std::max(1, std::atoi(rex::cvar::GetFlagByName("resolution_scale").c_str()));
+  const int percent = NormalizeInternalRenderScale(
+      std::atoi(rex::cvar::GetFlagByName("eck_internal_render_scale").c_str()));
+  const InternalRenderSplit split = SplitInternalRenderScale(scale, percent);
   const std::string selected_card = SelectedGraphicsCardLabel(settings);
   const bool selected_fullscreen = settings.GetBool("fullscreen", false);
   const bool selected_tearing = settings.GetBool(kTearingSetting, false);
@@ -450,13 +492,18 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   diagnostics.launcher_display.vsync = selected_tearing ? "Off" : "On";
 
   diagnostics.launcher_gameplay.language = language.label;
+  diagnostics.launcher_gameplay.skip_intro = OnOff(settings.GetBool("eck_skip_intro", false));
+  diagnostics.launcher_gameplay.frame_rate = FrameRateLabel(frame_rate);
   diagnostics.launcher_gameplay.frame_rate_in_title = OnOff(settings.GetBool("eck_show_fps", true));
+  diagnostics.launcher_gameplay.render_resolution_in_title =
+      OnOff(settings.GetBool("eck_show_render_resolution", false));
   diagnostics.launcher_gameplay.frame_counter = settings.GetBool("eck_show_frame_counter", false) ? "Shown" : "Hidden";
 
   diagnostics.launcher_graphics.graphics_card = selected_card;
   diagnostics.launcher_graphics.render_resolution =
       (scale == 1 ? std::string("Original") : std::to_string(scale) + "x") + " (" +
       std::to_string(kGuestWidth * scale) + "x" + std::to_string(kGuestHeight * scale) + ")";
+  diagnostics.launcher_graphics.internal_render_resolution = InternalRenderLabel(percent);
   diagnostics.launcher_graphics.anti_aliasing =
       ChoiceLabel({{"none", "Off"}, {"fxaa", "FXAA"}, {"fxaa_extreme", "FXAA Extreme"}},
                   settings.Get("swap_post_effect", "none"), "Off");
@@ -504,12 +551,16 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   diagnostics.language.user_language = uint32_t(std::atoi(CvarText("user_language", "0").c_str()));
   diagnostics.language.user_country = uint32_t(std::atoi(CvarText("user_country", "0").c_str()));
 
+  diagnostics.gameplay.frame_rate = FrameRateLabel(frame_rate);
   diagnostics.gameplay.present = PresentationText(runtime_tearing);
 
   diagnostics.graphics.render_width = kGuestWidth * scale;
   diagnostics.graphics.render_height = kGuestHeight * scale;
   diagnostics.graphics.guest_width = kGuestWidth;
   diagnostics.graphics.guest_height = kGuestHeight;
+  diagnostics.graphics.render_percent = percent;
+  diagnostics.graphics.host_quarters = split.host_quarters;
+  diagnostics.graphics.resolve_scale = split.resolve_scale;
   diagnostics.graphics.msaa = settings.GetBool("eck_msaa_compatibility", false) ? "4x compatibility" : "2x native";
   diagnostics.graphics.anti_aliasing = diagnostics.launcher_graphics.anti_aliasing;
   diagnostics.graphics.texture_filtering = diagnostics.launcher_graphics.texture_filtering;
@@ -527,7 +578,7 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
                         " | output=" + std::to_string(window.output_width) + "x" +
                         std::to_string(window.output_height))
                            .c_str(),
-                       ("frame_rate=60 | " + diagnostics.gameplay.present).c_str(),
+                       ("frame_rate=" + FrameRateLabel(frame_rate) + " | " + diagnostics.gameplay.present).c_str(),
                        ("render=" + std::to_string(diagnostics.graphics.render_width) + "x" +
                         std::to_string(diagnostics.graphics.render_height) + " | msaa=" + diagnostics.graphics.msaa +
                         " | language=" + language.package)

@@ -29,6 +29,7 @@
 #include "trg/platform.h"
 
 #include "dpi.h"
+#include "frame_limiter.h"
 #include "game_files.h"
 #include "graphics_adapters.h"
 #include "imgui_gamepad.h"
@@ -141,8 +142,11 @@ std::string DisplayUrl(const char* url) {
 std::vector<trg::Option> RenderResolutionOptions() {
   std::vector<trg::Option> options;
   for (int scale = 1; scale <= 4; ++scale) {
-    std::string label = scale == 1 ? "Original" : std::to_string(scale) + "x";
+    std::string label = scale == 1 ? std::string(Tr("Original")) : std::to_string(scale) + "x";
     label += " \xE2\x80\x94 " + std::to_string(kGuestWidth * scale) + "x" + std::to_string(kGuestHeight * scale);
+    if (scale == 2) {
+      label += std::string(" \xE2\x80\x94 ") + Tr("Recommended for 1440p");
+    }
     options.push_back({std::to_string(scale), label});
   }
   return options;
@@ -553,8 +557,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     WindowSizeCombo();
     ui.Row("Monitor", "The display the game opens on.");
     MonitorCombo();
-    ui.Row("VSync", "On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays. The game "
-                    "always runs at 60 FPS.");
+    ui.Row("VSync", "On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays.");
     {
       const bool tearing = settings_.GetBool(kTearingSetting, false);
       if (int i = ui.Segmented("vsync", {"Off", "On"}, tearing ? 0 : 1); i >= 0) {
@@ -648,16 +651,21 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
                "eck_graphics_adapter", value.c_str(), adapters);
     }
     ui.Combo("Render resolution",
-             "Draws the game at a multiple of its own 1280x720 picture, then scales it to the window. Higher is "
-             "sharper and costs more GPU time. Window size is separate.",
+             "Draws the game at a multiple of its own picture, then scales it to the window. Higher is sharper and "
+             "costs more GPU time. Window size is separate.",
              "resolution_scale", "1", RenderResolutionOptions());
+    ui.Combo("Internal render resolution",
+             "Renders the game internally at a lower resolution, then scales it to the selected render resolution. "
+             "Lower values improve GPU performance but reduce image sharpness.",
+             "eck_internal_render_scale", "100",
+             {{"100", "100% Native"}, {"75", "75% Performance"}, {"50", "50% Low-end"}});
     ui.Choice("Anti-aliasing", "Smooths jagged edges after the frame is drawn. Extreme is softer but cleaner.",
               "swap_post_effect", "none", {{"none", "Off"}, {"fxaa", "FXAA"}, {"fxaa_extreme", "FXAA Extreme"}});
     ui.Toggle("Multisampling",
               "Use 2\xC3\x97 MSAA for best performance. Try 4\xC3\x97 only if you see graphics problems with 2\xC3\x97.",
               "eck_msaa_compatibility", false, "2\xC3\x97 MSAA", "4\xC3\x97 MSAA (Compatibility)");
     ui.Choice("Texture filtering",
-              "Anisotropic filtering keeps textures sharp at oblique angles. Game uses the game's own setting.",
+              "Anisotropic filtering keeps textures sharp at oblique angles. Game leaves it to the game.",
               "anisotropic_override", "-1",
               {{"-1", "Game"},
                {"0", "Off"},
@@ -674,11 +682,23 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       languages.push_back({language.key, language.label});
     }
     ui.Combo(kLanguageLabel, kLanguageHelp, kLanguageSetting, kDefaultLanguage, languages);
-    ui.Toggle("Frame rate in title", "Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00",
-              "eck_show_fps", true, "Off", "On");
+    ui.Toggle("Skip intro", "Start directly at the title screen", "eck_skip_intro", false, "Off", "On");
+    std::vector<trg::Option> frame_rates;
+    for (auto& [value, label] : FrameRateChoices()) {
+      frame_rates.push_back({std::move(value), std::move(label)});
+    }
+    ui.Choice("Frame rate",
+              "The maximum frame rate the game renders. The game's clock follows real time, so game speed does not "
+              "change. 30 is the console rate. Unlimited stops at 300.",
+              "eck_frame_rate", "60", frame_rates);
+    ui.Toggle("Frame rate in title",
+              "Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00", "eck_show_fps",
+              true, "Off", "On");
+    ui.Toggle("Render resolution in title", "Shows the game's render resolution in the window title",
+              "eck_show_render_resolution", false, "Off", "On");
     ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F2 toggles it while playing.",
               "eck_show_frame_counter", false, "Hidden", "Shown");
-    if (ui.Section("Player names", true)) {
+    if (ui.Section("Local player names", true)) {
       ui.Help(kPlayerNamesHelp);
       for (const PlayerNameSetting& player : kPlayerNames) {
         PlayerNameRow(ui, player);
@@ -769,9 +789,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   }
 
   static void PageControls(trg::Ui& ui) {
-    ui.Info("Controller", "Automatic: Xbox and other SDL-compatible controllers work without setup.");
-    ui.Help("Race: left stick steers, RT accelerates, LT brakes and reverses, A jumps and drifts, B boosts, X uses "
-            "the item, Y looks back, Back returns you to the track, Start pauses.");
+    ui.Info("Controller", "Automatic: Xbox controllers work without setup.");
     ui.Toggle("Keyboard", "Use the keyboard for gameplay controls together with the controller.", "mnk_mode", true,
               "Off", "On");
     if (ui.ConfirmRow("Keyboard defaults", "Puts the keyboard controls back to their standard layout.",

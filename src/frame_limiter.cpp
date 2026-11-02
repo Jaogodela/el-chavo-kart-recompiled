@@ -1,0 +1,63 @@
+#include "frame_limiter.h"
+
+#include <mutex>
+
+#include <rex/cvar.h>
+#include <rex/hook.h>
+
+#include "debug_telemetry.h"
+
+REXCVAR_DEFINE_INT32(eck_frame_rate, eck::kFrameRateDefault, "El Chavo Kart",
+                     "Maximum frame rate the game renders: 30, 60, 90, 120, 144, 165, 240 or 0 for Unlimited");
+
+namespace eck {
+namespace {
+
+FrameLimiter g_limiter;
+std::mutex g_limiter_mutex;
+
+}  // namespace
+
+int ConfiguredFrameRate() {
+  return FrameRateOrDefault(REXCVAR_GET(eck_frame_rate));
+}
+
+// A change of rate re-arms the limiter, so time spent at another rate is never waited for or caught up.
+void PaceGuestFrame() {
+  static int last_rate = -1;  // DEBUG_SAULO
+  const int rate = LimiterRate(ConfiguredFrameRate());
+  std::optional<LimiterClock::time_point> deadline;
+  const auto before = LimiterClock::now();
+  {
+    std::lock_guard lock(g_limiter_mutex);
+    deadline = g_limiter.Next(rate, before);
+  }
+  const bool reset = rate != last_rate;  // DEBUG_SAULO
+  last_rate = rate;
+  if (deadline) {
+    WaitUntil(*deadline);
+    const auto after = LimiterClock::now();
+    const auto ms = [](LimiterClock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    debug::OnLimiterWait(ms(*deadline - before), ms(after - before), ms(after - *deadline), true, false, false);
+  } else {
+    debug::OnLimiterWait(0, 0, 0, false, reset, !reset);  // DEBUG_SAULO
+  }
+}
+
+}  // namespace eck
+
+// GetMaxTickRate: the engine's own 62 FPS sleep is off, so the limiter above is the only frame limit.
+REX_EXTERN(__imp__sub_825A4D70);
+REX_HOOK_RAW(sub_825A4D70) {
+  ctx.f1.f64 = 0.0;
+}
+
+// The flip scheduler: the present interval is in bits 8-11 of r3. Zero flips at once instead of at the title's default
+// two vblanks, which the 60 Hz guest vblank turns into 30 FPS; the limiter paces every rate.
+REX_EXTERN(__imp__sub_82B583B0);
+REX_HOOK_RAW(sub_82B583B0) {
+  const uint32_t requested = (ctx.r3.u32 & eck::kPresentIntervalMask) >> 8;
+  ctx.r3.u32 &= ~eck::kPresentIntervalMask;
+  eck::debug::OnFlip(requested, 0);  // DEBUG_SAULO
+  __imp__sub_82B583B0(ctx, base);
+}

@@ -181,9 +181,11 @@ set(ECK_SOURCES
     src/achievements_overlay.cpp
     src/active_log.cpp
     src/crash_report.cpp
+    src/debug_telemetry.cpp
     src/diagnostics.cpp
     src/frame_counter.cpp
-    src/frame_pacer.cpp
+    src/frame_limiter.cpp
+    src/frame_wait.cpp
     src/game_files.cpp
     src/graphics_adapters.cpp
     src/guest_functions.cpp
@@ -199,6 +201,7 @@ set(ECK_SOURCES
     src/port_version.cpp
     src/pt_br_ui_text.cpp
     src/session_log.cpp
+    src/skip_intro.cpp
     src/settings.cpp
     src/sha256.cpp
     src/system_info.cpp

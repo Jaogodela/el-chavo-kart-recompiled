@@ -22,6 +22,7 @@
 #include "achievements_menu.h"
 #include "achievements_overlay.h"
 #include "active_log.h"
+#include "debug_telemetry.h"
 #include "diagnostics.h"
 #include "frame_counter.h"
 #include "game_files.h"
@@ -139,6 +140,7 @@ class ElChavoKartApp : public rex::ReXApp {
     }
     if (!show_launcher_) {
       eck::ApplyMultisampling();
+      eck::ApplyInternalRenderPath();
       eck::ApplyLanguage();
       eck::ApplyPlayerNames();
       return defaults;
@@ -236,6 +238,7 @@ class ElChavoKartApp : public rex::ReXApp {
     if (auto* input = runtime() ? runtime()->input_system() : nullptr) {
       input->Shutdown();
     }
+    eck::debug::FlushSessionSummary();  // DEBUG_SAULO
     eck::SetAchievementsMenuHandler({});
     eck::ModalDialog::DetachEscapeKey();
     delete achievements_;
@@ -247,6 +250,7 @@ class ElChavoKartApp : public rex::ReXApp {
   // threads that are still running guest code. The OS reclaims the process.
   void OnClosing(rex::ui::UIEvent&) override {
     REXLOG_INFO("Window closing, hard-exiting process.");
+    eck::debug::FlushSessionSummary();  // DEBUG_SAULO
     eck::PrepareHardExit();
     std::_Exit(0);
   }

@@ -29,3 +29,16 @@ target_compile_definitions(eck_ui_text_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}
 
 add_executable(eck_achievements_tests achievements_tests.cpp)
 target_include_directories(eck_achievements_tests PRIVATE "${ECK_SRC_DIR}" stubs)
+
+
+add_executable(eck_launcher_logic_tests launcher_logic_tests.cpp)
+target_include_directories(eck_launcher_logic_tests PRIVATE "${ECK_SRC_DIR}")
+
+
+add_executable(eck_frame_limiter_tests frame_limiter_tests.cpp "${ECK_SRC_DIR}/frame_wait.cpp")
+target_include_directories(eck_frame_limiter_tests PRIVATE "${ECK_SRC_DIR}")
+target_compile_definitions(eck_frame_limiter_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
+
+add_executable(eck_debug_telemetry_tests debug_telemetry_tests.cpp)
+target_include_directories(eck_debug_telemetry_tests PRIVATE "${ECK_SRC_DIR}")

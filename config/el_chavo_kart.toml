@@ -16,7 +16,7 @@ window_height = 720
 video_mode_width = 1280
 video_mode_height = 720
 
-# VSync On by default: the game is held at 60 FPS (eck_frame_pacing), and tearing stays opt-in in the launcher.
+# VSync On by default: swaps are held to eck_frame_rate (60 by default), and tearing stays opt-in in the launcher.
 d3d12_allow_variable_refresh_rate_and_tearing = false
 
 # A deeper host audio queue, as in Marvel Ultimate Alliance and Geometry Wars 2, against underruns while streaming.

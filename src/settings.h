@@ -16,7 +16,10 @@
 REXCVAR_DECLARE(bool, eck_launcher);
 REXCVAR_DECLARE(bool, eck_skip_launcher);
 REXCVAR_DECLARE(std::string, eck_language);
+REXCVAR_DECLARE(bool, eck_skip_intro);
+REXCVAR_DECLARE(int32_t, eck_frame_rate);
 REXCVAR_DECLARE(bool, eck_show_fps);
+REXCVAR_DECLARE(bool, eck_show_render_resolution);
 REXCVAR_DECLARE(bool, eck_show_frame_counter);
 REXCVAR_DECLARE(bool, eck_msaa_compatibility);
 REXCVAR_DECLARE(bool, detailed_logging);
@@ -53,6 +56,9 @@ void ApplyMultisampling();
 // Sets the SDK's user_language and user_country, which the title reads at startup, from eck_language. Call with
 // ApplyMultisampling.
 void ApplyLanguage();
+
+// Selects the D3D12 host render targets a reduced Internal render resolution needs. Call with ApplyMultisampling.
+void ApplyInternalRenderPath();
 
 // Sets the SDK's local player names from the launcher's Player names. Call with ApplyMultisampling.
 void ApplyPlayerNames();

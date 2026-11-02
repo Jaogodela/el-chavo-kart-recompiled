@@ -1,0 +1,937 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ce8ac31..5ed6dd4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -179,11 +179,14 @@ set(ECK_SOURCES
+     src/main.cpp
+     src/achievements_menu.cpp
+     src/achievements_overlay.cpp
++    src/aspect_render.cpp
+     src/active_log.cpp
+     src/crash_report.cpp
++    src/debug_telemetry.cpp
+     src/diagnostics.cpp
+     src/frame_counter.cpp
+-    src/frame_pacer.cpp
++    src/frame_limiter.cpp
++    src/frame_wait.cpp
+     src/game_files.cpp
+     src/graphics_adapters.cpp
+     src/guest_functions.cpp
+@@ -199,6 +202,7 @@ set(ECK_SOURCES
+     src/port_version.cpp
+     src/pt_br_ui_text.cpp
+     src/session_log.cpp
++    src/skip_intro.cpp
+     src/settings.cpp
+     src/sha256.cpp
+     src/system_info.cpp
+diff --git a/README.md b/README.md
+index e91d66f..9dece00 100644
+--- a/README.md
++++ b/README.md
+@@ -25,8 +25,8 @@ been confirmed in a running game yet; the [known limitations](#known-limitations
+   English.
+ - **Disc image import**: the launcher and `tools\build.ps1` read your `.iso` directly, check its `default.xex` by SHA-256 and
+   copy the game files (about 2 GB). Other games and other builds are refused with a clear message.
+-- **Original 60 FPS**: the game presents without VSync and paces itself to 62 FPS on the console; the port holds its
+-  swaps to exactly 60 per second. There are no high frame rate options.
++- **Frame rate**: 30 (the console rate), 60, 90, 120, 144, 165, 240 or Unlimited, in the launcher; game speed follows real
++  time. Rates above 60 are new and still being validated.
+ - **Graphics options**: render resolution 1x to 4x of the game's 1280x720, FXAA, 2x/4x MSAA, anisotropic filtering,
+   graphics card selection, Windowed or Borderless Fullscreen (F11), VSync.
+ - **Controller and keyboard**: Xbox and SDL-compatible controllers work without setup; the keyboard drives the same
+diff --git a/config/el_chavo_kart.toml b/config/el_chavo_kart.toml
+index cd32274..4505194 100644
+--- a/config/el_chavo_kart.toml
++++ b/config/el_chavo_kart.toml
+@@ -16,7 +16,7 @@ window_height = 720
+ video_mode_width = 1280
+ video_mode_height = 720
+ 
+-# VSync On by default: the game is held at 60 FPS (eck_frame_pacing), and tearing stays opt-in in the launcher.
++# VSync On by default: swaps are held to eck_frame_rate (60 by default), and tearing stays opt-in in the launcher.
+ d3d12_allow_variable_refresh_rate_and_tearing = false
+ 
+ # A deeper host audio queue, as in Marvel Ultimate Alliance and Geometry Wars 2, against underruns while streaming.
+diff --git a/docs/game-analysis.md b/docs/game-analysis.md
+index 20d28c1..591e334 100644
+--- a/docs/game-analysis.md
++++ b/docs/game-analysis.md
+@@ -31,9 +31,9 @@ United States. The port sets ReXGlue's `user_language` and `user_country` accord
+ ## Frame rate
+ 
+ The runtime configuration (`Coalesced_INT.bin`) has `UseVsync=False`, `bSmoothFrameRate=TRUE` and
+-`MaxSmoothedFrameRate=62`, at 1280x720. UE3 runs a variable time step, so the presentation rate does not change game
+-speed; without VSync the title would present up to 62 frames per second. The port paces every `VdSwap` to 60 per second
+-(`src/frame_pacer.cpp`, hooked in `src/window_host.cpp`; cvar `eck_frame_pacing`).
++`MaxSmoothedFrameRate=62`, at 1280x720. UE3 runs a variable time step. The title's default present interval is two vblanks,
++which is the 30 FPS console cadence; see `docs/launcher-graphics-gameplay.md` for the hooks (`src/frame_limiter.cpp`) that
++replace it with an immediate flip and a selectable 30/60 limiter.
+ 
+ ## Recompilation
+ 
+diff --git a/src/diagnostics.cpp b/src/diagnostics.cpp
+index 3c17d45..39bbb6e 100644
+--- a/src/diagnostics.cpp
++++ b/src/diagnostics.cpp
+@@ -32,6 +32,10 @@ std::string DisplayText(const DisplayIdentity& display) {
+ std::string GraphicsText(const GraphicsIdentity& graphics) {
+   std::string text = "render=" + std::to_string(graphics.render_width) + "x" + std::to_string(graphics.render_height) +
+                      " | guest=" + std::to_string(graphics.guest_width) + "x" + std::to_string(graphics.guest_height);
++  if (graphics.host_quarters > 0) {
++    text += " | internal=" + std::to_string(graphics.render_percent) + "% (host " +
++            std::to_string(graphics.host_quarters) + "/4, resolve " + std::to_string(graphics.resolve_scale) + "x)";
++  }
+   if (!graphics.msaa.empty()) {
+     text += " | msaa=" + graphics.msaa;
+   }
+@@ -64,12 +68,17 @@ std::vector<std::string> FormatStartupDiagnostics(const StartupDiagnostics& diag
+   lines.push_back("Launcher Display: Display mode=" + diagnostics.launcher_display.mode +
+                   " | Window size=" + diagnostics.launcher_display.window_size +
+                   " | Monitor=" + diagnostics.launcher_display.monitor +
++                  " | Aspect Ratio=" + diagnostics.launcher_display.aspect_ratio +
+                   " | VSync=" + diagnostics.launcher_display.vsync);
+   lines.push_back("Launcher Gameplay: Language=" + diagnostics.launcher_gameplay.language +
++                  " | Skip intro=" + diagnostics.launcher_gameplay.skip_intro +
++                  " | Frame rate=" + diagnostics.launcher_gameplay.frame_rate +
+                   " | Frame rate in title=" + diagnostics.launcher_gameplay.frame_rate_in_title +
++                  " | Render resolution in title=" + diagnostics.launcher_gameplay.render_resolution_in_title +
+                   " | Frame counter=" + diagnostics.launcher_gameplay.frame_counter);
+   lines.push_back("Launcher Graphics: Graphics card=" + diagnostics.launcher_graphics.graphics_card +
+                   " | Render resolution=" + diagnostics.launcher_graphics.render_resolution +
++                  " | Internal render resolution=" + diagnostics.launcher_graphics.internal_render_resolution +
+                   " | Anti-aliasing=" + diagnostics.launcher_graphics.anti_aliasing +
+                   " | Multisampling=" + diagnostics.launcher_graphics.multisampling +
+                   " | Texture filtering=" + diagnostics.launcher_graphics.texture_filtering);
+@@ -113,7 +122,7 @@ std::vector<std::string> FormatStartupDiagnostics(const StartupDiagnostics& diag
+   lines.push_back("Runtime language: " + diagnostics.language.label + " | package=" + diagnostics.language.package +
+                   " | user_language=" + std::to_string(diagnostics.language.user_language) +
+                   " | user_country=" + std::to_string(diagnostics.language.user_country));
+-  lines.push_back("Runtime timing: frame_rate=60 | present=" + diagnostics.gameplay.present);
++  lines.push_back("Runtime frame pacing: frame rate=" + diagnostics.gameplay.frame_rate + " | simulation=real-time delta | interpolation=off | present=" + diagnostics.gameplay.present);
+ 
+   lines.push_back("Runtime renderer: " + GraphicsText(diagnostics.graphics));
+ 
+@@ -138,7 +147,7 @@ std::string FileNameOnly(std::string_view path) {
+ }
+ 
+ std::string PresentationText(bool vsync_off) {
+-  return vsync_off ? "guest 60Hz | host Immediate (tearing allowed)" : "guest 60Hz | host VBlank (VSync On)";
++  return vsync_off ? "immediate flip | host Immediate (tearing allowed)" : "immediate flip | host VBlank (VSync On)";
+ }
+ 
+ std::string FormatCleanExit(std::string_view uptime) {
+diff --git a/src/diagnostics.h b/src/diagnostics.h
+index c5bdfdb..07211b1 100644
+--- a/src/diagnostics.h
++++ b/src/diagnostics.h
+@@ -57,18 +57,23 @@ struct LauncherDisplayIdentity {
+   std::string mode;
+   std::string window_size;
+   std::string monitor;
++  std::string aspect_ratio;
+   std::string vsync;
+ };
+ 
+ struct LauncherGameplayIdentity {
+   std::string language;
++  std::string skip_intro;
++  std::string frame_rate;
+   std::string frame_rate_in_title;
++  std::string render_resolution_in_title;
+   std::string frame_counter;
+ };
+ 
+ struct LauncherGraphicsIdentity {
+   std::string graphics_card;
+   std::string render_resolution;
++  std::string internal_render_resolution;
+   std::string anti_aliasing;
+   std::string multisampling;
+   std::string texture_filtering;
+@@ -82,6 +87,7 @@ struct LanguageIdentity {
+ };
+ 
+ struct GameplayIdentity {
++  std::string frame_rate;
+   std::string present;
+ };
+ 
+@@ -90,6 +96,9 @@ struct GraphicsIdentity {
+   int render_height = 0;
+   int guest_width = 0;
+   int guest_height = 0;
++  int render_percent = 100;
++  int host_quarters = 0;
++  int resolve_scale = 0;
+   std::string msaa;
+   std::string anti_aliasing;
+   std::string texture_filtering;
+diff --git a/src/el_chavo_kart_app.h b/src/el_chavo_kart_app.h
+index 9906010..43e1a36 100644
+--- a/src/el_chavo_kart_app.h
++++ b/src/el_chavo_kart_app.h
+@@ -22,6 +22,7 @@
+ #include "achievements_menu.h"
+ #include "achievements_overlay.h"
+ #include "active_log.h"
++#include "debug_telemetry.h"
+ #include "diagnostics.h"
+ #include "frame_counter.h"
+ #include "game_files.h"
+@@ -139,6 +140,7 @@ class ElChavoKartApp : public rex::ReXApp {
+     }
+     if (!show_launcher_) {
+       eck::ApplyMultisampling();
++      eck::ApplyInternalRenderPath();
+       eck::ApplyLanguage();
+       eck::ApplyPlayerNames();
+       return defaults;
+@@ -236,6 +238,7 @@ class ElChavoKartApp : public rex::ReXApp {
+     if (auto* input = runtime() ? runtime()->input_system() : nullptr) {
+       input->Shutdown();
+     }
++    eck::debug::FlushSessionSummary();  // DEBUG_SAULO
+     eck::SetAchievementsMenuHandler({});
+     eck::ModalDialog::DetachEscapeKey();
+     delete achievements_;
+@@ -247,6 +250,7 @@ class ElChavoKartApp : public rex::ReXApp {
+   // threads that are still running guest code. The OS reclaims the process.
+   void OnClosing(rex::ui::UIEvent&) override {
+     REXLOG_INFO("Window closing, hard-exiting process.");
++    eck::debug::FlushSessionSummary();  // DEBUG_SAULO
+     eck::PrepareHardExit();
+     std::_Exit(0);
+   }
+diff --git a/src/frame_pacer.cpp b/src/frame_pacer.cpp
+deleted file mode 100644
+index 3f1f5b4..0000000
+--- a/src/frame_pacer.cpp
++++ /dev/null
+@@ -1,80 +0,0 @@
+-#include "frame_pacer.h"
+-
+-#include <mutex>
+-#include <thread>
+-
+-#if defined(_WIN32)
+-#ifndef NOMINMAX
+-#define NOMINMAX
+-#endif
+-#ifndef WIN32_LEAN_AND_MEAN
+-#define WIN32_LEAN_AND_MEAN
+-#endif
+-#include <windows.h>
+-#endif
+-
+-#include <rex/cvar.h>
+-
+-REXCVAR_DEFINE_BOOL(eck_frame_pacing, true, "El Chavo Kart",
+-                    "Hold the game's swaps to 60 per second; the title presents without VSync and paces itself to 62");
+-
+-namespace eck {
+-namespace {
+-
+-using namespace std::chrono_literals;
+-
+-constexpr auto kSpinWindow = 500us;
+-
+-FramePacer g_pacer;
+-std::mutex g_pacer_mutex;
+-
+-}  // namespace
+-
+-#if defined(_WIN32)
+-
+-void WaitUntil(PacerClock::time_point deadline) {
+-  thread_local const HANDLE timer =
+-      CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+-  const auto coarse = deadline - PacerClock::now() - kSpinWindow;
+-  if (coarse > PacerClock::duration::zero()) {
+-    if (timer) {
+-      LARGE_INTEGER due;
+-      due.QuadPart = -std::chrono::duration_cast<std::chrono::nanoseconds>(coarse).count() / 100;
+-      if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+-        WaitForSingleObject(timer, INFINITE);
+-      }
+-    } else {
+-      std::this_thread::sleep_for(coarse);
+-    }
+-  }
+-  while (PacerClock::now() < deadline) {
+-    std::this_thread::yield();
+-  }
+-}
+-
+-#else
+-
+-void WaitUntil(PacerClock::time_point deadline) {
+-  std::this_thread::sleep_until(deadline - kSpinWindow);
+-  while (PacerClock::now() < deadline) {
+-    std::this_thread::yield();
+-  }
+-}
+-
+-#endif
+-
+-void PaceGuestSwap() {
+-  if (!REXCVAR_GET(eck_frame_pacing)) {
+-    return;
+-  }
+-  std::optional<PacerClock::time_point> deadline;
+-  {
+-    std::lock_guard lock(g_pacer_mutex);
+-    deadline = g_pacer.Next(kFrameRate, PacerClock::now());
+-  }
+-  if (deadline) {
+-    WaitUntil(*deadline);
+-  }
+-}
+-
+-}  // namespace eck
+diff --git a/src/frame_pacer.h b/src/frame_pacer.h
+deleted file mode 100644
+index ce126cc..0000000
+--- a/src/frame_pacer.h
++++ /dev/null
+@@ -1,46 +0,0 @@
+-#pragma once
+-
+-#include <chrono>
+-#include <optional>
+-
+-namespace eck {
+-
+-inline constexpr int kFrameRate = 60;
+-
+-using PacerClock = std::chrono::steady_clock;
+-
+-inline PacerClock::duration FramePeriod(int fps) {
+-  return std::chrono::duration_cast<PacerClock::duration>(std::chrono::duration<double>(1.0 / fps));
+-}
+-
+-// The schedule of the frame pacer. Next() gives the time the caller has to wait for, if any; a frame that ran a whole
+-// period late restarts the schedule instead of being caught up.
+-class FramePacer {
+- public:
+-  std::optional<PacerClock::time_point> Next(int fps, PacerClock::time_point now) {
+-    const auto period = FramePeriod(fps);
+-    if (!armed_) {
+-      armed_ = true;
+-      target_ = now + period;
+-      return std::nullopt;
+-    }
+-    const auto deadline = target_;
+-    target_ = now - deadline > period ? now + period : deadline + period;
+-    if (deadline <= now) {
+-      return std::nullopt;
+-    }
+-    return deadline;
+-  }
+-
+- private:
+-  bool armed_ = false;
+-  PacerClock::time_point target_;
+-};
+-
+-// Blocks the calling thread until the deadline: a high-resolution timer for most of it, then a short spin.
+-void WaitUntil(PacerClock::time_point deadline);
+-
+-// Called on every guest VdSwap: waits until the next 60 Hz deadline unless eck_frame_pacing is off.
+-void PaceGuestSwap();
+-
+-}  // namespace eck
+diff --git a/src/launcher.cpp b/src/launcher.cpp
+index 935cb4d..2381c49 100644
+--- a/src/launcher.cpp
++++ b/src/launcher.cpp
+@@ -28,7 +28,9 @@
+ #include "trg/launcher.h"
+ #include "trg/platform.h"
+ 
++#include "aspect_ratio.h"
+ #include "dpi.h"
++#include "frame_limiter.h"
+ #include "game_files.h"
+ #include "graphics_adapters.h"
+ #include "imgui_gamepad.h"
+@@ -132,17 +134,28 @@ std::string Size(int width, int height) {
+   return std::to_string(width) + " \xC3\x97 " + std::to_string(height);
+ }
+ 
++std::vector<trg::Option> AspectRatioOptions() {
++  std::vector<trg::Option> options;
++  for (const AspectRatioInfo& info : kAspectRatios) {
++    options.push_back({info.key, info.label});
++  }
++  return options;
++}
++
+ std::string DisplayUrl(const char* url) {
+   const std::string text = url;
+   const size_t scheme = text.find("://");
+   return scheme == std::string::npos ? text : text.substr(scheme + 3);
+ }
+ 
+-std::vector<trg::Option> RenderResolutionOptions() {
++std::vector<trg::Option> RenderResolutionOptions(int guest_width) {
+   std::vector<trg::Option> options;
+   for (int scale = 1; scale <= 4; ++scale) {
+-    std::string label = scale == 1 ? "Original" : std::to_string(scale) + "x";
+-    label += " \xE2\x80\x94 " + std::to_string(kGuestWidth * scale) + "x" + std::to_string(kGuestHeight * scale);
++    std::string label = scale == 1 ? std::string(Tr("Original")) : std::to_string(scale) + "x";
++    label += " \xE2\x80\x94 " + std::to_string(guest_width * scale) + "x" + std::to_string(kGuestHeight * scale);
++    if (scale == 2) {
++      label += std::string(" \xE2\x80\x94 ") + Tr("Recommended for 1440p");
++    }
+     options.push_back({std::to_string(scale), label});
+   }
+   return options;
+@@ -553,8 +566,11 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
+     WindowSizeCombo();
+     ui.Row("Monitor", "The display the game opens on.");
+     MonitorCombo();
+-    ui.Row("VSync", "On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays. The game "
+-                    "always runs at 60 FPS.");
++    if (ui.Combo("Aspect Ratio", "Sets the game's target rendering format and the Window size choices.",
++                 "eck_aspect_ratio", "16:9", AspectRatioOptions())) {
++      SelectWindowSizeForAspect();
++    }
++    ui.Row("VSync", "On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays.");
+     {
+       const bool tearing = settings_.GetBool(kTearingSetting, false);
+       if (int i = ui.Segmented("vsync", {"Off", "On"}, tearing ? 0 : 1); i >= 0) {
+@@ -581,8 +597,44 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
+                                            kLauncherMaxShare) == DpiWindowSize{width, height};
+   }
+ 
++  AspectRatio SelectedAspectRatio() const {
++    return ParseAspectRatio(settings_.Get("eck_aspect_ratio", "16:9"));
++  }
++
++  // Moves Window size to the new aspect ratio's default, unless the current size already belongs to it.
++  void SelectWindowSizeForAspect() {
++    const AspectRatio aspect = SelectedAspectRatio();
++    const int width = settings_.GetInt("window_width", 0);
++    const int height = settings_.GetInt("window_height", 0);
++    for (const AspectWindowSize& size : kAspectWindowSizes) {
++      if (size.aspect == aspect && size.width == width && size.height == height) {
++        return;
++      }
++    }
++    const AspectRatioInfo& info = InfoFor(aspect);
++    const MonitorInfo* monitor = SelectedMonitor();
++    const AspectWindowSize* chosen = nullptr;
++    for (const AspectWindowSize& size : kAspectWindowSizes) {
++      if (size.aspect != aspect || !WindowSizeFits(size.width, size.height, monitor)) {
++        continue;
++      }
++      if (size.width == info.default_width && size.height == info.default_height) {
++        chosen = &size;
++        break;
++      }
++      if (!chosen || size.width > chosen->width) {
++        chosen = &size;
++      }
++    }
++    if (chosen) {
++      settings_.SetInt("window_width", chosen->width);
++      settings_.SetInt("window_height", chosen->height);
++    }
++  }
++
+   // window_width/height are logical pixels; display scaling enlarges them.
+   void WindowSizeCombo() {
++    const AspectRatio aspect = SelectedAspectRatio();
+     const int width = settings_.GetInt("window_width", 0);
+     const int height = settings_.GetInt("window_height", 0);
+     const MonitorInfo* monitor = SelectedMonitor();
+@@ -598,7 +650,10 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
+       return text;
+     };
+     if (ImGui::BeginCombo("##window_size", label(width, height).c_str())) {
+-      for (const WindowSize& size : kWindowSizes) {
++      for (const AspectWindowSize& size : kAspectWindowSizes) {
++        if (size.aspect != aspect) {
++          continue;
++        }
+         const bool current = size.width == width && size.height == height;
+         if (!current && !WindowSizeFits(size.width, size.height, monitor)) {
+           continue;
+@@ -648,16 +703,21 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
+                "eck_graphics_adapter", value.c_str(), adapters);
+     }
+     ui.Combo("Render resolution",
+-             "Draws the game at a multiple of its own 1280x720 picture, then scales it to the window. Higher is "
+-             "sharper and costs more GPU time. Window size is separate.",
+-             "resolution_scale", "1", RenderResolutionOptions());
++             "Draws the game at a multiple of its own picture, then scales it to the window. Higher is sharper and "
++             "costs more GPU time. Window size is separate.",
++             "resolution_scale", "1", RenderResolutionOptions(GuestWidth(SelectedAspectRatio())));
++    ui.Combo("Internal render resolution",
++             "Renders the game internally at a lower resolution, then scales it to the selected render resolution. "
++             "Lower values improve GPU performance but reduce image sharpness.",
++             "eck_internal_render_scale", "100",
++             {{"100", "100% Native"}, {"75", "75% Performance"}, {"50", "50% Low-end"}});
+     ui.Choice("Anti-aliasing", "Smooths jagged edges after the frame is drawn. Extreme is softer but cleaner.",
+               "swap_post_effect", "none", {{"none", "Off"}, {"fxaa", "FXAA"}, {"fxaa_extreme", "FXAA Extreme"}});
+     ui.Toggle("Multisampling",
+               "Use 2\xC3\x97 MSAA for best performance. Try 4\xC3\x97 only if you see graphics problems with 2\xC3\x97.",
+               "eck_msaa_compatibility", false, "2\xC3\x97 MSAA", "4\xC3\x97 MSAA (Compatibility)");
+     ui.Choice("Texture filtering",
+-              "Anisotropic filtering keeps textures sharp at oblique angles. Game uses the game's own setting.",
++              "Anisotropic filtering keeps textures sharp at oblique angles. Game leaves it to the game.",
+               "anisotropic_override", "-1",
+               {{"-1", "Game"},
+                {"0", "Off"},
+@@ -674,11 +734,23 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
+       languages.push_back({language.key, language.label});
+     }
+     ui.Combo(kLanguageLabel, kLanguageHelp, kLanguageSetting, kDefaultLanguage, languages);
+-    ui.Toggle("Frame rate in title", "Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00",
+-              "eck_show_fps", true, "Off", "On");
++    ui.Toggle("Skip intro", "Start directly at the title screen", "eck_skip_intro", false, "Off", "On");
++    std::vector<trg::Option> frame_rates;
++    for (auto& [value, label] : FrameRateChoices()) {
++      frame_rates.push_back({std::move(value), std::move(label)});
++    }
++    ui.Choice("Frame rate",
++              "The maximum frame rate the game renders. The game's clock follows real time, so game speed does not "
++              "change. 30 is the console rate. Unlimited stops at 400.",
++              "eck_frame_rate", "60", frame_rates);
++    ui.Toggle("Frame rate in title",
++              "Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00", "eck_show_fps",
++              true, "Off", "On");
++    ui.Toggle("Render resolution in title", "Shows the game's render resolution in the window title",
++              "eck_show_render_resolution", false, "Off", "On");
+     ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F2 toggles it while playing.",
+               "eck_show_frame_counter", false, "Hidden", "Shown");
+-    if (ui.Section("Player names", true)) {
++    if (ui.Section("Local player names", true)) {
+       ui.Help(kPlayerNamesHelp);
+       for (const PlayerNameSetting& player : kPlayerNames) {
+         PlayerNameRow(ui, player);
+@@ -769,9 +841,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
+   }
+ 
+   static void PageControls(trg::Ui& ui) {
+-    ui.Info("Controller", "Automatic: Xbox and other SDL-compatible controllers work without setup.");
+-    ui.Help("Race: left stick steers, RT accelerates, LT brakes and reverses, A jumps and drifts, B boosts, X uses "
+-            "the item, Y looks back, Back returns you to the track, Start pauses.");
++    ui.Info("Controller", "Automatic: Xbox controllers work without setup.");
+     ui.Toggle("Keyboard", "Use the keyboard for gameplay controls together with the controller.", "mnk_mode", true,
+               "Off", "On");
+     if (ui.ConfirmRow("Keyboard defaults", "Puts the keyboard controls back to their standard layout.",
+diff --git a/src/player_names.h b/src/player_names.h
+index 219b9b7..6a453cc 100644
+--- a/src/player_names.h
++++ b/src/player_names.h
+@@ -17,11 +17,13 @@ struct PlayerNameSetting {
+ };
+ 
+ inline constexpr char kPlayerNameHint[] = "Up to 15 characters.";
+-inline constexpr char kPlayerNamesHelp[] = "Changes the name shown in-game. Save data is not affected.";
++inline constexpr char kPlayerNamesHelp[] = "Names shown for local players. Save data is not affected.";
+ 
+-inline constexpr std::array<PlayerNameSetting, 2> kPlayerNames = {{
++inline constexpr std::array<PlayerNameSetting, 4> kPlayerNames = {{
+     {"eck_player_1_name", "local_player_1_name", "Player 1", "Player 1", true},
+     {"eck_player_2_name", "local_player_2_name", "Player 2", "Player 2", false},
++    {"eck_player_3_name", "local_player_3_name", "Player 3", "Player 3", false},
++    {"eck_player_4_name", "local_player_4_name", "Player 4", "Player 4", false},
+ }};
+ 
+ using PlayerNameResult = rex::system::xam::UserDisplayNameResult;
+diff --git a/src/pt_br_ui_text.cpp b/src/pt_br_ui_text.cpp
+index 0ee325f..f89dc4b 100644
+--- a/src/pt_br_ui_text.cpp
++++ b/src/pt_br_ui_text.cpp
+@@ -50,7 +50,15 @@ FXAA Extreme	FXAA Extreme
+ Multisampling	Multisampling
+ Texture filtering	Filtragem de texturas
+ Game	Jogo
++Skip intro	Pular introdução
++Start directly at the title screen	Começar direto na tela de título
++Frame rate	Taxa de quadros
++The maximum frame rate the game renders. The game's clock follows real time, so game speed does not change. 30 is the console rate. Unlimited stops at 400.	A taxa máxima de quadros que o jogo renderiza. O relógio do jogo segue o tempo real, então a velocidade do jogo não muda. 30 é a taxa do console. Ilimitado para em 400.
++30 Original	30 Original
++Unlimited	Ilimitado
+ Frame rate in title	FPS no título
++Render resolution in title	Resolução de render no título
++Shows the game's render resolution in the window title	Mostra a resolução de render do jogo no título da janela
+ Frame counter	Contador de FPS
+ Shows the game's frame rate in the corner. F2 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F2 liga e desliga durante o jogo.
+ Hidden	Oculto
+@@ -107,6 +115,8 @@ English	Inglês
+ Up to 15 characters.	Até 15 caracteres.
+ Player 1	Jogador 1
+ Player 2	Jogador 2
++Player 3	Jogador 3
++Player 4	Jogador 4
+ Enter a name.	Digite um nome.
+ Maximum 15 characters.	Máximo de 15 caracteres.
+ Name is too long for the game (15-byte limit).	O nome é longo demais para o jogo (limite de 15 bytes).
+@@ -165,20 +175,28 @@ Xbox 360 disc image	Imagem de disco do Xbox 360
+ Reading disc image...	Lendo a imagem de disco...
+ Checking the game version...	Verificando a versão do jogo...
+ Copying game files...	Copiando os arquivos do jogo...
+-On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays. The game always runs at 60 FPS.	Ligado mantém a imagem sem tearing. Desligado permite tearing, para telas G-Sync/FreeSync. O jogo sempre roda a 60 FPS.
++Aspect Ratio	Proporção da tela
++Sets the game's target rendering format and the Window size choices.	Define o formato de renderização do jogo e os tamanhos de janela disponíveis.
++16:9 Original	16:9 Original
++On keeps the picture free of tearing. Off allows tearing for G-Sync/FreeSync displays.	Ligado evita rasgos na imagem. Desligado permite rasgos, para telas G-Sync/FreeSync.
+ on screen	na tela
+ (not connected)	(desconectada)
+ (primary)	(principal)
+-Draws the game at a multiple of its own 1280x720 picture, then scales it to the window. Higher is sharper and costs more GPU time. Window size is separate.	Desenha o jogo em um múltiplo da imagem original de 1280x720 e depois a ajusta à janela. Valores maiores deixam a imagem mais nítida e exigem mais da GPU. O tamanho da janela é separado.
++Draws the game at a multiple of its own picture, then scales it to the window. Higher is sharper and costs more GPU time. Window size is separate.	Desenha o jogo em um múltiplo da própria imagem e depois a ajusta à janela. Valores maiores ficam mais nítidos e exigem mais da GPU. O tamanho da janela é separado.
++Recommended for 1440p	Recomendado para 1440p
++Internal render resolution	Resolução interna de render
++Renders the game internally at a lower resolution, then scales it to the selected render resolution. Lower values improve GPU performance but reduce image sharpness.	Renderiza o jogo internamente em uma resolução menor e depois a ajusta à resolução de render escolhida. Valores menores melhoram o desempenho da GPU, mas reduzem a nitidez da imagem.
++100% Native	100% Nativa
++75% Performance	75% Desempenho
++50% Low-end	50% PCs fracos
+ Use 2× MSAA for best performance. Try 4× only if you see graphics problems with 2×.	Use 2× MSAA para o melhor desempenho. Tente 4× só se notar problemas gráficos com 2×.
+ 4× MSAA (Compatibility)	4× MSAA (Compatibilidade)
+-Anisotropic filtering keeps textures sharp at oblique angles. Game uses the game's own setting.	A filtragem anisotrópica mantém as texturas nítidas em ângulos inclinados. Jogo usa a configuração do próprio jogo.
++Anisotropic filtering keeps textures sharp at oblique angles. Game leaves it to the game.	A filtragem anisotrópica mantém as texturas nítidas em ângulos inclinados. Jogo deixa a cargo do próprio jogo.
+ Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00	Mostra a taxa de quadros do jogo no título da janela: El Chavo Kart Recompiled | FPS: 60.00
+-Player names	Nomes dos jogadores
+-Changes the name shown in-game. Save data is not affected.	Muda o nome mostrado no jogo. Os jogos salvos não são afetados.
++Local player names	Nomes dos jogadores locais
++Names shown for local players. Save data is not affected.	Nomes mostrados para os jogadores locais. Os jogos salvos não são afetados.
+ The language of the game's text and menus, and of this launcher. Applied when the game starts.	O idioma dos textos e menus do jogo e deste launcher. Aplicado quando o jogo inicia.
+-Automatic: Xbox and other SDL-compatible controllers work without setup.	Automático: controles de Xbox e outros compatíveis com SDL funcionam sem configuração.
+-Race: left stick steers, RT accelerates, LT brakes and reverses, A jumps and drifts, B boosts, X uses the item, Y looks back, Back returns you to the track, Start pauses.	Na corrida: o analógico esquerdo dirige, RT acelera, LT freia e dá ré, A pula e derrapa, B usa o turbo, X usa o item, Y olha para trás, Back devolve você à pista e Start pausa.
++Automatic: Xbox controllers work without setup.	Automático: controles de Xbox funcionam sem configuração.
+ Accelerate (RT)	Acelerar (RT)
+ Brake / reverse (LT)	Frear / ré (LT)
+ Steer left	Virar à esquerda
+diff --git a/src/settings.cpp b/src/settings.cpp
+index 5ee461d..d4d74d3 100644
+--- a/src/settings.cpp
++++ b/src/settings.cpp
+@@ -21,8 +21,11 @@
+ #include "crash_report.h"
+ #include "diagnostics.h"
+ #include "dpi.h"
++#include "aspect_ratio.h"
++#include "frame_limiter.h"
+ #include "game_files.h"
+ #include "graphics_adapters.h"
++#include "internal_render_scale.h"
+ #include "input_summary.h"
+ #include "language_setting.h"
+ #include "keybinds.h"
+@@ -40,7 +43,12 @@ REXCVAR_DEFINE_BOOL(eck_skip_launcher, false, "El Chavo Kart",
+ REXCVAR_DEFINE_STRING(eck_language, "pt-BR", "El Chavo Kart",
+                       "Game and launcher language: pt-BR, en-US, es-MX or es-ES (sets user_language and user_country "
+                       "at start)");
++REXCVAR_DEFINE_STRING(eck_aspect_ratio, "16:9", "El Chavo Kart",
++                      "Aspect ratio of the game's picture: 16:9, 16:10, 4:3 or 5:4 (applied at start)");
++REXCVAR_DEFINE_BOOL(eck_skip_intro, false, "El Chavo Kart", "Skip the startup logos and intro movies");
+ REXCVAR_DEFINE_BOOL(eck_show_fps, true, "El Chavo Kart", "Show the frame rate in the window title");
++REXCVAR_DEFINE_BOOL(eck_show_render_resolution, false, "El Chavo Kart",
++                    "Show the render resolution in the window title");
+ REXCVAR_DEFINE_BOOL(eck_show_frame_counter, false, "El Chavo Kart",
+                     "Show the frame counter in the corner (F2 toggles it)");
+ REXCVAR_DEFINE_BOOL(eck_msaa_compatibility, false, "El Chavo Kart",
+@@ -52,6 +60,10 @@ REXCVAR_DEFINE_STRING(eck_player_1_name, "Player 1", "El Chavo Kart",
+                       "Name shown for local player 1; save data is not affected");
+ REXCVAR_DEFINE_STRING(eck_player_2_name, "Player 2", "El Chavo Kart",
+                       "Name shown for local player 2; save data is not affected");
++REXCVAR_DEFINE_STRING(eck_player_3_name, "Player 3", "El Chavo Kart",
++                      "Name shown for local player 3; save data is not affected");
++REXCVAR_DEFINE_STRING(eck_player_4_name, "Player 4", "El Chavo Kart",
++                      "Name shown for local player 4; save data is not affected");
+ REXCVAR_DEFINE_INT32(eck_launcher_x, 0, "El Chavo Kart", "Launcher window left edge, written by the launcher");
+ REXCVAR_DEFINE_INT32(eck_launcher_y, 0, "El Chavo Kart", "Launcher window top edge, written by the launcher");
+ REXCVAR_DEFINE_INT32(eck_launcher_width, 0, "El Chavo Kart", "Launcher window restored width, written by the launcher");
+@@ -76,16 +88,23 @@ std::vector<std::string> GameSettingKeys() {
+       kTearingSetting,
+       "eck_graphics_adapter",
+       "resolution_scale",
++      "eck_internal_render_scale",
+       "swap_post_effect",
+       "eck_msaa_compatibility",
+       "anisotropic_override",
++      "eck_aspect_ratio",
++      "eck_frame_rate",
++      "eck_skip_intro",
+       "eck_show_fps",
++      "eck_show_render_resolution",
+       "eck_show_frame_counter",
+       kLanguageSetting,
+       "detailed_logging",
+       "mnk_mode",
+       "eck_player_1_name",
+       "eck_player_2_name",
++      "eck_player_3_name",
++      "eck_player_4_name",
+   };
+   for (const KeyboardAction& action : kKeyboardActions) {
+     keys.emplace_back(action.key);
+@@ -216,6 +235,17 @@ std::string TextureFilteringName(std::string_view value) {
+   return std::string(value);
+ }
+ 
++std::string InternalRenderLabel(int percent) {
++  switch (NormalizeInternalRenderScale(percent)) {
++    case kInternalRenderScalePerformance:
++      return "75% Performance";
++    case kInternalRenderScaleLowEnd:
++      return "50% Low-end";
++    default:
++      return "100% Native";
++  }
++}
++
+ std::string GameStateName(GameFiles state) {
+   switch (state) {
+     case GameFiles::kReady:
+@@ -380,6 +410,7 @@ void GameSettings::Apply() const {
+     rex::cvar::SetFlagByName(key, value);
+   }
+   ApplyMultisampling();
++  ApplyInternalRenderPath();
+   ApplyLanguage();
+   ApplyPlayerNames();
+ }
+@@ -407,6 +438,17 @@ void ApplyPlayerNames() {
+   }
+ }
+ 
++void ApplyInternalRenderPath() {
++#if defined(_WIN32)
++  const std::optional<std::string_view> path = RequiredRenderTargetPath(
++      std::atoi(rex::cvar::GetFlagByName("eck_internal_render_scale").c_str()),
++      rex::cvar::GetFlagByName("render_target_path_d3d12"));
++  if (path && rex::cvar::SetFlagByName("render_target_path_d3d12", *path)) {
++    REXLOG_INFO("Internal render resolution: using D3D12 host render targets");
++  }
++#endif
++}
++
+ void ApplyGraphicsAdapter() {
+ #if defined(_WIN32)
+   const std::string setting = REXCVAR_GET(eck_graphics_adapter);
+@@ -430,7 +472,13 @@ void ApplyGraphicsAdapter() {
+ 
+ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& display, int monitor,
+                            const std::filesystem::path& game_dir, const StartupWindowInfo& window) {
++  const AspectRatio aspect = ParseAspectRatio(settings.Get("eck_aspect_ratio", "16:9"));
++  const int frame_rate = FrameRateFromText(settings.Get("eck_frame_rate", "60"));
++  const int guest_width = GuestWidth(aspect);
+   const int scale = std::max(1, std::atoi(rex::cvar::GetFlagByName("resolution_scale").c_str()));
++  const int percent = NormalizeInternalRenderScale(
++      std::atoi(rex::cvar::GetFlagByName("eck_internal_render_scale").c_str()));
++  const InternalRenderSplit split = SplitInternalRenderScale(scale, percent);
+   const std::string selected_card = SelectedGraphicsCardLabel(settings);
+   const bool selected_fullscreen = settings.GetBool("fullscreen", false);
+   const bool selected_tearing = settings.GetBool(kTearingSetting, false);
+@@ -447,16 +495,22 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
+           : "Default";
+   diagnostics.launcher_display.monitor =
+       monitor > 0 ? "Display " + std::to_string(monitor) : "Default (primary)";
++  diagnostics.launcher_display.aspect_ratio = InfoFor(aspect).label;
+   diagnostics.launcher_display.vsync = selected_tearing ? "Off" : "On";
+ 
+   diagnostics.launcher_gameplay.language = language.label;
++  diagnostics.launcher_gameplay.skip_intro = OnOff(settings.GetBool("eck_skip_intro", false));
++  diagnostics.launcher_gameplay.frame_rate = FrameRateLabel(frame_rate);
+   diagnostics.launcher_gameplay.frame_rate_in_title = OnOff(settings.GetBool("eck_show_fps", true));
++  diagnostics.launcher_gameplay.render_resolution_in_title =
++      OnOff(settings.GetBool("eck_show_render_resolution", false));
+   diagnostics.launcher_gameplay.frame_counter = settings.GetBool("eck_show_frame_counter", false) ? "Shown" : "Hidden";
+ 
+   diagnostics.launcher_graphics.graphics_card = selected_card;
+   diagnostics.launcher_graphics.render_resolution =
+       (scale == 1 ? std::string("Original") : std::to_string(scale) + "x") + " (" +
+-      std::to_string(kGuestWidth * scale) + "x" + std::to_string(kGuestHeight * scale) + ")";
++      std::to_string(guest_width * scale) + "x" + std::to_string(kGuestHeight * scale) + ")";
++  diagnostics.launcher_graphics.internal_render_resolution = InternalRenderLabel(percent);
+   diagnostics.launcher_graphics.anti_aliasing =
+       ChoiceLabel({{"none", "Off"}, {"fxaa", "FXAA"}, {"fxaa_extreme", "FXAA Extreme"}},
+                   settings.Get("swap_post_effect", "none"), "Off");
+@@ -504,12 +558,16 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
+   diagnostics.language.user_language = uint32_t(std::atoi(CvarText("user_language", "0").c_str()));
+   diagnostics.language.user_country = uint32_t(std::atoi(CvarText("user_country", "0").c_str()));
+ 
++  diagnostics.gameplay.frame_rate = FrameRateLabel(frame_rate);
+   diagnostics.gameplay.present = PresentationText(runtime_tearing);
+ 
+-  diagnostics.graphics.render_width = kGuestWidth * scale;
++  diagnostics.graphics.render_width = guest_width * scale;
+   diagnostics.graphics.render_height = kGuestHeight * scale;
+-  diagnostics.graphics.guest_width = kGuestWidth;
++  diagnostics.graphics.guest_width = guest_width;
+   diagnostics.graphics.guest_height = kGuestHeight;
++  diagnostics.graphics.render_percent = percent;
++  diagnostics.graphics.host_quarters = split.host_quarters;
++  diagnostics.graphics.resolve_scale = split.resolve_scale;
+   diagnostics.graphics.msaa = settings.GetBool("eck_msaa_compatibility", false) ? "4x compatibility" : "2x native";
+   diagnostics.graphics.anti_aliasing = diagnostics.launcher_graphics.anti_aliasing;
+   diagnostics.graphics.texture_filtering = diagnostics.launcher_graphics.texture_filtering;
+@@ -527,7 +585,7 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
+                         " | output=" + std::to_string(window.output_width) + "x" +
+                         std::to_string(window.output_height))
+                            .c_str(),
+-                       ("frame_rate=60 | " + diagnostics.gameplay.present).c_str(),
++                       ("frame_rate=" + FrameRateLabel(frame_rate) + " | " + diagnostics.gameplay.present).c_str(),
+                        ("render=" + std::to_string(diagnostics.graphics.render_width) + "x" +
+                         std::to_string(diagnostics.graphics.render_height) + " | msaa=" + diagnostics.graphics.msaa +
+                         " | language=" + language.package)
+diff --git a/src/settings.h b/src/settings.h
+index 83e1174..a0b03d4 100644
+--- a/src/settings.h
++++ b/src/settings.h
+@@ -16,7 +16,11 @@
+ REXCVAR_DECLARE(bool, eck_launcher);
+ REXCVAR_DECLARE(bool, eck_skip_launcher);
+ REXCVAR_DECLARE(std::string, eck_language);
++REXCVAR_DECLARE(bool, eck_skip_intro);
++REXCVAR_DECLARE(int32_t, eck_frame_rate);
++REXCVAR_DECLARE(std::string, eck_aspect_ratio);
+ REXCVAR_DECLARE(bool, eck_show_fps);
++REXCVAR_DECLARE(bool, eck_show_render_resolution);
+ REXCVAR_DECLARE(bool, eck_show_frame_counter);
+ REXCVAR_DECLARE(bool, eck_msaa_compatibility);
+ REXCVAR_DECLARE(bool, detailed_logging);
+@@ -54,6 +58,9 @@ void ApplyMultisampling();
+ // ApplyMultisampling.
+ void ApplyLanguage();
+ 
++// Selects the D3D12 host render targets a reduced Internal render resolution needs. Call with ApplyMultisampling.
++void ApplyInternalRenderPath();
++
+ // Sets the SDK's local player names from the launcher's Player names. Call with ApplyMultisampling.
+ void ApplyPlayerNames();
+ 
+diff --git a/src/window_host.cpp b/src/window_host.cpp
+index c4af01b..a14ce35 100644
+--- a/src/window_host.cpp
++++ b/src/window_host.cpp
+@@ -31,8 +31,10 @@
+ #include <rex/ui/window_listener.h>
+ #include <rex/ui/windowed_app_context.h>
+ 
++#include "aspect_ratio.h"
+ #include "cursor_input.h"
+-#include "frame_pacer.h"
++#include "debug_telemetry.h"
++#include "frame_limiter.h"
+ #include "input_activity.h"
+ #include "settings.h"
+ #include "window_title.h"
+@@ -71,10 +73,19 @@ uint64_t g_sample_frames = 0;
+ uint64_t g_total_frames = 0;
+ GuestFrameStats g_stats;
+ 
++std::optional<std::string> TitleResolution() {
++  if (!REXCVAR_GET(eck_show_render_resolution)) {
++    return std::nullopt;
++  }
++  const int scale = std::max(1, std::atoi(rex::cvar::GetFlagByName("resolution_scale").c_str()));
++  return eck::RenderResolutionText(
++      scale, eck::GuestWidth(eck::ParseAspectRatio(REXCVAR_GET(eck_aspect_ratio))));
++}
++
+ // Composes all title parts together, so one update never drops another.
+ void RefreshTitle() {
+   const std::optional<double> fps = REXCVAR_GET(eck_show_fps) ? g_title_fps : std::nullopt;
+-  std::string title = eck::WindowTitleText(fps);
++  std::string title = eck::WindowTitleText(TitleResolution(), fps);
+   if (title != g_shown_title) {
+     g_shown_title = title;
+     g_window->SetTitle(title);
+@@ -291,7 +302,8 @@ GuestFrameStats GetGuestFrameStats() {
+ 
+ // Named like the SDK's export, so REX_EXTERN would call this hook again: the original is called by its entry point.
+ REX_HOOK_RAW(__imp__VdSwap) {
+-  eck::PaceGuestSwap();
++  eck::PaceGuestFrame();
+   rex::ppc::HostToGuestFunction<rex::kernel::xboxkrnl::VdSwap_entry>(ctx, base);
++  eck::debug::OnSwap();  // DEBUG_SAULO
+   CountGuestFrame();
+ }
+diff --git a/src/window_sizes.h b/src/window_sizes.h
+index a345b78..d614685 100644
+--- a/src/window_sizes.h
++++ b/src/window_sizes.h
+@@ -11,8 +11,4 @@ struct WindowSize {
+   int height;
+ };
+ 
+-inline constexpr WindowSize kWindowSizes[] = {
+-    {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160},
+-};
+-
+ }  // namespace eck
+diff --git a/src/window_title.h b/src/window_title.h
+index 20b4383..fd779f1 100644
+--- a/src/window_title.h
++++ b/src/window_title.h
+@@ -8,9 +8,17 @@
+ 
+ namespace eck {
+ 
+-// The game title, then the frame rate when it is shown, separated by " | ".
+-inline std::string WindowTitleText(std::optional<double> fps) {
++// The launcher's Render resolution, e.g. 2560x1440 at 2x. The internal render scale is not part of it.
++inline std::string RenderResolutionText(int resolution_scale, int guest_width = kGuestWidth) {
++  return std::to_string(guest_width * resolution_scale) + "x" + std::to_string(kGuestHeight * resolution_scale);
++}
++
++// The game title, then the render resolution and the frame rate when they are shown, separated by " | ".
++inline std::string WindowTitleText(std::optional<std::string> resolution, std::optional<double> fps) {
+   std::string title = kWindowTitle;
++  if (resolution) {
++    title += " | " + *resolution;
++  }
+   if (fps) {
+     char text[32];
+     const auto end = std::to_chars(text, text + sizeof(text), *fps, std::chars_format::fixed, 2).ptr;
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index e01e1b8..f5b9d22 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -29,3 +29,16 @@ target_compile_definitions(eck_ui_text_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}
+ 
+ add_executable(eck_achievements_tests achievements_tests.cpp)
+ target_include_directories(eck_achievements_tests PRIVATE "${ECK_SRC_DIR}" stubs)
++
++
++add_executable(eck_launcher_logic_tests launcher_logic_tests.cpp)
++target_include_directories(eck_launcher_logic_tests PRIVATE "${ECK_SRC_DIR}")
++
++
++add_executable(eck_frame_limiter_tests frame_limiter_tests.cpp "${ECK_SRC_DIR}/frame_wait.cpp")
++target_include_directories(eck_frame_limiter_tests PRIVATE "${ECK_SRC_DIR}")
++target_compile_definitions(eck_frame_limiter_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
++
++
++add_executable(eck_debug_telemetry_tests debug_telemetry_tests.cpp)
++target_include_directories(eck_debug_telemetry_tests PRIVATE "${ECK_SRC_DIR}")
+diff --git a/tools/test.ps1 b/tools/test.ps1
+index 44b4214..dd0305c 100644
+--- a/tools/test.ps1
++++ b/tools/test.ps1
+@@ -30,7 +30,7 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
+     catch { $Failures.Add("${Name}: $($_.Exception.Message)"); Write-Host "  FAILED: $($_.Exception.Message)" -ForegroundColor Red }
+ }
+ 
+-if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests' -match $Filter) {
++if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_frame_limiter_tests eck_debug_telemetry_tests' -match $Filter) {
+     Test-Step 'Console tests (tests\CMakeLists.txt)' {
+         $Toolchain = Get-BuildToolchain
+         $SavedEnv = Save-BuildEnvironment
+@@ -43,7 +43,7 @@ if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tes
+             & $Toolchain.CMake --build $BuildDir | Out-Host
+             if ($LASTEXITCODE) { throw "Test build failed ($LASTEXITCODE)" }
+         } finally { Restore-BuildEnvironment $SavedEnv }
+-        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests')) {
++        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests')) {
+             if ($Filter -and $name -notmatch $Filter) { continue }
+             $exe = Join-Path $BuildDir "$name.exe"
+             Write-Host "Running $name..."
