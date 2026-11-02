@@ -1,0 +1,9 @@
+# rexglue codegen rewrites the manifest with LF endings on every run.
+el_chavo_kart_manifest.toml text eol=lf
+
+# The runtime patches are applied with git apply.
+patches/rexglue-sdk/* text eol=lf
+
+*.sh text eol=lf
+*.png binary
+*.ico binary

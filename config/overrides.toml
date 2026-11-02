@@ -1,0 +1,23 @@
+# Manual analysis fixes for El Chavo Kart (default.xex, title 475807D7)
+
+[functions]
+# Tail-branch targets placed directly after another function's bctr or b with no padding; the analyzer
+# registers only the first function of each run, so codegen Validate fails without them.
+0x82FBFBC0 = { end = 0x82FBFBD0 }  # vtable forwarder, slot 0x28
+0x82FBFC38 = { end = 0x82FBFC48 }  # vtable forwarder, slot 0x38
+0x82FBFCE8 = { end = 0x82FBFCF8 }  # vtable forwarder, slot 0x44
+0x82FBFCF8 = { end = 0x82FBFD08 }  # vtable forwarder, slot 0x48
+0x82FBFD08 = { end = 0x82FBFD18 }  # vtable forwarder, slot 0x4C
+0x82FBFD18 = { end = 0x82FBFD28 }  # vtable forwarder, slot 0x50
+0x82B90068 = { end = 0x82B9006C }  # tail thunk
+0x82E4D8D8 = { end = 0x82E4D8DC }  # tail thunk
+0x82E514C8 = { end = 0x82E514CC }  # tail thunk
+0x82FCB148 = { end = 0x82FCB1B4 }
+0x832C3910 = {}
+0x832D9690 = {}  # reached from the this-adjustor at 0x832DDF90
+
+# Vtable-only functions that follow a b with no padding.
+0x8331B5C8 = { end = 0x8331B5D0 }  # this-adjustor, vtable 0x820EAD10
+0x82FB2700 = {}  # data ptr 0x82077CC8
+0x82FD0910 = {}  # data ptr 0x82078848
+0x82FD0A28 = {}  # data ptr 0x820788A8

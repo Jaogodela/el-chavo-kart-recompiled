@@ -1,0 +1,28 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "El Chavo Kart",
+  "system": "Xbox 360",
+  "type": "recomp",
+  "original": {
+    "revision": "0.0.0.3"
+  },
+  "project": "El Chavo Kart Recompiled",
+  "status": "in-development",
+  "targets": [
+    "Windows"
+  ],
+  "toolchain": "Rexglue",
+  "approach": "Static recompilation of the Xbox 360 retail disc version to native PC code using ReXGlue",
+  "maintainers": [
+    {
+      "name": "saulob",
+      "link": "https://github.com/saulob"
+    }
+  ],
+  "links": [],
+  "tags": [
+    "launcher",
+    "achievements"
+  ],
+  "notes": "Early development. Native Windows build with the TRG launcher, Brazilian Portuguese as the default language, local saves and achievements, and the original 60 FPS presentation."
+}

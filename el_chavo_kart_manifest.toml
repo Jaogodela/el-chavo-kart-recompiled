@@ -1,0 +1,12 @@
+[project]
+name = "el_chavo_kart"
+sdk_version = "0.10.0"
+game_root = "game/extracted"
+
+[entrypoint]
+file_path = "game/extracted/default.xex"
+out_directory_path = "generated/default"
+includes = ["config/overrides.toml", "config/discovered-functions.toml"]
+# CRT setjmp/longjmp, called from 7 sites in the title.
+setjmp_address = 0x830BDFB0
+longjmp_address = 0x830BDC90
