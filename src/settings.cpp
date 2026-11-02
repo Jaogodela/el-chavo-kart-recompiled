@@ -20,6 +20,7 @@
 
 #include "crash_report.h"
 #include "diagnostics.h"
+#include "dpi.h"
 #include "game_files.h"
 #include "graphics_adapters.h"
 #include "input_summary.h"
@@ -40,6 +41,8 @@ REXCVAR_DEFINE_STRING(eck_language, "pt-BR", "El Chavo Kart",
                       "Game and launcher language: pt-BR, en-US, es-MX or es-ES (sets user_language and user_country "
                       "at start)");
 REXCVAR_DEFINE_BOOL(eck_show_fps, true, "El Chavo Kart", "Show the frame rate in the window title");
+REXCVAR_DEFINE_BOOL(eck_show_frame_counter, false, "El Chavo Kart",
+                    "Show the frame counter in the corner (F2 toggles it)");
 REXCVAR_DEFINE_BOOL(eck_msaa_compatibility, false, "El Chavo Kart",
                     "Draw the game's 2x MSAA render targets with 4x MSAA, for GPUs or drivers whose "
                     "native 2x MSAA misrenders (sets native_2x_msaa)");
@@ -77,6 +80,7 @@ std::vector<std::string> GameSettingKeys() {
       "eck_msaa_compatibility",
       "anisotropic_override",
       "eck_show_fps",
+      "eck_show_frame_counter",
       kLanguageSetting,
       "detailed_logging",
       "mnk_mode",
@@ -247,6 +251,27 @@ WindowPlacement SavedLauncherPlacement() {
 
 bool SavedLauncherFullscreen() {
   return REXCVAR_GET(eck_launcher_fullscreen);
+}
+
+void FitWindowToDisplay() {
+  constexpr double kGameWindowDisplayShare = 0.9;
+  const int width = std::atoi(rex::cvar::GetFlagByName("window_width").c_str());
+  const int height = std::atoi(rex::cvar::GetFlagByName("window_height").c_str());
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  const MonitorInfo display = MonitorForSetting(std::atoi(rex::cvar::GetFlagByName("monitor").c_str()));
+  if (display.width == 0) {
+    return;
+  }
+  const DpiWindowSize fit =
+      FitWindowToWorkArea(width, height, display.work_width, display.work_height, display.scale, kGameWindowDisplayShare);
+  if (fit.width == width && fit.height == height) {
+    return;
+  }
+  REXLOG_INFO("Window reduced from {}x{} to {}x{} to fit the display", width, height, fit.width, fit.height);
+  rex::cvar::SetFlagByName("window_width", std::to_string(fit.width));
+  rex::cvar::SetFlagByName("window_height", std::to_string(fit.height));
 }
 
 void GameSettings::Capture(const std::filesystem::path& player_file, const std::filesystem::path& shipped_config) {
@@ -426,6 +451,7 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
 
   diagnostics.launcher_gameplay.language = language.label;
   diagnostics.launcher_gameplay.frame_rate_in_title = OnOff(settings.GetBool("eck_show_fps", true));
+  diagnostics.launcher_gameplay.frame_counter = settings.GetBool("eck_show_frame_counter", false) ? "Shown" : "Hidden";
 
   diagnostics.launcher_graphics.graphics_card = selected_card;
   diagnostics.launcher_graphics.render_resolution =

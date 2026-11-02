@@ -181,6 +181,7 @@ set(ECK_SOURCES
     src/active_log.cpp
     src/crash_report.cpp
     src/diagnostics.cpp
+    src/frame_counter.cpp
     src/frame_pacer.cpp
     src/game_files.cpp
     src/graphics_adapters.cpp

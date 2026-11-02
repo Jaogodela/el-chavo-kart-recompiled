@@ -32,6 +32,7 @@ stock DLLs. The whole series was checked with `git apply` in order against a cle
 | 0022 audio-thread-priority | Marvel Ultimate Alliance 0115 | Audio and XMA threads not starved |
 | 0023 object-lookup-already-locked | Marvel Ultimate Alliance 0116 | Object lookup without re-locking |
 | 0024 xam-zero-size-profile-settings | Marvel Ultimate Alliance 0142 | Empty profile setting writes |
+| 0025 disable-debug-and-settings-overlay-binds | Marvel Ultimate Alliance 0146 | F3 and F4 stay unassigned |
 
 Not carried: Marvel Ultimate Alliance 0137 (XMA stream packet continuity). It depends on that project's audio
 diagnostics patch, and is the first candidate to evaluate if the log shows FFmpeg XMA errors such as "would have to skip

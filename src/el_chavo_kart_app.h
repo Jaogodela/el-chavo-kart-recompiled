@@ -22,6 +22,7 @@
 #include "achievements_overlay.h"
 #include "active_log.h"
 #include "diagnostics.h"
+#include "frame_counter.h"
 #include "game_files.h"
 #include "gpu_plugin_check.h"
 #include "guest_functions.h"
@@ -122,6 +123,7 @@ class ElChavoKartApp : public rex::ReXApp {
       eck::PrepareLauncherWindow();
     }
     game_settings_.MarkWindowCreated();
+    eck::FitWindowToDisplay();
   }
 
   std::optional<rex::PathConfig> OnFinalizePaths(const rex::PathConfig& defaults,
@@ -218,6 +220,7 @@ class ElChavoKartApp : public rex::ReXApp {
       eck::CheckWindowDisplay(window()->GetNativeWindowHandle(), REXCVAR_GET(monitor));
     }
     if (window() && imgui_drawer()) {
+      eck::CreateFrameCounter(imgui_drawer());
       CreateCursorSync(imgui_drawer());
       if (auto* input = static_cast<rex::input::InputSystem*>(runtime()->input_system())) {
         input->SetActiveCallback([] { return !eck::ModalDialog::AnyOpen(); });

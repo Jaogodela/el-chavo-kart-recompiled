@@ -17,6 +17,7 @@ REXCVAR_DECLARE(bool, eck_launcher);
 REXCVAR_DECLARE(bool, eck_skip_launcher);
 REXCVAR_DECLARE(std::string, eck_language);
 REXCVAR_DECLARE(bool, eck_show_fps);
+REXCVAR_DECLARE(bool, eck_show_frame_counter);
 REXCVAR_DECLARE(bool, eck_msaa_compatibility);
 REXCVAR_DECLARE(bool, detailed_logging);
 REXCVAR_DECLARE(std::string, eck_graphics_adapter);
@@ -78,6 +79,9 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
 // The launcher window placement loaded from the player file.
 WindowPlacement SavedLauncherPlacement();
 bool SavedLauncherFullscreen();
+
+// Reduces the window_width/height cvars so a window at the display's scaling fits the work area.
+void FitWindowToDisplay();
 
 // Edits stay pending until Save() or Apply(), so nothing reaches the window while the launcher is open.
 class GameSettings final : public trg::SettingsStore {

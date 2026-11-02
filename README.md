@@ -124,7 +124,8 @@ Default keyboard layout:
 | D-pad | Shift + arrows |
 | Right stick | I / J / K / L |
 
-Port hotkeys: **F7** achievements, **F11** fullscreen.
+Port hotkeys: **F2** frame counter (session only; the Gameplay page sets the starting state), **F7** achievements,
+**F11** Windowed / Borderless Fullscreen, **Alt+F4** exit. **F3** and **F4** are unassigned; Escape does not quit.
 
 ## Saves and achievements
 

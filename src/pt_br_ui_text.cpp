@@ -51,6 +51,10 @@ Multisampling	Multisampling
 Texture filtering	Filtragem de texturas
 Game	Jogo
 Frame rate in title	FPS no título
+Frame counter	Contador de FPS
+Shows the game's frame rate in the corner. F2 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F2 liga e desliga durante o jogo.
+Hidden	Oculto
+Shown	Visível
 Install the game to see its achievements.	Instale o jogo para ver as conquistas dele.
 The achievements could not be read from the game files.	Não foi possível ler as conquistas dos arquivos do jogo.
 %d / %d unlocked	%d / %d desbloqueadas

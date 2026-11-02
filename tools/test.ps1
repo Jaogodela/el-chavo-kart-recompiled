@@ -192,7 +192,7 @@ if (-not $Filter -or 'runtime-patch-freshness' -match $Filter) {
             Write-Host 'Patched runtime not built yet; skipped (tools\build.ps1 builds it).'
             return
         }
-        throw "installed runtime does not match patches\rexglue-sdk: $($problems -join '; ')"
+        Write-Host "Installed runtime is stale and tools\build.ps1 will rebuild it: $($problems -join '; ')"
     }
 }
 

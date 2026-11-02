@@ -577,7 +577,8 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   }
 
   static bool WindowSizeFits(int width, int height, const MonitorInfo* monitor) {
-    return !monitor || (width * monitor->scale < monitor->width && height * monitor->scale < monitor->height);
+    return !monitor || FitWindowToWorkArea(width, height, monitor->work_width, monitor->work_height, monitor->scale,
+                                           kLauncherMaxShare) == DpiWindowSize{width, height};
   }
 
   // window_width/height are logical pixels; display scaling enlarges them.
@@ -675,6 +676,8 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     ui.Combo(kLanguageLabel, kLanguageHelp, kLanguageSetting, kDefaultLanguage, languages);
     ui.Toggle("Frame rate in title", "Shows the game's frame rate in the window title: El Chavo Kart Recompiled | FPS: 60.00",
               "eck_show_fps", true, "Off", "On");
+    ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F2 toggles it while playing.",
+              "eck_show_frame_counter", false, "Hidden", "Shown");
     if (ui.Section("Player names", true)) {
       ui.Help(kPlayerNamesHelp);
       for (const PlayerNameSetting& player : kPlayerNames) {
