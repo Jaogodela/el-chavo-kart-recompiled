@@ -42,3 +42,11 @@ target_compile_definitions(eck_frame_limiter_tests PRIVATE ECK_SRC_DIR="${ECK_SR
 
 add_executable(eck_debug_telemetry_tests debug_telemetry_tests.cpp)
 target_include_directories(eck_debug_telemetry_tests PRIVATE "${ECK_SRC_DIR}")
+
+add_executable(eck_main_menu_tests
+    main_menu_tests.cpp
+    "${ECK_SRC_DIR}/main_menu_swf.cpp"
+    "${ECK_SRC_DIR}/sha256.cpp"
+)
+target_include_directories(eck_main_menu_tests PRIVATE "${ECK_SRC_DIR}")
+target_compile_definitions(eck_main_menu_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")

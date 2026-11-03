@@ -28,10 +28,12 @@
 #include "game_files.h"
 #include "gpu_plugin_check.h"
 #include "guest_functions.h"
+#include "hard_exit.h"
 #include "input_summary.h"
 #include "launcher.h"
 #include "log_filter.h"
 #include "log_path.h"
+#include "main_menu_hooks.h"
 #include "modal_dialog.h"
 #include "platform.h"
 #include "port_version.h"
@@ -104,6 +106,7 @@ class ElChavoKartApp : public rex::ReXApp {
     };
     REXLOG_INFO("{}", eck::FormatApplicationVersion(identity));
     REXLOG_INFO("{}", eck::FormatBuildIdentity(identity));
+    eck::LogMainMenuHooks();  // DEBUG_SAULO
     REXLOG_INFO("{}", eck::GameFilesLogText(eck::CheckGameFiles(game_data_root())));
     REXLOG_INFO("Profile settings: <user data>/{:08X}/profile/User; achievements: <user data>/achievements/{:08X}.toml",
                 eck::kTitleId, eck::kTitleId);
@@ -248,12 +251,7 @@ class ElChavoKartApp : public rex::ReXApp {
 
   // Window close is a hard exit: the base TerminateTitle would call StopTitleThreads and wait on guest
   // threads that are still running guest code. The OS reclaims the process.
-  void OnClosing(rex::ui::UIEvent&) override {
-    REXLOG_INFO("Window closing, hard-exiting process.");
-    eck::debug::FlushSessionSummary();  // DEBUG_SAULO
-    eck::PrepareHardExit();
-    std::_Exit(0);
-  }
+  void OnClosing(rex::ui::UIEvent&) override { eck::HardExit("Window closing, hard-exiting process."); }
 
   // F7 toggles the achievements overlay. The overlay is owned here, not by ReXApp.
   std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override {

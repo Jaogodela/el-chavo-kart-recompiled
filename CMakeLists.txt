@@ -189,12 +189,15 @@ set(ECK_SOURCES
     src/game_files.cpp
     src/graphics_adapters.cpp
     src/guest_functions.cpp
+    src/hard_exit.cpp
     src/imgui_gamepad.cpp
     src/input_summary.cpp
     src/launcher.cpp
     src/launcher_achievements.cpp
     src/log_filter.cpp
     src/log_path.cpp
+    src/main_menu_hooks.cpp
+    src/main_menu_swf.cpp
     src/modal_dialog.cpp
     src/notice_dialog.cpp
     src/platform.cpp
