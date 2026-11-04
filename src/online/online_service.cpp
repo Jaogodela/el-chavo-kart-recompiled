@@ -290,6 +290,9 @@ void OnlineService::OnResponse(const ServerMessage& message, double now) {
     case Purpose::kTransport:
       if (!ok) Log("online transport report refused code=" + message.code);
       break;
+    case Purpose::kRace:
+      if (!ok) Log("online race report refused code=" + message.code);
+      break;
   }
 }
 
@@ -601,6 +604,31 @@ bool OnlineService::JoinRoom(const std::string& handle) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!Connected() || InRoom()) return false;
   Send(Purpose::kRoomJoin, [&](int seq) { return EncodeRoomJoin(seq, handle); });
+  return true;
+}
+
+RaceTelemetryContext OnlineService::RaceContext() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  RaceTelemetryContext context;
+  context.ready = Connected() && capabilities_.race_telemetry;
+  if (room_ && room_->state != RoomState::kOpen) {
+    context.room = room_->room;
+    context.seat = seat_;
+  }
+  return context;
+}
+
+bool OnlineService::ReportRaceStart(const RaceStartFields& race) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!Connected() || !capabilities_.race_telemetry) return false;
+  Send(Purpose::kRace, [&](int seq) { return EncodeRaceStart(seq, race); });
+  return true;
+}
+
+bool OnlineService::ReportRaceComplete(const RaceCompleteFields& race) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!Connected() || !capabilities_.race_telemetry) return false;
+  Send(Purpose::kRace, [&](int seq) { return EncodeRaceComplete(seq, race); });
   return true;
 }
 

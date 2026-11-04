@@ -35,6 +35,7 @@
 #include "debug_telemetry.h"
 #include "frame_limiter.h"
 #include "input_activity.h"
+#include "input_focus.h"
 #include "settings.h"
 #include "window_title.h"
 
@@ -52,9 +53,13 @@ namespace {
 constexpr double kSampleSeconds = 1.0;
 // Above the app's own input listener (z-order 0), so F11 never reaches the game.
 constexpr size_t kWindowHostZOrder = 1000;
+// Above the ImGui drawer (64) and the listeners that act on what reaches it.
+constexpr size_t kMouseFocusGateZOrder = 2000;
+constexpr char kInstanceEnv[] = "ECK_INSTANCE";  // DEBUG_SAULO
 
 using Clock = std::chrono::steady_clock;
 
+eck::InputFocus g_input_focus;
 std::atomic<bool> g_active{false};
 rex::ui::Window* g_window = nullptr;
 rex::ui::WindowedAppContext* g_app_context = nullptr;
@@ -221,6 +226,33 @@ class WindowHost final : public rex::ui::WindowListener, public rex::ui::WindowI
 
 WindowHost window_host;
 
+class MouseFocusGate final : public rex::ui::WindowInputListener {
+ public:
+  void OnMouseMove(rex::ui::MouseEvent& e) override { Gate(e, eck::MouseAction::kMove); }
+  void OnMouseDown(rex::ui::MouseEvent& e) override { Gate(e, eck::MouseAction::kDown); }
+  void OnMouseUp(rex::ui::MouseEvent& e) override { Gate(e, eck::MouseAction::kUp); }
+  void OnMouseWheel(rex::ui::MouseEvent& e) override { Gate(e, eck::MouseAction::kWheel); }
+
+ private:
+  static void Gate(rex::ui::MouseEvent& e, eck::MouseAction action) {
+    if (!eck::MouseReachesUi(g_input_focus.accepted(), action)) {
+      e.set_handled(true);
+    }
+  }
+};
+
+MouseFocusGate mouse_focus_gate;
+
+// Through the drawer's own release, which also drops its mouse capture; the position leaves the window, so nothing
+// stays hovered.
+void ReleaseImGuiMouse(rex::ui::Window* window, rex::ui::ImGuiDrawer* drawer) {
+  rex::ui::WindowInputListener& listener = *drawer;
+  for (const auto button : {rex::ui::MouseEvent::Button::kLeft, rex::ui::MouseEvent::Button::kRight}) {
+    rex::ui::MouseEvent release(window, button, -1, -1);
+    listener.OnMouseUp(release);
+  }
+}
+
 // Runtime overlays are not ModalDialog, so ImGui's mouse capture is checked each frame.
 class CursorSync final : public rex::ui::ImGuiDialog {
  public:
@@ -254,6 +286,24 @@ void SetCursorOverlayOpen(bool open) {
   }
   g_cursor.SetOverlayOpen(open);
   UpdateCursor();
+}
+
+bool LocalInputAccepted() { return g_input_focus.accepted(); }
+
+void OnWindowFocus(bool focused, rex::ui::Window* window, rex::ui::ImGuiDrawer* drawer) {
+  if (!g_input_focus.Update(focused)) {
+    return;
+  }
+  if (!focused && drawer) {
+    ReleaseImGuiMouse(window, drawer);
+  }
+  const char* instance = std::getenv(kInstanceEnv);  // DEBUG_SAULO
+  REXLOG_INFO("{}", eck::InputFocusLogLine(focused, instance ? instance : "",
+                                           reinterpret_cast<uintptr_t>(window->GetNativeWindowHandle())));  // DEBUG_SAULO
+}
+
+void AttachMouseFocusGate(rex::ui::Window* window) {
+  window->AddInputListener(&mouse_focus_gate, kMouseFocusGateZOrder);
 }
 
 eck::WindowSize CurrentDrawableSize(rex::ui::Window* window) {

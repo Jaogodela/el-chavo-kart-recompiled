@@ -253,13 +253,43 @@ once per delivery, each seat of its capacity adding one sender's budget:
 256 dropped frames close the room's relay (`relay.closed` reason `rate_limit`). A recipient with more than 256 KiB queued loses
 its frames while the other seats keep theirs; 1024 such drops in a row close the relay (`peer_backpressure`).
 
-## 8. Presence and limits summary
+## 8. Race telemetry
+
+Anonymous race statistics (README.md, Race telemetry). The game sends these by itself, on the connection it already has, and only
+when `capabilities.race_telemetry` is true. A rejection is that call's own error code and never touches the room or the race.
+
+With `room`, the race belongs to a started room: only its host reports it, and the service reads the player count from the seats.
+Without `room`, it is this PC's own race, solo or split-screen, tied to this connection.
+
+### race.start
+`{"op":"race.start","seq":n,"room":"<id>","race":0,"competition":"time_attack","players":2,"track":4,"characters":[0,1]}` -> `{}`.
+- `race`: integer 0..65535. Room: the room's next race from 0, at most 64 (`limit`); an earlier number is a harmless repeat, a later
+  one is `race_order`. No room: any number above the last one on this connection; a number already used is a harmless repeat.
+- `competition`: `normal_race`, `time_attack`, `survival`, `endurance`, `coins`, `follow_the_leader`, `ctf`, `challenges`,
+  `challenges_ctf`.
+- `players`: optional, 1..4. Room: must equal the occupied seats. No room: defaults to the number of `characters`, else 1.
+- `track`: optional, `EKartTracks` id 0..19. `characters`: optional, one `EKartCharacterType` id 0..11 per human, in seat order; the same
+  id may repeat. The client leaves out what it could not prove. Ids are in `src/game_data.js`.
+- A race still pending when a new one starts counts as abandoned.
+- Errors: `bad_request`, `not_found`, `not_host`, `race_not_ready` (room not `racing`), `race_order`, `limit`.
+
+### race.complete
+`{"op":"race.complete","seq":n,"room":"<id>","race":0,"duration_ms":125000,"places":[3,1]}` -> `{}`.
+- `race`: the pending race; a repeat of one already finished is `{}`, anything else `race_mismatch`.
+- `duration_ms`: 1000 to 3600000, clamped to what the service measured since `race.start` plus 5 s.
+- `places`: optional, one distinct `RaceFinishPosition` 1..16 per human, in the order of `characters`.
+- Errors: `bad_request`, `not_found`, `not_host`, `race_mismatch`, `limit`.
+
+There is no leave message: a pending race ends as abandoned when its room closes, its connection ends or a new race starts.
+
+## 9. Presence and limits summary
 
 Limits: 4096-byte text frames, 60 msgs burst / 20 per s per socket, 10 burst / 1 per s for friends.add, room.host,
 room.join, invite.send, invite.accept and match.resume, 200 friends, 50 pending requests each way, 16 sockets per address,
 20 new players per address per day, seat hold 30 s, invite 60 s, open room 1 h, any room 4 h (`expired`), search results 20.
+Race telemetry: 30 burst / 1 per 3 s per account, 40 burst / 1 per 2 s per room (or per account, for a solo race).
 
-## 9. Error code index
+## 10. Error code index
 `bad_request too_large limit no_session internal proto bad_game bad_image unauthorized not_found not_friends offline
 version_mismatch busy already_in_room room_full room_not_open not_host need_players capacity_too_small invite_limit
-relay_unavailable`.
+relay_unavailable race_not_ready race_order race_mismatch`.

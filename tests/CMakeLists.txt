@@ -43,6 +43,11 @@ target_compile_definitions(eck_frame_limiter_tests PRIVATE ECK_SRC_DIR="${ECK_SR
 add_executable(eck_debug_telemetry_tests debug_telemetry_tests.cpp)
 target_include_directories(eck_debug_telemetry_tests PRIVATE "${ECK_SRC_DIR}")
 
+# Window focus decides which game process consumes local input.
+add_executable(eck_input_focus_tests input_focus_tests.cpp)
+target_include_directories(eck_input_focus_tests PRIVATE "${ECK_SRC_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(eck_input_focus_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
 add_executable(eck_main_menu_tests
     main_menu_tests.cpp
     "${ECK_SRC_DIR}/main_menu_swf.cpp"
@@ -101,6 +106,12 @@ target_include_directories(eck_online_race_tests PRIVATE "${ECK_SRC_DIR}")
 add_executable(eck_online_probe_tests online_probe_tests.cpp "${ECK_SRC_DIR}/online_probe.cpp"
     "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race.cpp")
 target_include_directories(eck_online_probe_tests PRIVATE "${ECK_SRC_DIR}")
+
+# Race telemetry: from the race URL and the game state to one start and one complete, against the service wire.
+add_executable(eck_online_race_telemetry_tests online_race_telemetry_tests.cpp "${ECK_SRC_DIR}/online_race_telemetry.cpp"
+    "${ECK_SRC_DIR}/online_race_url.cpp")
+target_link_libraries(eck_online_race_telemetry_tests PRIVATE eck_online_lib)
+target_include_directories(eck_online_race_telemetry_tests PRIVATE "${ECK_SRC_DIR}")
 
 # The Online menu model and the Start Race seam against a scripted service.
 add_executable(eck_online_menu_tests online_menu_tests.cpp "${ECK_SRC_DIR}/online_race.cpp")

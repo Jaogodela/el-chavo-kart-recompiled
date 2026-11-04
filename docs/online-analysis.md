@@ -564,7 +564,7 @@ quaternions. Inputs are rewritten every tick by `PlayerMove`.
 
 | # | Unknown | Probe | Expected log | Unlocks |
 | --- | --- | --- | --- | --- |
-| 1 | The string `LoadRace` evaluates | hook `sub_826A1F30` -> `online_probe::OnConsoleCommand` | `[ONLINE-RACE] url=open TA_...?NumHumanKarts=2?...`, `url.NumHumanKarts=2`, `url.PlayersArray=[..]` | URL builder for room races; the human limit |
+| 1 | The string `LoadRace` evaluates | hook `sub_826A1F30` -> `online_probe::OnConsoleCommand` | `[ONLINE-RACE] url=open TA-PistaCiudad_Circuito0?NumHumanKarts=2?...`, `url.NumHumanKarts=2`, `url.PlayersArray=[..]` | URL builder for room races; the human limit |
 | 2 | `AKartPawn` fields in guest memory | `PumpGuestProbes` `kart ...` line (one local, one remote-designated, 2 Hz) | `kart role=local id=0 pos=(x,y,z) ... speed=.. lap=..`; speed must rise with throttle | `KartState` encoder/decoder; corrects the derived offsets |
 | 3 | A remote kart as a human without a pad, never a CPU | `slot=` lines (GamePlayers, controller, `racing_ai`) after a forced race with the dry-run URL | `slot=1 user=1 human=yes controller=0x.. kart=0x.. racing_ai=no role=local` | virtual `LocalPlayer` per remote seat versus a controllerless pawn |
 | 4 | Where item and AI randomness is seeded | hook `sub_830B53B0` (srand) | `[ONLINE-RACE] seed=0x........ srand_caller=0x........` | broadcast `RaceConfig.seed`; see 11.2 for the per-thread limit |
@@ -574,3 +574,29 @@ quaternions. Inputs are rewritten every tick by `PlayerMove`.
 Open: the human limit and `CreatePlayer` for a pad that does not exist; the countdown value; whether `GamePlayers` order equals the human order
 of `KartURLPlayerData`; the pawn list order of karts; `getsockname`/`getsockopt` use; the meaning of `IsConsoleBuild(8)`. All `KartPawn` offsets above
 are derived and unverified.
+
+## 12. Race ids and race end (static, third pass)
+
+Static as well: read from the decoded `ChavoKartGame.xxx`, whose script and class defaults give the id tables. `server/eck-lobby/src/game_data.js`
+and `src/online_race_telemetry.cpp` copy them.
+
+| Fact | Source |
+| --- | --- |
+| Characters 0 to 11: Chavo, Quico, DonRamon, DonaFlorinda, ProfesorJirafales, Popis, Nono, SenorBarriga, DonaCleotilde, Paty, Rufino, Godinez. There are 12, and no Chiquinha | `KartCharacterInfo.EKartCharacterType` |
+| A `CharArray` value is that id | `KartGame_MainGame.PlayerCharacterClassNames[idChar]` has the 12 classes in enum order; `KartPawn.GetCharacterStats` branches on the id per character; `KartProgressManager_Cups.OnRaceEnded` saves `CharInfo.CharacterType` and `SetKartURLDataForCupResume` feeds it back as `Character` |
+| Tracks 0 to 19: map and display key per id | `EKartTracks`, with `normalTracks` and `normalTrackLocaleIDs` in the same order; `InferGameTrack` indexes the same array |
+| Display names | `name_*`, `track_name_*`, `game_mode_name_*` under `[KartScreen_Base]`, `Coalesced_PTB.bin` |
+| `NumSelectedTrack` is the global track only in Exhibition | `SetupExhibitionParams`. `SetupCupsParams` writes the track index inside the cup, `SetupChallengesParams` the challenge index |
+| Modes | `EKartGameMode` with `gameModesLevelPrefixes`: none Normal, `TA-`, `SU-`, `EN-`, `CO-`, `FO-`, `CT-`, `PO-`. The prefix ends in a dash: `TA-PistaCiudad_Circuito0`. No `MA-` or `FO-` map package ships |
+| Humans first in the URL arrays, bots after with `ControllerId` 99 | `KartScreen_PlayerSelectManager.SetKartURLData` |
+| No two local panels hold one character; bots take characters no human has | `IsPlayerSelectionOK`, `GetADifferentCharacterFrom` |
+| Exhibition writes `?GameType` with no `=` | `SetupExhibitionParams`; cups and challenges write `?GameType=2` and `=1` |
+
+Race end: `KartPawn.CheckRaceCompleted` sets `RaceFinishPosition` to the crossing order. `KartGame_NormalRace` ends when every human has
+finished, and gives unfinished karts their `RacePosition`. Coins, Endurance and Survival assign places in their own `EndRace`, and Capture the
+Flag gives every kart 1 or 2 by team. Each of those runs before `KartGame_MainGame.EndRace` sets `RaceState` to 4, so places are final by the time
+state 4 can be read.
+
+Not proven: every offset in `online_probe_layout.h` is still derived, and no log has confirmed one. The character packages hide their name tables,
+so a package's own `CharacterType` default was not read. `race_state=` and `layout_check` under `[DEBUG_SAULO][ANALYTICS]` settle both on the first
+real race: `match=yes` ties the pawn, `CharInfo` and `CharacterType` offsets to the URL.

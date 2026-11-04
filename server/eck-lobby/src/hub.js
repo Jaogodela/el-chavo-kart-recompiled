@@ -5,12 +5,12 @@
 // from them. The same class runs in the development server (local/server.js).
 import { PROTECTION, RateLimiter } from './abuse.js';
 import { Metrics, SAMPLE_MS, countryCode, platformCategory, sampleBucket, versionCategory } from './metrics.js';
-import { sha256Hex, toHex } from './sha256.js';
 import {
-  BUCKETS, CAPABILITIES, LIMITS, MIN_PLAYERS, ProtocolError, RELAY, RELAY_ROOM, SUPPORTED_IMAGES, compatible, fail, ipGroup,
-  ipv4Kind, isLocalAddress, normalizeFriendCode, ownEndpoint, parseCapacity, parseEndpoint, parseHello, parseRelayFrame,
-  parseRules,
+  BUCKETS, CAPABILITIES, LIMITS, MAX_RACES_PER_ROOM, MIN_PLAYERS, ProtocolError, RACE_DURATION_GRACE_MS, RELAY, RELAY_ROOM,
+  SUPPORTED_IMAGES, compatible, fail, ipGroup, ipv4Kind, isLocalAddress, normalizeFriendCode, ownEndpoint, parseCapacity,
+  parseEndpoint, parseHello, parseRaceComplete, parseRaceStart, parseRelayFrame, parseRules,
 } from './protocol.js';
+import { sha256Hex, toHex } from './sha256.js';
 
 const DAY_MS = 24 * 3600 * 1000;
 const SOCIAL_OPS = new Set(['friends.add', 'room.host', 'room.join', 'invite.send', 'invite.accept', 'match.resume', 'room.resume']);
@@ -32,7 +32,9 @@ const SCHEMA = [
      image TEXT NOT NULL, build INTEGER NOT NULL, rules TEXT NOT NULL, state TEXT NOT NULL,
      relay_token INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, updated INTEGER NOT NULL, refreshed INTEGER NOT NULL,
      started INTEGER, established INTEGER, peak INTEGER NOT NULL DEFAULT 1, platforms TEXT NOT NULL DEFAULT '',
-     used_direct INTEGER NOT NULL DEFAULT 0, used_relay INTEGER NOT NULL DEFAULT 0)`,
+     used_direct INTEGER NOT NULL DEFAULT 0, used_relay INTEGER NOT NULL DEFAULT 0, races INTEGER NOT NULL DEFAULT 0,
+     pending_race INTEGER, pending_started INTEGER, pending_players INTEGER, pending_competition TEXT,
+     pending_track INTEGER, pending_characters TEXT)`,
   `CREATE TABLE IF NOT EXISTS room_seats (room TEXT NOT NULL, seat INTEGER NOT NULL, player TEXT NOT NULL UNIQUE, cid TEXT,
      grace INTEGER, ready INTEGER NOT NULL DEFAULT 0, transport TEXT NOT NULL DEFAULT '', counted INTEGER NOT NULL DEFAULT 0,
      relay INTEGER NOT NULL DEFAULT 0, platform TEXT NOT NULL DEFAULT '', version TEXT NOT NULL DEFAULT '',
@@ -79,6 +81,30 @@ const seatTransport = (seat, room) =>
 
 const roomPeers = (seats) => seats.filter((s) => s.seat !== 0);
 
+// The race a room has running, as the metrics take it.
+const pendingRace = (room) => ({ competition: room.pending_competition, track: room.pending_track, playerCount: room.pending_players,
+  characters: room.pending_characters ? JSON.parse(room.pending_characters) : null });
+
+// What the seats ride on as the race ends: a seat that left no longer counts, and no peers at all is a pending race.
+function raceTransport(room, seats) {
+  const kinds = new Set(roomPeers(seats).map((s) => seatTransport(s, room)));
+  if (kinds.has('direct') && kinds.has('relay')) return 'mixed';
+  if (kinds.size !== 1) return 'pending';
+  return [...kinds][0];
+}
+
+const clampedDuration = (reported, started, now) => Math.min(reported, Math.max(0, now - started) + RACE_DURATION_GRACE_MS);
+
+const ROOM_RACE_COLUMNS = [['races', 'INTEGER NOT NULL DEFAULT 0'], ['pending_race', 'INTEGER'], ['pending_started', 'INTEGER'],
+  ['pending_players', 'INTEGER'], ['pending_competition', 'TEXT'], ['pending_track', 'INTEGER'], ['pending_characters', 'TEXT']];
+
+function ensureRoomRaceColumns(sql) {
+  const have = new Set(sql.all('PRAGMA table_info(rooms)').map((c) => c.name));
+  for (const [name, type] of ROOM_RACE_COLUMNS) {
+    if (!have.has(name)) sql.run(`ALTER TABLE rooms ADD COLUMN ${name} ${type}`);
+  }
+}
+
 // One room as the dashboard shows it: a short id and counts, no player, address, connection or token.
 function roomReport(room, seats, now) {
   const peers = roomPeers(seats).map((s) => seatTransport(s, room));
@@ -116,9 +142,12 @@ export class Hub {
       resumeAccount: new RateLimiter(PROTECTION.resumeAccount),
       inviteAccount: new RateLimiter(PROTECTION.inviteAccount),
       inviteAddress: new RateLimiter(PROTECTION.inviteAddress),
+      raceAccount: new RateLimiter(PROTECTION.raceAccount),
+      raceRoom: new RateLimiter(PROTECTION.raceRoom),
       rejects: new RateLimiter({ burst: 1, perSecond: 1000 / PROTECTION.rejectWindowMs }),
     };
     for (const statement of SCHEMA) host.sql.run(statement);
+    ensureRoomRaceColumns(host.sql);
     this.metrics = new Metrics(host.sql, () => host.now());
     if (!this.meta('salt')) this.setMeta('salt', this.randomHex(16));
     this.reconcile();
@@ -233,6 +262,8 @@ export class Hub {
     if (att) this.forgetRelayConnection(att.cid);
     if (!att?.hello) return;
     this.index = null;
+    if (att.localRace) this.track(() => this.metrics.raceAbandoned(att.localRace));
+    att.localRace = null;
     if (att.room) {
       const seat = this.seatRow(att.room, att.seat);
       if (seat && seat.cid === att.cid) {
@@ -363,6 +394,7 @@ export class Hub {
       rooms: rooms.length,
       advertised: rooms.filter((r) => r.state === 'open').length,
       active: rooms.filter((r) => r.state !== 'open').length,
+      racing: rooms.filter((r) => r.pending_race !== null).length,
       connections: sockets.length,
       direct: transport.get('direct') ?? 0,
       relay: transport.get('relay') ?? 0,
@@ -567,6 +599,19 @@ export class Hub {
     inviteAddress.take(address, now);
   }
 
+  // `roomKey`: the room, or the player for a race with no room.
+  limitRace(att, roomKey) {
+    if (this.exempt(att)) return;
+    const now = this.host.now();
+    const { raceAccount, raceRoom } = this.guards;
+    if (!raceAccount.allows(att.player, now) || !raceRoom.allows(roomKey, now)) {
+      this.diagnose('race_limited');
+      fail('limit', 'race telemetry too fast');
+    }
+    raceAccount.take(att.player, now);
+    raceRoom.take(roomKey, now);
+  }
+
   // ---- rooms ----
   roomRow(id) {
     return id ? this.host.sql.get('SELECT * FROM rooms WHERE id = ?', id) ?? null : null;
@@ -685,6 +730,10 @@ export class Hub {
         peak: Math.min(room.peak, room.capacity), transport, platforms: room.platforms.split(',').join(' + '),
         state: this.closedState(room, reason),
       });
+    });
+    this.track(() => {
+      if (room.pending_race !== null) this.metrics.raceAbandoned(pendingRace(room));
+      this.metrics.roomRaceCount(room.races);
     });
   }
 
@@ -1316,6 +1365,75 @@ const HANDLERS = {
       const s = this.socketByCid(this.seatRow(room.id, peer.seat)?.cid);
       if (s) this.send(s.conn, { ev: 'match.transport', room: room.id, seat: 0, transport: msg.transport });
     });
+    return {};
+  },
+
+  // Online: only the room's host reports, and the player count is the room's. No room: this PC's own race, solo or
+  // split-screen, which needs no other PC to agree on it.
+  'race.start'(att, msg) {
+    const parsed = parseRaceStart(msg);
+    if (msg.room !== undefined) {
+      const { room, seat } = this.mySeat(att, msg);
+      if (seat.seat !== 0) fail('not_host');
+      if (room.state !== 'racing') fail('race_not_ready');
+      if (parsed.race < room.races) return {};
+      if (parsed.race > room.races) fail('race_order');
+      if (room.races >= MAX_RACES_PER_ROOM) fail('limit', 'too many races in this room');
+      const players = this.seatRows(room.id).length;
+      if (parsed.players !== null && parsed.players !== players) fail('bad_request', 'players do not match the room');
+      if (parsed.characters && parsed.characters.length !== players) fail('bad_request', 'characters do not match the room');
+      this.limitRace(att, room.id);
+      if (room.pending_race !== null) this.track(() => this.metrics.raceAbandoned(pendingRace(room)));
+      this.host.sql.run(`UPDATE rooms SET races = races + 1, pending_race = ?, pending_started = ?, pending_players = ?,
+        pending_competition = ?, pending_track = ?, pending_characters = ? WHERE id = ?`, parsed.race, this.host.now(), players,
+      parsed.competition, parsed.track, parsed.characters && JSON.stringify(parsed.characters), room.id);
+      this.track(() => this.metrics.raceStarted({ competition: parsed.competition, track: parsed.track, playerCount: players,
+        characters: parsed.characters, online: true }));
+      return {};
+    }
+    if (parsed.race <= (att.localLast ?? -1)) return {};
+    const players = parsed.players ?? parsed.characters?.length ?? 1;
+    if (parsed.characters && parsed.characters.length !== players) fail('bad_request', 'characters do not match players');
+    this.limitRace(att, att.player);
+    if (att.localRace) this.track(() => this.metrics.raceAbandoned(att.localRace));
+    const race = { competition: parsed.competition, track: parsed.track, playerCount: players, characters: parsed.characters };
+    att.localLast = parsed.race;
+    att.localRace = { ...race, race: parsed.race, started: this.host.now() };
+    this.track(() => this.metrics.raceStarted({ ...race, online: false }));
+    return {};
+  },
+
+  'race.complete'(att, msg) {
+    const parsed = parseRaceComplete(msg);
+    if (msg.room !== undefined) {
+      const { room, seat } = this.mySeat(att, msg);
+      if (seat.seat !== 0) fail('not_host');
+      if (room.pending_race === null) {
+        if (parsed.race < room.races) return {};
+        fail('race_mismatch');
+      }
+      if (parsed.race !== room.pending_race) fail('race_mismatch');
+      const race = pendingRace(room);
+      if (parsed.places && parsed.places.length !== race.playerCount) fail('bad_request', 'places do not match the race');
+      this.limitRace(att, room.id);
+      const durationMs = clampedDuration(parsed.durationMs, room.pending_started, this.host.now());
+      const transport = raceTransport(room, this.seatRows(room.id));
+      this.host.sql.run(`UPDATE rooms SET pending_race = NULL, pending_started = NULL, pending_players = NULL,
+        pending_competition = NULL, pending_track = NULL, pending_characters = NULL WHERE id = ?`, room.id);
+      this.track(() => this.metrics.raceCompleted({ ...race, durationMs, transport, places: parsed.places }));
+      return {};
+    }
+    if (!att.localRace) {
+      if (parsed.race <= (att.localLast ?? -1)) return {};
+      fail('race_mismatch');
+    }
+    if (parsed.race !== att.localRace.race) fail('race_mismatch');
+    if (parsed.places && parsed.places.length !== att.localRace.playerCount) fail('bad_request', 'places do not match the race');
+    this.limitRace(att, att.player);
+    const race = att.localRace;
+    const durationMs = clampedDuration(parsed.durationMs, race.started, this.host.now());
+    att.localRace = null;
+    this.track(() => this.metrics.raceCompleted({ ...race, durationMs, places: parsed.places }));
     return {};
   },
 

@@ -14,7 +14,7 @@ namespace eck::race_url {
 struct RaceUrl {
   std::string command;      // "open" or "start", as written
   std::string map;          // text before the first '?'
-  std::string map_prefix;   // letters before the first '_' of the map
+  std::string map_prefix;   // letters before the '-' of the map, empty for a normal race
   std::string game_mode;    // from [Engine.GameInfo] DefaultMapPrefixes, or "unknown"
 
   std::optional<int> num_human_karts;
@@ -44,7 +44,7 @@ bool IsRaceStartCommand(std::string_view command);
 // nullopt when the text is not a race start command.
 std::optional<RaceUrl> ParseRaceUrl(std::string_view command);
 
-// "TA" -> "TimeAttack"; "unknown" for a prefix the game does not list.
+// "TA" -> "TimeAttack", "" -> "NormalRace"; "unknown" for a prefix the game does not list.
 std::string GameModeOfPrefix(std::string_view prefix);
 
 // One "name=value" line per field that was present, arrays as "[a,b,c]".

@@ -1,13 +1,14 @@
 #include "imgui_gamepad.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <iterator>
 
 #include <imgui.h>
 
 #include <SDL3/SDL.h>
+
+#include "input_focus.h"
 
 namespace eck {
 namespace {
@@ -79,7 +80,7 @@ ImGuiGamepad::~ImGuiGamepad() {
   CloseAll();
 }
 
-void ImGuiGamepad::Update(ImGuiIO& io) {
+void ImGuiGamepad::Update(ImGuiIO& io, bool focused) {
   if (!subsystem_) {
     // Started here and quit in Release; on Linux the runtime shares this SDL and counts the same starts, and on
     // Windows it has its own instance, so either way the game's own input is unaffected.
@@ -96,26 +97,17 @@ void ImGuiGamepad::Update(ImGuiIO& io) {
   }
   DrainEvents();
   io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-  // The union of every connected pad, so any of them navigates. All-false when none is connected, which is what
-  // releases the keys of a pad that was unplugged while a button was held.
-  std::array<bool, std::size(kButtons)> down{};
-  std::array<float, std::size(kSticks)> amount{};
-  for (SDL_Gamepad* pad : pads_) {
-    for (size_t i = 0; i < std::size(kButtons); ++i) {
-      down[i] = down[i] || SDL_GetGamepadButton(pad, kButtons[i].button);
-    }
-    for (size_t i = 0; i < std::size(kSticks); ++i) {
-      const int value = kSticks[i].direction * int(SDL_GetGamepadAxis(pad, kSticks[i].axis));
-      const float reached =
-          std::clamp(float(value - kStickDeadZone) / float(32767 - kStickDeadZone), 0.0f, 1.0f);
-      amount[i] = std::max(amount[i], reached);
-    }
-  }
+  const auto input = CombinePads<std::size(kButtons), std::size(kSticks)>(
+      focused, pads_, [](SDL_Gamepad* pad, size_t i) { return SDL_GetGamepadButton(pad, kButtons[i].button); },
+      [](SDL_Gamepad* pad, size_t i) {
+        const int value = kSticks[i].direction * int(SDL_GetGamepadAxis(pad, kSticks[i].axis));
+        return std::clamp(float(value - kStickDeadZone) / float(32767 - kStickDeadZone), 0.0f, 1.0f);
+      });
   for (size_t i = 0; i < std::size(kButtons); ++i) {
-    io.AddKeyEvent(kButtons[i].key, down[i]);
+    io.AddKeyEvent(kButtons[i].key, input.down[i]);
   }
   for (size_t i = 0; i < std::size(kSticks); ++i) {
-    io.AddKeyAnalogEvent(kSticks[i].key, amount[i] > 0.1f, amount[i]);
+    io.AddKeyAnalogEvent(kSticks[i].key, input.amount[i] > 0.1f, input.amount[i]);
   }
 }
 

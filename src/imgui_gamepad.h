@@ -17,6 +17,9 @@ namespace eck {
 // is unaffected. Every connected controller is read and their inputs combined, so any of them navigates, and pads
 // added or removed while it is open are followed.
 //
+// On Windows this SDL has no window, so SDL's own background filter never applies here: Update() is told whether the
+// game window has focus, and reads as an untouched pad when it does not. Pads are still followed without focus.
+//
 // Call Update() once per frame while the dialog is open and Release() when it closes. Release() lets go of every
 // key, so nothing read here is left held in the game. A pad unplugged while a button is held has its key released
 // on the next Update.
@@ -27,7 +30,7 @@ class ImGuiGamepad {
   ImGuiGamepad(const ImGuiGamepad&) = delete;
   ImGuiGamepad& operator=(const ImGuiGamepad&) = delete;
 
-  void Update(ImGuiIO& io);
+  void Update(ImGuiIO& io, bool focused);
   void Release(ImGuiIO& io);
 
  private:

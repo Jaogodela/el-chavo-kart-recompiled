@@ -14,8 +14,8 @@
 #include <rex/logging.h>
 #include <rex/system/kernel_state.h>
 
-#include "guest_memory.h"
 #include "online_game_guest.h"
+#include "online_guest_reader.h"
 #include "online_probe_layout.h"
 #include "online_start_race.h"
 #include "online_race_url.h"
@@ -28,8 +28,7 @@ namespace eck::online_probe {
 namespace {
 
 namespace lay = layout;
-
-constexpr uint32_t kGuestSpan = 0x90000000;
+using online_guest::Guest;
 
 std::atomic<uint64_t> g_ue3[size_t(Ue3Api::kCount)];
 std::atomic<uint32_t> g_phase{0xFFFFFFFFu};  // connection | room state << 8 | (seat + 1) << 16
@@ -42,38 +41,6 @@ bool DebugOn() {
 }
 
 void Race(const std::string& text) { REXLOG_INFO("{} {}", kRaceTag, text); }
-
-// ---- Safe guest reads (poller runs outside the hooks) ----------------------------------------------------------------
-
-bool Readable(uint32_t address, uint32_t length) {
-  if (address < 0x10000 || address + length < address || address + length > kGuestSpan) return false;
-  auto* heap = rex::system::kernel_memory()->LookupHeap(address);
-  rex::memory::HeapAllocationInfo info{};
-  if (heap == nullptr || !heap->QueryRegionInfo(address, &info)) return false;
-  return (info.state & rex::memory::kMemoryAllocationCommit) != 0 &&
-         (info.protect & rex::memory::kMemoryProtectRead) != 0 &&
-         uint64_t(address) + length <= uint64_t(info.base_address) + info.region_size;
-}
-
-struct Guest {
-  bool Ok(uint32_t address, uint32_t length) const { return Readable(address, length); }
-  std::optional<uint32_t> U32(uint32_t address) const {
-    if (!Readable(address, 4)) return std::nullopt;
-    return LoadBE32(rex::system::kernel_memory()->TranslateVirtual<const uint8_t*>(address), 0);
-  }
-  uint32_t P(uint32_t address) const { return U32(address).value_or(0); }  // pointer, 0 when unreadable
-  int32_t I32(uint32_t address) const { return int32_t(U32(address).value_or(0)); }
-  float F32(uint32_t address) const {
-    const uint32_t bits = U32(address).value_or(0);
-    float f;
-    static_assert(sizeof f == sizeof bits);
-    std::memcpy(&f, &bits, sizeof f);
-    return f;
-  }
-  uint8_t U8(uint32_t address) const {
-    return Readable(address, 1) ? rex::system::kernel_memory()->TranslateVirtual<const uint8_t*>(address)[0] : 0;
-  }
-};
 
 std::string Hex(uint32_t value) {
   char text[16];
@@ -289,19 +256,8 @@ void OnOnlineRaceStartBlocked(std::string_view reason) {
 // ---- Hook bodies ----------------------------------------------------------------------------------------------------------
 
 void OnConsoleCommand(const uint8_t* base, uint32_t fstring, uint32_t self, uint32_t caller) {
-  if (base == nullptr || fstring < 0x10000 || fstring + 12 > kGuestSpan) return;
-  const uint32_t data = LoadBE32(base, fstring);
-  const uint32_t num = LoadBE32(base, fstring + 4);
-  if (data < 0x10000 || num < 12 || num > 4096 || uint64_t(data) + 2ull * num > kGuestSpan) return;
-  const uint16_t first = LoadBE<uint16_t>(base, data);
-  if (first != 'o' && first != 'O' && first != 's' && first != 'S') return;  // every other console command ends here
-  std::string text;
-  text.reserve(num);
-  for (uint32_t i = 0; i < num; ++i) {
-    const uint16_t c = LoadBE<uint16_t>(base, data + 2 * i);
-    if (c == 0) break;
-    text.push_back(c < 0x80 ? char(c) : '?');
-  }
+  const std::string text = online_guest::ConsoleCommandText(base, fstring);
+  if (text.empty()) return;
   const std::optional<race_url::RaceUrl> url = race_url::ParseRaceUrl(text);
   if (!url) return;
 

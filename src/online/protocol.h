@@ -101,6 +101,24 @@ struct ServiceCapabilities {
   int max_players = kMaxSeats;
   bool four_player_rooms = false;
   bool seat_routing = false;
+  bool race_telemetry = false;
+};
+
+// One race, as the service counts it. `room` is empty for a race of this PC alone.
+struct RaceStartFields {
+  int race = 0;
+  std::string room;
+  std::string competition;
+  int players = 1;
+  std::optional<int> track;
+  std::vector<int> characters;
+};
+
+struct RaceCompleteFields {
+  int race = 0;
+  std::string room;
+  int duration_ms = 0;
+  std::vector<int> places;  // same order as the characters of the start
 };
 
 struct EndpointCandidate {
@@ -222,6 +240,8 @@ std::string EncodeMatchLeave(int seq, const std::string& room);
 // Host only: its path to one peer seat.
 std::string EncodeMatchTransport(int seq, const std::string& room, int seat, PathKind transport);
 std::string EncodeMatchResume(int seq, const std::string& room);
+std::string EncodeRaceStart(int seq, const RaceStartFields& race);
+std::string EncodeRaceComplete(int seq, const RaceCompleteFields& race);
 
 // "abcd 2345" and "ABCD-2345" both give "ABCD-2345"; empty when the text is not a friend code.
 std::string NormalizeFriendCode(std::string_view text);

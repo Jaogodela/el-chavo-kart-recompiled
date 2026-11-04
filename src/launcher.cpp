@@ -45,6 +45,7 @@
 #include "port_version.h"
 #include "settings.h"
 #include "ui_text.h"
+#include "window_host.h"
 
 namespace eck {
 namespace {
@@ -195,7 +196,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       io.ConfigFlags |= kNavFlags;
       nav_taken_ = true;
     }
-    gamepad_.Update(io);
+    gamepad_.Update(io, ::LocalInputAccepted());
     if (!starting_ && ImGui::IsKeyPressed(ImGuiKey_F11, false) && !fullscreen_gate_.Pending()) {
       ToggleLauncherFullscreen();
     }

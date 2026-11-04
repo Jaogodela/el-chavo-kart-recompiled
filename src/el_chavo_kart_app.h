@@ -32,6 +32,7 @@
 #include "gpu_plugin_check.h"
 #include "guest_functions.h"
 #include "hard_exit.h"
+#include "input_focus.h"
 #include "input_summary.h"
 #include "launcher.h"
 #include "log_filter.h"
@@ -81,6 +82,9 @@ class ElChavoKartApp : public rex::ReXApp {
       return false;
     }
     if (rex::ReXApp::SetupPresentation()) {
+      if (window()) {
+        AttachMouseFocusGate(window());
+      }
       return true;
     }
     REXLOG_WARN("Graphics unavailable; opening the launcher without graphics");
@@ -125,6 +129,8 @@ class ElChavoKartApp : public rex::ReXApp {
   void OnDpiScaleChanged(float scale) override {
     eck::UpdateLauncherFonts(imgui_drawer(), immediate_drawer(), scale);
   }
+
+  void OnWindowFocusChanged(bool focused) override { OnWindowFocus(focused, window(), imgui_drawer()); }
 
   void OnPreSetup(rex::RuntimeConfig&) override {
     game_settings_.Capture(eck::PlayerSettingsPath(user_data_root()), shipped_config_);
@@ -239,7 +245,7 @@ class ElChavoKartApp : public rex::ReXApp {
       });
       CreateCursorSync(imgui_drawer());
       if (auto* input = static_cast<rex::input::InputSystem*>(runtime()->input_system())) {
-        input->SetActiveCallback([] { return !eck::ModalDialog::AnyOpen(); });
+        input->SetActiveCallback([] { return eck::GameReadsInput(LocalInputAccepted(), eck::ModalDialog::AnyOpen()); });
       }
       eck::ModalDialog::AttachEscapeKey(window());
       eck::SetAchievementsMenuHandler([this] { app_context().CallInUIThreadDeferred([this] { OpenAchievements(); }); });

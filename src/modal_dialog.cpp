@@ -81,7 +81,7 @@ void ModalDialog::OnDraw(ImGuiIO& io) {
     saved_has_gamepad_ = io.BackendFlags & ImGuiBackendFlags_HasGamepad;
     io.ConfigFlags |= kNavFlags;
   }
-  gamepad_.Update(io);
+  gamepad_.Update(io, ::LocalInputAccepted());
   TrackPressedKeys();
   if (!close_.requested() && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
     RequestBack();

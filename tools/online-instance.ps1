@@ -13,6 +13,8 @@
   Each instance gets its own gameplay UDP port through ECK_ONLINE_PORT: -Port, or 7101 + the instance letter (a is 7101,
   b is 7102, ... j is 7110) when the name is a single letter a-j or a digit. Any other name needs -Port. Every instance
   uses the online service the game defaults to; -Lobby, or ECK_LOBBY from the environment, overrides it for development.
+  ECK_INSTANCE only labels the instance's logs. Local input follows window focus in every copy of the game, so only the
+  focused instance reacts to the keyboard, the mouse and the controller; the others keep running online.
   Runs the launcher; Online play is switched on from the instance's own Online page. -PrepareOnly sets the folders up
   and prints the same summary without starting the game. Nothing starts unless this script is run.
 .EXAMPLE
@@ -103,5 +105,6 @@ if ($PrepareOnly) { return }
 if (-not (Test-Path -LiteralPath $Executable)) { throw "Not built yet: $Executable" }
 $gameArgs = @("--game_data_root=`"$GameData`"", "--user_data_root=`"$user`"", "--log_file=`"$logFile`"")
 $env:ECK_ONLINE_PORT = "$Port"
+$env:ECK_INSTANCE = $label
 if ($Lobby) { $env:ECK_LOBBY = $Lobby }
 Start-Process -FilePath $Executable -ArgumentList $gameArgs -WorkingDirectory (Split-Path -Parent $Executable)

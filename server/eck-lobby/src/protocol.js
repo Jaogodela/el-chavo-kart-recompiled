@@ -1,13 +1,18 @@
+import { VALID_CHARACTERS, VALID_COMPETITIONS, VALID_TRACKS } from './game_data.js';
 import { sha256Hex } from './sha256.js';
 
 export const SERVICE = 'eck-lobby';
 export const PROTOCOL_VERSION = 1;
 export const GAME_ID = 'el-chavo-kart-pc';
 export const SUPPORTED_IMAGES = ['eck-usa-1db4e96b'];
-export const WORKER_BUILD = '2026-11-03-production1';
+export const WORKER_BUILD = '2026-11-04-production3';
 
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4;
+
+export const MAX_RACES_PER_ROOM = 64;
+export const RACE_DURATION = { minMs: 1000, maxMs: 60 * 60 * 1000 };
+export const RACE_DURATION_GRACE_MS = 5000;
 
 export const LIMITS = {
   frameBytes: 4096,
@@ -73,6 +78,7 @@ export const CAPABILITIES = {
   max_players: MAX_PLAYERS,
   four_player_rooms: true,
   seat_routing: true,
+  race_telemetry: true,
 };
 
 export const healthReport = () => ({ service: SERVICE, game: GAME_ID, protocol: PROTOCOL_VERSION, status: 'ok',
@@ -267,4 +273,47 @@ export const isLocalAddress = (ip) => ip === '::1' || ipv4Kind(ip) === 'loopback
 
 export function compatible(a, b) {
   return Boolean(a && b) && a.image === b.image && a.build === b.build;
+}
+
+const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+const RACE_INDEX_MAX = 0xffff;
+const RACE_PLACE_MAX = 16;
+
+function parseCharacters(value) {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_PLAYERS || value.some((c) => !VALID_CHARACTERS.has(c))) {
+    fail('bad_request', 'characters expected');
+  }
+  return [...value];
+}
+
+function parseTrack(value) {
+  if (value === undefined) return null;
+  if (!VALID_TRACKS.has(value)) fail('bad_request', 'track expected');
+  return value;
+}
+
+function parsePlaces(value) {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_PLAYERS || value.some((p) => !isInt(p, 1, RACE_PLACE_MAX)) ||
+      new Set(value).size !== value.length) {
+    fail('bad_request', 'places expected');
+  }
+  return [...value];
+}
+
+// `characters` and `track` stay optional: the client leaves out what it could not prove.
+export function parseRaceStart(message) {
+  if (!isInt(message.race, 0, RACE_INDEX_MAX)) fail('bad_request', 'race expected');
+  if (!VALID_COMPETITIONS.has(message.competition)) fail('bad_request', 'competition expected');
+  if (message.players !== undefined && !isInt(message.players, 1, MAX_PLAYERS)) fail('bad_request', 'players expected');
+  return { race: message.race, competition: message.competition, players: message.players ?? null,
+    characters: parseCharacters(message.characters), track: parseTrack(message.track) };
+}
+
+// `places` is each human's RaceFinishPosition, in the order of the race.start characters.
+export function parseRaceComplete(message) {
+  if (!isInt(message.race, 0, RACE_INDEX_MAX)) fail('bad_request', 'race expected');
+  if (!isInt(message.duration_ms, RACE_DURATION.minMs, RACE_DURATION.maxMs)) fail('bad_request', 'duration_ms expected');
+  return { race: message.race, durationMs: message.duration_ms, places: parsePlaces(message.places) };
 }

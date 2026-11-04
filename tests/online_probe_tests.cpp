@@ -34,7 +34,7 @@ int g_checks = 0;
   } while (0)
 
 const char* kExhibition =
-    "open TA_Cancun?NumSelectedTrack=3?NumHumanKarts=2?TotalKarts=8?KartAIDiffculty=1?GameType=0"
+    "open TA-PistaMuseo_Circuito0?NumSelectedTrack=3?NumHumanKarts=2?TotalKarts=8?KartAIDiffculty=1?GameType=0"
     "?PlayersArray=1-0-0-0-0-0-0-0?CharArray=2-1-0-3-4-5-6-7?IsBotArray=0-0-1-1-1-1-1-1?TeamData=0-1-0-0-1-0-0-0"
     "?LastTipTextField=tip_3?LastTipBGKNumber=2?PrimaryControllerID=0";
 
@@ -43,7 +43,7 @@ void ParserReadsEveryField() {
   CHECK(parsed.has_value());
   const url::RaceUrl& u = *parsed;
   CHECK(u.command == "open");
-  CHECK(u.map == "TA_Cancun");
+  CHECK(u.map == "TA-PistaMuseo_Circuito0");
   CHECK(u.map_prefix == "TA");
   CHECK(u.game_mode == "TimeAttack");
   CHECK(u.num_human_karts == 2);
@@ -76,12 +76,12 @@ void ParserRejectsOtherCommands() {
   CHECK(!url::ParseRaceUrl("start TA_Cancun?Foo=1").has_value());
   CHECK(!url::ParseRaceUrl("").has_value());
   CHECK(!url::ParseRaceUrl("stat fps?NumHumanKarts=2").has_value());
-  CHECK(url::ParseRaceUrl("start EN_Maya?NumHumanKarts=1?TotalKarts=5").has_value());
-  CHECK(url::ParseRaceUrl("START EN_Maya?numhumankarts=1").has_value());
+  CHECK(url::ParseRaceUrl("start EN-PistaTanga_Circuito0?NumHumanKarts=1?TotalKarts=5").has_value());
+  CHECK(url::ParseRaceUrl("START EN-PistaTanga_Circuito0?numhumankarts=1").has_value());
 }
 
 void UnknownKeysFallThrough() {
-  const auto parsed = url::ParseRaceUrl("open SU_Sea?NumHumanKarts=1?TotalKarts=4?Brand=New?Flag?numselectedtrack=9");
+  const auto parsed = url::ParseRaceUrl("open SU-PistaHeroes_Circuito0?NumHumanKarts=1?TotalKarts=4?Brand=New?Flag?numselectedtrack=9");
   CHECK(parsed.has_value());
   CHECK(parsed->game_mode == "Survival");
   CHECK(parsed->num_human_karts == 1);
@@ -92,8 +92,10 @@ void UnknownKeysFallThrough() {
   bool described = false;
   for (const auto& line : url::DescribeRaceUrl(*parsed)) described = described || line == "unknown_option Brand=New";
   CHECK(described);
-  CHECK(url::ParseRaceUrl("open ZZ_Odd?NumHumanKarts=1")->game_mode == "unknown");
-  CHECK(url::ParseRaceUrl("open MAT_Odd?NumHumanKarts=1")->game_mode == "MatadorTeams");
+  CHECK(url::ParseRaceUrl("open ZZ-Odd?NumHumanKarts=1")->game_mode == "unknown");
+  CHECK(url::ParseRaceUrl("open MAT-Odd?NumHumanKarts=1")->game_mode == "MatadorTeams");
+  CHECK(url::ParseRaceUrl("open PistaCiudad_Circuito0?NumHumanKarts=1")->game_mode == "NormalRace");
+  CHECK(url::ParseRaceUrl("open PistaCiudad_Circuito0?NumHumanKarts=1")->map_prefix.empty());
 }
 
 void ProblemsAreReported() {

@@ -1,6 +1,6 @@
 #pragma once
 
-// Guest object layout the DEBUG_SAULO race probes read. Offsets are computed from the cooked property chains
+// Guest object layout the race probes and race telemetry read. Offsets are computed from the cooked property chains
 // (declaration order, UnrealScript alignment rules, Object = 0x3C bytes). Cross-checked against code only for
 // Pawn.Controller (0x1E4, APawn::IsHumanControlled), Engine.GamePlayers (0x4B4, UGameViewportClient::GetPlayerOwner)
 // and GEngine (0x83CE2624, UEngine::GetEngine). Every other offset is derived: the first runtime log decides.

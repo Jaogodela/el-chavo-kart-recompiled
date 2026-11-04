@@ -21,6 +21,7 @@
 #include "online_game_guest.h"
 #include "online_probe.h"
 #include "online_race.h"
+#include "online_race_telemetry_guest.h"
 #include "online_runtime.h"
 #include "settings.h"
 
@@ -199,6 +200,7 @@ REX_HOOK_RAW(sub_82B74A68) { TraceSocket("NetDll_recvfrom", Ue3Api::kRecvFrom, c
 REX_EXTERN(__imp__sub_826A1F30);
 REX_HOOK_RAW(sub_826A1F30) {
   if (GroupOk(kGroupRace, base)) {
+    eck::race_telemetry::OnConsoleCommand(base, ctx.r5.u32);
     eck::online_probe::OnConsoleCommand(base, ctx.r5.u32, ctx.r4.u32, uint32_t(ctx.lr));
   }
   __imp__sub_826A1F30(ctx, base);

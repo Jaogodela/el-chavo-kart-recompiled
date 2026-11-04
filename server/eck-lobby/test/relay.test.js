@@ -22,6 +22,7 @@ test('hello answers with the service capabilities', () => {
   assert.deepEqual(CAPABILITIES, {
     protocol_version: PROTOCOL_VERSION, worker_build: CAPABILITIES.worker_build, public_endpoints: true, relay_supported: true,
     relay_max_payload: RELAY.maxPayload, min_players: 2, max_players: 4, four_player_rooms: true, seat_routing: true,
+    race_telemetry: true,
   });
 });
 
@@ -339,6 +340,8 @@ test('relayed frames write nothing to the database', () => {
   assert.equal(clients[1].binary.length, 50);
   assert.deepEqual(writes, []);
   const tables = env.host.sql.all(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).map((r) => r.name);
-  assert.deepEqual(tables.sort(), ['friend_requests', 'friends', 'handles', 'invites', 'meta', 'metrics_daily', 'metrics_daily_dimensions',
-    'metrics_samples', 'players', 'recent_rooms', 'registrations', 'room_seats', 'rooms']);
+  assert.deepEqual(tables.sort(), ['friend_requests', 'friends', 'handles', 'invites', 'meta', 'metrics_daily', 'metrics_daily_character_pairs',
+    'metrics_daily_characters', 'metrics_daily_compositions', 'metrics_daily_dimensions', 'metrics_daily_finish_positions',
+    'metrics_daily_player_counts', 'metrics_daily_race_cross', 'metrics_daily_race_outcomes', 'metrics_samples', 'players', 'recent_rooms',
+    'registrations', 'room_seats', 'rooms']);
 });

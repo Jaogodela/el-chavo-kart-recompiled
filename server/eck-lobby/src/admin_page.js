@@ -1,5 +1,7 @@
 // The private dashboard (/admin): a static shell, its stylesheet and script, served same-origin under a strict CSP.
 // The script keeps the token in memory (sessionStorage only when asked) and sends it as a Bearer header.
+import { GAME_LABELS } from './game_data.js';
+
 export const ADMIN_HTML = String.raw`<!doctype html>
 <html lang="en">
 <head>
@@ -43,6 +45,7 @@ export const ADMIN_HTML = String.raw`<!doctype html>
       <div class="card"><span class="label">In rooms now</span><span id="c-in-rooms" class="value">–</span></div>
       <div class="card"><span class="label">Rooms advertised now</span><span id="c-advertised" class="value">–</span></div>
       <div class="card"><span class="label">Active rooms now</span><span id="c-active" class="value">–</span></div>
+      <div class="card"><span class="label">Races in progress now</span><span id="c-racing" class="value">–</span></div>
       <div class="card"><span class="label">Direct now</span><span id="c-direct" class="value">–</span></div>
       <div class="card"><span class="label">Relay now</span><span id="c-relay" class="value">–</span></div>
       <div class="card"><span class="label">Pending now</span><span id="c-pending" class="value">–</span></div>
@@ -67,6 +70,9 @@ export const ADMIN_HTML = String.raw`<!doctype html>
       <div class="card"><span class="label">Invites today</span><span id="t-invites" class="value">–</span></div>
       <div class="card"><span class="label">Direct selected today</span><span id="t-direct" class="value">–</span></div>
       <div class="card"><span class="label">Relay selected today</span><span id="t-relay" class="value">–</span></div>
+      <div class="card"><span class="label">Races started today</span><span id="t-races-started" class="value">–</span></div>
+      <div class="card"><span class="label">Races completed today</span><span id="t-races-completed" class="value">–</span></div>
+      <div class="card"><span class="label">Races abandoned today</span><span id="t-races-abandoned" class="value">–</span></div>
     </div>
     <div class="panel">
       <h2 id="range-title">Selected range</h2>
@@ -81,6 +87,13 @@ export const ADMIN_HTML = String.raw`<!doctype html>
         <div class="card"><span class="label">Direct rooms</span><span id="r-rooms-direct" class="value">–</span></div>
         <div class="card"><span class="label">Relay rooms</span><span id="r-rooms-relay" class="value">–</span></div>
         <div class="card"><span class="label">Pending rooms</span><span id="r-rooms-pending" class="value">–</span></div>
+        <div class="card"><span class="label">Races started</span><span id="r-races-started" class="value">–</span></div>
+        <div class="card"><span class="label">Races completed</span><span id="r-races-completed" class="value">–</span></div>
+        <div class="card"><span class="label">Races abandoned</span><span id="r-races-abandoned" class="value">–</span></div>
+        <div class="card"><span class="label">Average race duration</span><span id="r-race-duration" class="value">–</span></div>
+        <div class="card"><span class="label">Rooms with a race</span><span id="r-rooms-with-race" class="value">–</span></div>
+        <div class="card"><span class="label">Rooms rematched</span><span id="r-rooms-rematched" class="value">–</span></div>
+        <div class="card"><span class="label">Average races per room</span><span id="r-races-per-room" class="value">–</span></div>
       </div>
     </div>
     <div class="panel">
@@ -123,6 +136,73 @@ export const ADMIN_HTML = String.raw`<!doctype html>
       <div class="panel"><h2>Room size</h2><div id="d-capacity"></div></div>
       <div class="panel"><h2>Room occupancy</h2><div id="d-occupancy"></div></div>
       <div class="panel"><h2>Room lifetime</h2><div id="d-lifetime"></div></div>
+    </div>
+    <h2 class="section">Races</h2>
+    <p class="muted">Counted once per race, reported by the game; nothing here names a player or a room.</p>
+    <div class="cards compact">
+      <div class="card"><span class="label">Completion rate</span><span id="s-completion" class="value">–</span></div>
+      <div class="card"><span class="label">Average players per race</span><span id="s-players" class="value">–</span></div>
+      <div class="card"><span class="label">Most popular player count</span><span id="s-popular" class="value text">–</span></div>
+      <div class="card"><span class="label">Most used character</span><span id="s-character" class="value text">–</span></div>
+      <div class="card"><span class="label">Most played competition</span><span id="s-competition" class="value text">–</span></div>
+      <div class="card"><span class="label">Most played track</span><span id="s-track" class="value text">–</span></div>
+      <div class="card"><span class="label">Most common character pair</span><span id="s-pair" class="value text">–</span></div>
+      <div class="card"><span class="label">Direct / Relay / Mixed</span><span id="s-transport" class="value text">–</span></div>
+    </div>
+    <div class="panel">
+      <h2>Races by day</h2>
+      <div id="races-by-day" class="chart"></div>
+    </div>
+    <div class="panel">
+      <h2>Players per race</h2>
+      <div class="scroll"><table id="d-player-count"></table></div>
+      <p id="d-player-count-empty" class="empty"></p>
+    </div>
+    <div class="grid">
+      <div class="panel"><h2>Race context</h2><div id="d-race-context"></div></div>
+      <div class="panel"><h2>Race transport</h2><div id="d-race-transport"></div></div>
+      <div class="panel"><h2>Race duration</h2><div id="d-race-duration"></div></div>
+      <div class="panel"><h2>Races per room</h2><div id="d-races-per-room"></div></div>
+    </div>
+    <h2 class="section">Characters</h2>
+    <div class="panel"><h2>Top Characters</h2><div id="d-top-characters"></div></div>
+    <div class="panel">
+      <h2>Character Picks</h2>
+      <div class="scroll"><table id="character-picks"></table></div>
+      <p id="character-picks-empty" class="empty"></p>
+    </div>
+    <div class="panel">
+      <h2>Character Finish Results</h2>
+      <p class="muted">Rank among the human players of a completed race, 2 players or more.</p>
+      <div class="scroll"><table id="character-finishes"></table></div>
+      <p id="character-finishes-empty" class="empty"></p>
+    </div>
+    <div class="grid">
+      <div class="panel"><h2>Most Common Character Pairs</h2><div id="d-pairs"></div></div>
+      <div class="panel"><h2>Most Common 2-Player Compositions</h2><div id="d-compositions-2"></div></div>
+      <div class="panel"><h2>Most Common 3-Player Compositions</h2><div id="d-compositions-3"></div></div>
+      <div class="panel"><h2>Most Common 4-Player Compositions</h2><div id="d-compositions-4"></div></div>
+    </div>
+    <div class="panel">
+      <h2>Character Co-occurrence</h2>
+      <p class="muted">Races where both characters appeared together.</p>
+      <div class="scroll"><table id="pair-matrix"></table></div>
+      <p id="pair-matrix-empty" class="empty"></p>
+    </div>
+    <h2 class="section">Competitions and tracks</h2>
+    <div class="panel">
+      <h2>Competitions</h2>
+      <div class="scroll"><table id="competition-table"></table></div>
+      <p id="competition-table-empty" class="empty"></p>
+    </div>
+    <div class="panel">
+      <h2>Tracks</h2>
+      <div class="scroll"><table id="track-table"></table></div>
+      <p id="track-table-empty" class="empty"></p>
+    </div>
+    <div class="grid">
+      <div class="panel"><h2>Characters by Competition</h2><div id="d-character-competition"></div></div>
+      <div class="panel"><h2>Characters by Track</h2><div id="d-character-track"></div></div>
     </div>
     <div class="grid">
       <div class="panel"><h2>Platform</h2><div id="d-platform"></div></div>
@@ -168,7 +248,19 @@ export const ADMIN_HTML = String.raw`<!doctype html>
           Ended (established), Disconnected (the host did not come back) or Timeout.</li>
         <li>Current rooms are read from the live service and shown with a short id only; none is stored for this page.</li>
         <li>Country comes from Cloudflare and is stored only as a daily count. Unknown: Cloudflare did not say.</li>
-        <li>Nothing here stores names, Friend Codes, addresses, relay tokens or gameplay.</li>
+        <li>Races are reported by the game on its own connection to the service. A local race counts humans on one PC (1 to 4,
+          split screen included) and has no transport. An online race is reported by the room's host only, so it counts once.</li>
+        <li>A race is abandoned when it started and never completed: its room closed, its connection ended, or a new race began.
+          Duration is the race itself, completed races only.</li>
+        <li>Picks count seats; races count each race once. Finish results rank the humans of a completed race: a solo race has
+          nobody to rank against, and Capture the Flag has no individual places, so neither adds to them. A win is rank 1, a podium is
+          any rank that is not last (at most third), and last place is the worst rank of that race.</li>
+        <li>A pair counts once per race for each two characters that raced together. Compositions keep every seat, so a character
+          picked twice stays twice. Percentages use the races with known characters as their base.</li>
+        <li>Character and track names are the game's own, by the ids in its script. Races the game could not identify still count
+          in every other table.</li>
+        <li>Nothing here stores names, Friend Codes, addresses, relay tokens or gameplay. Character combinations describe karts,
+          never who played them.</li>
       </ul>
     </div>
   </section>
@@ -280,6 +372,7 @@ h2.section { font-size: 17px; margin: 18px 0 2px; }
 .cards.compact { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin: 0; }
 .cards.compact .card { padding: 10px 12px; }
 .cards.compact .card .value { font-size: 22px; }
+.cards.compact .card .value.text { font-size: 15px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 8px; }
 .card {
   background: var(--surface-1);
@@ -387,7 +480,8 @@ export const ADMIN_JS = String.raw`(function () {
     invite_limited: 'Invites refused',
     room_resume_limited: 'Seat resumes refused',
     relay_abuse_closed: 'Relay connections or relays closed for abuse',
-    relay_backpressure_drop: 'Relay frames dropped for a slow seat'
+    relay_backpressure_drop: 'Relay frames dropped for a slow seat',
+    race_limited: 'Race telemetry refused'
   };
   var STATES = { open: 'Open', starting: 'Starting', racing: 'Racing' };
   var DAY_SERIES = [
@@ -396,13 +490,24 @@ export const ADMIN_JS = String.raw`(function () {
     { key: 'rooms_with_guest', label: 'With a guest', cls: 's3' },
     { key: 'rooms_closed', label: 'Closed', cls: 's4' }
   ];
+  var RACE_SERIES = [
+    { key: 'races_started', label: 'Started', cls: 's1' },
+    { key: 'races_completed', label: 'Completed', cls: 's2' },
+    { key: 'races_abandoned', label: 'Abandoned', cls: 's3' }
+  ];
   var TRANSPORTS = { direct: 'Direct', relay: 'Relay', mixed: 'Mixed', pending: 'Pending' };
   var OCCUPANCY = ['2/2', '2/3', '3/3', '2/4', '3/4', '4/4'];
   var LIFETIME = { under_1m: 'Under 1 minute', '1_5m': '1 to 5 minutes', '5_15m': '5 to 15 minutes', '15_60m': '15 to 60 minutes',
     over_1h: 'Over 1 hour' };
+  var GAME = ${JSON.stringify(GAME_LABELS)};
+  var RACE_DURATION_LABELS = { under_2m: 'Under 2 minutes', '2_4m': '2 to 4 minutes', '4_6m': '4 to 6 minutes',
+    '6_10m': '6 to 10 minutes', over_10m: 'Over 10 minutes' };
+  var RACES_PER_ROOM = ['1', '2', '3', '4+'];
   var COMPARE = [['sessions', 'Sessions'], ['rooms_created', 'Rooms created'], ['rooms_started', 'Rooms started'],
     ['rooms_with_guest', 'Rooms with a guest'], ['joins', 'Joins'], ['invites', 'Invites'], ['direct_selected', 'Direct selected'],
-    ['relay_selected', 'Relay selected'], ['peak_online', 'Peak online'], ['peak_in_rooms', 'Peak in rooms'], ['peak_rooms', 'Peak rooms']];
+    ['relay_selected', 'Relay selected'], ['peak_online', 'Peak online'], ['peak_in_rooms', 'Peak in rooms'], ['peak_rooms', 'Peak rooms'],
+    ['races_started', 'Races started'], ['races_completed', 'Races completed'], ['races_abandoned', 'Races abandoned'],
+    ['rooms_with_race', 'Rooms with a race'], ['rooms_rematched', 'Rooms rematched']];
 
   function storedToken() {
     try { return sessionStorage.getItem(KEY) || ''; } catch (e) { return ''; }
@@ -631,7 +736,7 @@ export const ADMIN_JS = String.raw`(function () {
     return Math.floor(minutes / 60) + ' h ' + (minutes % 60) + ' min';
   }
 
-  function rows(node, title, items, name) {
+  function rows(node, title, items, name, tipLines) {
     var box = el('div', 'dist');
     box.appendChild(el('h3', '', title));
     if (!items.length) box.appendChild(el('p', 'empty', 'None'));
@@ -647,6 +752,10 @@ export const ADMIN_JS = String.raw`(function () {
       track.appendChild(fill);
       row.appendChild(track);
       row.appendChild(el('span', 'count', fmt(item.count) + ' · ' + Math.round(100 * item.count / total) + '%'));
+      if (tipLines) {
+        row.addEventListener('mousemove', function (event) { showTip(event, tipLines(item, label)); });
+        row.addEventListener('mouseleave', hideTip);
+      }
       box.appendChild(row);
     });
     if (items.length > 12) box.appendChild(el('p', 'empty', (items.length - 12) + ' more not shown'));
@@ -666,6 +775,133 @@ export const ADMIN_JS = String.raw`(function () {
     var name = function (v) { return TRANSPORTS[v] || v; };
     rows(node, 'Now · seats', live, name);
     rows(node, 'Chosen · last ' + days + ' days', range, name);
+  }
+
+  function raceRows(id, items, days, name) {
+    var node = $(id);
+    clear(node);
+    rows(node, 'Races · last ' + days + ' days', items, name);
+  }
+
+  function share(part, whole) { return whole ? (Math.round(1000 * part / whole) / 10) + '%' : '–'; }
+  function characterName(id) { return GAME.characters[id] || 'Unknown'; }
+  function trackName(id) { return GAME.tracks[id] || 'Unknown'; }
+  function competitionName(id) { return GAME.competitions[id] || id; }
+  function comboName(ids) { return ids.map(characterName).join(' + '); }
+  function playersName(n) { return n + (Number(n) === 1 ? ' player' : ' players'); }
+  function average(duration, completed) { return completed ? durationText(duration / completed) : '–'; }
+  function changeOf(current, previous) {
+    return changeText({ current: current, previous: previous, change: previous > 0 ? Math.round(1000 * (current - previous) / previous) / 10 : null });
+  }
+
+  function dataTable(id, cols, data, empty) {
+    var table = $(id);
+    clear(table);
+    $(id + '-empty').textContent = data.length ? '' : empty;
+    if (!data.length) return;
+    var body = el('tbody');
+    data.forEach(function (cells) {
+      var tr = el('tr');
+      cells.forEach(function (text) { tr.appendChild(el('td', '', text)); });
+      body.appendChild(tr);
+    });
+    fillTable(table, cols, body);
+  }
+
+  function playerCountTable(items) {
+    var total = items.reduce(function (a, r) { return a + r.races; }, 0);
+    dataTable('d-player-count', ['Players', 'Races', '% of races', 'Completed', 'Completion rate', 'Abandoned', 'Average duration', 'Direct', 'Relay', 'Mixed'],
+      items.map(function (r) {
+        return [playersName(r.player_count), fmt(r.races), share(r.races, total), fmt(r.completed), share(r.completed, r.races), fmt(r.abandoned),
+          average(r.duration_ms, r.completed), fmt(r.direct), fmt(r.relay), fmt(r.mixed)];
+      }), 'No data yet.');
+  }
+
+  function outcomeTable(id, label, items, name) {
+    var total = items.reduce(function (a, r) { return a + r.races; }, 0);
+    dataTable(id, [label, 'Races', '% of races', 'Completed', 'Abandoned', 'Completion rate', 'Average duration'], items.map(function (r) {
+      return [name(r.value), fmt(r.races), share(r.races, total), fmt(r.completed), fmt(r.abandoned), share(r.completed, r.races), average(r.duration_ms, r.completed)];
+    }), 'No data yet.');
+  }
+
+  function characterPanels(history) {
+    var list = history.characters;
+    var picks = list.reduce(function (a, c) { return a + c.picks; }, 0);
+    var top = $('d-top-characters');
+    clear(top);
+    rows(top, 'Picks · last ' + history.days + ' days', list.map(function (c) { return { value: c.character, count: c.picks, stats: c }; }), characterName,
+      function (item, label) {
+        var c = item.stats;
+        return [label, 'Picks: ' + fmt(c.picks), 'Pick %: ' + share(c.picks, picks), 'Wins: ' + fmt(c.wins) + ' of ' + fmt(c.ranked), 'Win %: ' + share(c.wins, c.ranked)];
+      });
+    dataTable('character-picks', ['Character', 'Picks', 'Pick %', 'Races', 'Completed', 'Completion rate', 'Previous period', 'Change'], list.map(function (c) {
+      return [characterName(c.character), fmt(c.picks), share(c.picks, picks), fmt(c.races), fmt(c.completed), share(c.completed, c.picks), fmt(c.previous_picks),
+        changeOf(c.picks, c.previous_picks)];
+    }), 'No data yet.');
+    var ranked = list.filter(function (c) { return c.ranked > 0; });
+    dataTable('character-finishes', ['Character', 'Ranked races', '1st', '2nd', '3rd', '4th', 'Wins', 'Win %', 'Average finish', 'Podiums', 'Last places', 'Last place %'],
+      ranked.map(function (c) {
+        return [characterName(c.character), fmt(c.ranked), fmt(c.positions[0]), fmt(c.positions[1]), fmt(c.positions[2]), fmt(c.positions[3]), fmt(c.wins),
+          share(c.wins, c.ranked), c.average_finish.toFixed(2), fmt(c.podiums), fmt(c.last_places), share(c.last_places, c.ranked)];
+      }), 'No data yet.');
+  }
+
+  function comboRows(id, title, items, whole) {
+    var node = $(id);
+    clear(node);
+    rows(node, title, items, function (v) { return v; }, function (item, label) {
+      return [label, plural(item.count, 'race', 'races'), share(item.count, whole) + ' of ' + title.toLowerCase()];
+    });
+  }
+
+  function combinationPanels(history) {
+    comboRows('d-pairs', 'Multiplayer races', history.pairs.map(function (p) {
+      return { value: comboName([p.a, p.b]), count: p.races };
+    }), history.multiplayer_races);
+    [2, 3, 4].forEach(function (n) {
+      var list = history.compositions[n];
+      var whole = list.reduce(function (a, c) { return a + c.races; }, 0);
+      comboRows('d-compositions-' + n, n + '-player races', list.map(function (c) { return { value: comboName(c.characters), count: c.races }; }), whole);
+    });
+    var cells = {};
+    history.pairs.forEach(function (p) { cells[p.a + ':' + p.b] = cells[p.b + ':' + p.a] = p.races; });
+    dataTable('pair-matrix', [''].concat(GAME.characters), history.pairs.length ? GAME.characters.map(function (name, a) {
+      return [name].concat(GAME.characters.map(function (other, b) { return fmt(cells[a + ':' + b] || 0); }));
+    }) : [], 'No data yet.');
+  }
+
+  function crossGroups(id, items, groupName, name) {
+    var node = $(id);
+    clear(node);
+    var groups = {};
+    var order = [];
+    items.forEach(function (r) {
+      if (!groups[r.b]) { groups[r.b] = []; order.push(r.b); }
+      groups[r.b].push({ value: r.a, count: r.count });
+    });
+    if (!order.length) node.appendChild(el('p', 'empty', 'No data yet.'));
+    order.forEach(function (group) { rows(node, groupName(group), groups[group], name); });
+  }
+
+  function topOf(items, key, name) {
+    var best = null;
+    items.forEach(function (item) { if (!best || item[key] > best[key]) best = item; });
+    return best ? name(best) + ' · ' + fmt(best[key]) : '–';
+  }
+
+  function raceSummary(history) {
+    var r = history.totals;
+    var counts = history.player_counts;
+    var seats = counts.reduce(function (a, c) { return a + c.player_count * c.races; }, 0);
+    $('s-completion').textContent = share(r.races_completed, r.races_completed + r.races_abandoned);
+    $('s-players').textContent = r.races_started ? (Math.round(10 * seats / r.races_started) / 10) : '–';
+    $('s-popular').textContent = topOf(counts, 'races', function (c) { return playersName(c.player_count); });
+    $('s-character').textContent = topOf(history.characters, 'picks', function (c) { return characterName(c.character); });
+    $('s-competition').textContent = topOf(history.competitions, 'races', function (c) { return competitionName(c.value); });
+    $('s-track').textContent = topOf(history.tracks, 'races', function (t) { return trackName(t.value); });
+    $('s-pair').textContent = topOf(history.pairs, 'races', function (p) { return comboName([p.a, p.b]); });
+    var tally = function (key) { return counts.reduce(function (a, c) { return a + c[key]; }, 0); };
+    $('s-transport').textContent = counts.some(function (c) { return c.player_count > 1; }) ? [tally('direct'), tally('relay'), tally('mixed')].map(fmt).join(' / ') : '–';
   }
 
   function fillTable(node, cols, body) {
@@ -751,7 +987,9 @@ export const ADMIN_JS = String.raw`(function () {
     var cols = [['day', 'Day'], ['sessions', 'Sessions'], ['peak_online', 'Peak online'], ['peak_in_rooms', 'Peak in rooms'],
       ['peak_rooms', 'Peak rooms'], ['rooms_created', 'Rooms created'], ['rooms_started', 'Rooms started'], ['rooms_closed', 'Rooms closed'],
       ['rooms_with_guest', 'With a guest'], ['joins', 'Joins'], ['invites', 'Invites'], ['direct_selected', 'Direct selected'],
-      ['relay_selected', 'Relay selected'], ['incompatible_rejects', 'Rejects']];
+      ['relay_selected', 'Relay selected'], ['incompatible_rejects', 'Rejects'], ['races_started', 'Races started'],
+      ['races_completed', 'Races completed'], ['races_abandoned', 'Races abandoned'], ['rooms_with_race', 'Rooms with a race'],
+      ['rooms_rematched', 'Rooms rematched']];
     var body = el('tbody');
     daily.slice().reverse().forEach(function (d) {
       var tr = el('tr');
@@ -828,6 +1066,7 @@ export const ADMIN_JS = String.raw`(function () {
     $('c-occupied').textContent = fmt(live.occupied_seats);
     $('c-max-seats').textContent = fmt(live.max_seats);
     $('c-occupancy').textContent = live.max_seats ? percent(live.average_occupancy) : '–';
+    $('c-racing').textContent = fmt(live.racing);
     var t = summary.today;
     $('t-peak').textContent = fmt(t.peak_online);
     $('t-sessions').textContent = fmt(t.sessions);
@@ -838,6 +1077,9 @@ export const ADMIN_JS = String.raw`(function () {
     $('t-invites').textContent = fmt(t.invites);
     $('t-direct').textContent = fmt(t.direct_selected);
     $('t-relay').textContent = fmt(t.relay_selected);
+    $('t-races-started').textContent = fmt(t.races_started);
+    $('t-races-completed').textContent = fmt(t.races_completed);
+    $('t-races-abandoned').textContent = fmt(t.races_abandoned);
     $('today-line').textContent = 'Today (' + summary.day + '): peak ' + fmt(t.peak_in_rooms) + ' in rooms and ' +
       fmt(t.peak_rooms) + ' rooms, ' + fmt(live.connections) + ' connections open, ' +
       fmt(t.incompatible_rejects) + ' incompatibility rejects.';
@@ -853,6 +1095,13 @@ export const ADMIN_JS = String.raw`(function () {
     $('r-rooms-direct').textContent = fmt(r.rooms_direct);
     $('r-rooms-relay').textContent = fmt(r.rooms_relay);
     $('r-rooms-pending').textContent = fmt(r.rooms_pending);
+    $('r-races-started').textContent = fmt(r.races_started);
+    $('r-races-completed').textContent = fmt(r.races_completed);
+    $('r-races-abandoned').textContent = fmt(r.races_abandoned);
+    $('r-race-duration').textContent = r.races_completed ? durationText(r.race_duration_ms / r.races_completed) : '–';
+    $('r-rooms-with-race').textContent = fmt(r.rooms_with_race);
+    $('r-rooms-rematched').textContent = fmt(r.rooms_rematched);
+    $('r-races-per-room').textContent = r.rooms_with_race ? (Math.round(10 * r.races_in_rooms / r.rooms_with_race) / 10) : '–';
     comparison(history);
     roomsTable(live);
     recentTable(history.recent);
@@ -865,6 +1114,21 @@ export const ADMIN_JS = String.raw`(function () {
       function (v) { return /^[0-9]/.test(v) ? 'v' + v : v; });
     distribution('d-country', live.country, history.dimensions.country, history.days, countryText);
     transportRows('d-transport', live.transport, history.dimensions.transport, history.days);
+    dayChart($('races-by-day'), history.daily, RACE_SERIES);
+    playerCountTable(history.player_counts);
+    raceSummary(history);
+    raceRows('d-race-context', history.dimensions.race_context, history.days, function (v) { return v === 'online' ? 'Online room' : 'Local'; });
+    raceRows('d-race-transport', history.dimensions.race_transport, history.days, function (v) { return TRANSPORTS[v] || v; });
+    raceRows('d-race-duration', ordered(history.dimensions.race_duration_bucket, Object.keys(RACE_DURATION_LABELS)), history.days,
+      function (v) { return RACE_DURATION_LABELS[v] || v; });
+    raceRows('d-races-per-room', ordered(history.dimensions.races_per_room, RACES_PER_ROOM), history.days,
+      function (v) { return v + (v === '1' ? ' race' : ' races'); });
+    characterPanels(history);
+    combinationPanels(history);
+    outcomeTable('competition-table', 'Competition', history.competitions, competitionName);
+    outcomeTable('track-table', 'Track', history.tracks, trackName);
+    crossGroups('d-character-competition', history.race_cross.character_competition, competitionName, characterName);
+    crossGroups('d-character-track', history.race_cross.character_track, trackName, characterName);
     dailyTable(history.daily);
     rejects(history);
     protection(history);

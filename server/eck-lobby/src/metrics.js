@@ -6,11 +6,13 @@ export const SAMPLE_MS = 15 * 60 * 1000;
 export const SAMPLE_DAYS = 90;
 export const HISTORY_MAX_DAYS = 365;
 export const DIMENSIONS = ['platform', 'version', 'country', 'reject', 'transport', 'room_capacity', 'room_occupancy',
-  'room_lifetime', 'abuse'];
+  'room_lifetime', 'abuse', 'competition', 'player_count', 'race_context', 'race_transport', 'race_duration_bucket', 'races_per_room'];
 export const LIFETIMES = [['under_1m', 60e3], ['1_5m', 5 * 60e3], ['5_15m', 15 * 60e3], ['15_60m', 60 * 60e3], ['over_1h', Infinity]];
+export const RACE_DURATION_BUCKETS = [['under_2m', 2 * 60e3], ['2_4m', 4 * 60e3], ['4_6m', 6 * 60e3], ['6_10m', 10 * 60e3],
+  ['over_10m', Infinity]];
 export const DIAGNOSTICS = new Set(['ws_upgrade_accepted', 'ws_upgrade_limited', 'ws_upgrade_ip_cap', 'hello_accepted',
   'hello_reconnect_deduped', 'hello_limited', 'room_host_accepted', 'room_host_limited', 'room_join_limited', 'invite_limited',
-  'room_resume_limited', 'relay_abuse_closed', 'relay_backpressure_drop']);
+  'room_resume_limited', 'relay_abuse_closed', 'relay_backpressure_drop', 'race_limited']);
 export const PLATFORMS = ['Windows', 'Linux', 'Steam Deck'];
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -22,11 +24,15 @@ export const RECENT_ROOMS_DAYS = 30;
 export const RECENT_ROOMS_DEFAULT = 20;
 
 const COUNTERS = new Set(['sessions', 'rooms_created', 'rooms_started', 'joins', 'invites', 'incompatible_rejects',
-  'direct_selected', 'relay_selected', 'races_started', 'races_completed']);
+  'direct_selected', 'relay_selected', 'races_started', 'races_completed', 'races_abandoned', 'rooms_with_race',
+  'rooms_rematched']);
 const ROOM_COLUMNS = ['rooms_closed', 'rooms_with_guest', 'rooms_direct', 'rooms_relay', 'rooms_pending'];
-const SUMMED = [...COUNTERS, ...ROOM_COLUMNS];
+const RACE_SUM_COLUMNS = new Set(['race_duration_ms', 'races_in_rooms']);
+const SUMMED = [...COUNTERS, ...ROOM_COLUMNS, ...RACE_SUM_COLUMNS];
 const PEAKS = ['peak_online', 'peak_in_rooms', 'peak_rooms'];
 const DAY_COLUMNS = [...SUMMED, ...PEAKS];
+const PLAYER_COUNT_TRANSPORTS = ['direct', 'relay', 'mixed'];
+const CROSS_KINDS = ['competition_players', 'track_players', 'track_competition', 'character_competition', 'character_track'];
 
 export const METRICS_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS metrics_daily (day TEXT PRIMARY KEY,
@@ -38,6 +44,25 @@ export const METRICS_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS recent_rooms (seq INTEGER PRIMARY KEY AUTOINCREMENT, ended INTEGER NOT NULL,
      duration_ms INTEGER NOT NULL, capacity INTEGER NOT NULL, peak INTEGER NOT NULL, transport TEXT NOT NULL,
      platforms TEXT NOT NULL, state TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_player_counts (day TEXT NOT NULL, player_count INTEGER NOT NULL,
+     races INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0, abandoned INTEGER NOT NULL DEFAULT 0,
+     duration_ms INTEGER NOT NULL DEFAULT 0, ${PLAYER_COUNT_TRANSPORTS.map((c) => `${c} INTEGER NOT NULL DEFAULT 0`).join(', ')},
+     PRIMARY KEY (day, player_count))`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_race_outcomes (day TEXT NOT NULL, dimension TEXT NOT NULL, value TEXT NOT NULL,
+     races INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0, abandoned INTEGER NOT NULL DEFAULT 0,
+     duration_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, dimension, value))`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_race_cross (day TEXT NOT NULL, kind TEXT NOT NULL, a TEXT NOT NULL, b TEXT NOT NULL,
+     count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, kind, a, b))`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_characters (day TEXT NOT NULL, character INTEGER NOT NULL,
+     picks INTEGER NOT NULL DEFAULT 0, races INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (day, character))`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_finish_positions (day TEXT NOT NULL, character INTEGER NOT NULL,
+     player_count INTEGER NOT NULL, position INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (day, character, player_count, position))`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_character_pairs (day TEXT NOT NULL, a INTEGER NOT NULL, b INTEGER NOT NULL,
+     races INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, a, b))`,
+  `CREATE TABLE IF NOT EXISTS metrics_daily_compositions (day TEXT NOT NULL, player_count INTEGER NOT NULL, composition TEXT NOT NULL,
+     races INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, player_count, composition))`,
 ];
 
 const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: METRICS_TIME_ZONE, year: 'numeric', month: '2-digit',
@@ -67,14 +92,49 @@ export function countryCode(text) {
   return typeof text === 'string' && /^[A-Z]{2}$/.test(text) && text !== 'XX' ? text : 'Unknown';
 }
 
+// Each human's rank among the humans of the race, 1 for the best place.
+function humanRanks(places) {
+  const order = places.map((place, human) => ({ place, human })).sort((a, b) => a.place - b.place);
+  const ranks = [];
+  order.forEach(({ human }, i) => { ranks[human] = i + 1; });
+  return ranks;
+}
+
+// One row per distinct unordered pair in the race, however many seats share a character; a character pairs with itself
+// only when two seats picked it.
+function characterPairs(characters) {
+  const ids = [...characters].sort((a, b) => a - b);
+  const pairs = new Map();
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) pairs.set(`${ids[i]}+${ids[j]}`, [ids[i], ids[j]]);
+  }
+  return [...pairs.values()];
+}
+
+const tally = (values) => {
+  const counts = new Map();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+};
+
 const sorted = (counts) => [...counts].map(([value, count]) => ({ value, count }))
   .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+// CREATE TABLE IF NOT EXISTS leaves a table that already exists in production as it was.
+function ensureColumns(sql, table, columns) {
+  const have = new Set(sql.all(`PRAGMA table_info(${table})`).map((c) => c.name));
+  for (const column of columns) {
+    if (!have.has(column)) sql.run(`ALTER TABLE ${table} ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
+  }
+}
 
 export class Metrics {
   constructor(sql, now) {
     this.sql = sql;
     this.now = now;
     for (const statement of METRICS_SCHEMA) sql.run(statement);
+    ensureColumns(sql, 'metrics_daily', DAY_COLUMNS);
+    ensureColumns(sql, 'metrics_daily_player_counts', PLAYER_COUNT_TRANSPORTS);
     this.peaks = null;
     this.sample = null;
     this.pending = new Map();
@@ -152,6 +212,152 @@ export class Metrics {
     day, guest ? 1 : 0, flag(['direct']), flag(['relay', 'mixed']), flag(['pending']));
     if (guest) this.addDimension(day, 'room_occupancy', `${Math.min(peak, capacity)}/${capacity}`);
     this.addDimension(day, 'room_lifetime', LIFETIMES.find(([, limit]) => lifetimeMs < limit)[0]);
+  }
+
+  // Adds `amounts` to one row per key; one statement however many rows.
+  addRows(table, keyColumns, amountColumns, rows) {
+    if (!rows.length) return;
+    const columns = ['day', ...keyColumns, ...amountColumns];
+    const row = `(${columns.map(() => '?').join(', ')})`;
+    const updates = amountColumns.map((c) => `${c} = ${c} + excluded.${c}`).join(', ');
+    const day = metricsDay(this.now());
+    this.sql.run(`INSERT INTO ${table} (${columns.join(', ')}) VALUES ${rows.map(() => row).join(', ')}
+      ON CONFLICT(${['day', ...keyColumns].join(', ')}) DO UPDATE SET ${updates}`, ...rows.flatMap((r) => [day, ...r]));
+  }
+
+  addOutcome(race, amounts) {
+    const columns = Object.keys(amounts);
+    const values = Object.values(amounts);
+    this.addRows('metrics_daily_player_counts', ['player_count'], columns, [[race.playerCount, ...values]]);
+    const groups = [['competition', race.competition]];
+    if (race.track !== null && race.track !== undefined) groups.push(['track', String(race.track)]);
+    const shared = columns.filter((c) => !PLAYER_COUNT_TRANSPORTS.includes(c));
+    this.addRows('metrics_daily_race_outcomes', ['dimension', 'value'], shared,
+      groups.map((g) => [...g, ...shared.map((c) => amounts[c])]));
+  }
+
+  // `race`: { competition, track, playerCount, characters, online }; track and characters are null when the client could
+  // not prove them. Competition and player count are tagged here only, so a race that later ends is not counted twice.
+  raceStarted(race) {
+    const day = metricsDay(this.now());
+    const { competition, track, playerCount, characters } = race;
+    this.count('races_started', day);
+    this.addDimension(day, 'competition', competition);
+    this.addDimension(day, 'player_count', String(playerCount));
+    this.addDimension(day, 'race_context', race.online ? 'online' : 'local');
+    this.addOutcome(race, { races: 1 });
+    const hasTrack = track !== null && track !== undefined;
+    const cross = [['competition_players', competition, String(playerCount), 1]];
+    if (hasTrack) {
+      cross.push(['track_players', String(track), String(playerCount), 1], ['track_competition', String(track), competition, 1]);
+    }
+    if (characters) {
+      const picks = tally(characters);
+      for (const [character, count] of picks) {
+        cross.push(['character_competition', String(character), competition, count]);
+        if (hasTrack) cross.push(['character_track', String(character), String(track), count]);
+      }
+      this.addRows('metrics_daily_characters', ['character'], ['picks', 'races'], [...picks].map(([c, count]) => [c, count, 1]));
+      if (playerCount >= 2) {
+        this.addRows('metrics_daily_character_pairs', ['a', 'b'], ['races'], characterPairs(characters).map(([a, b]) => [a, b, 1]));
+        const composition = [...characters].sort((a, b) => a - b).join('+');
+        this.addRows('metrics_daily_compositions', ['player_count', 'composition'], ['races'], [[playerCount, composition, 1]]);
+      }
+    }
+    this.addRows('metrics_daily_race_cross', ['kind', 'a', 'b'], ['count'], cross);
+  }
+
+  // `places`, when given, has one distinct RaceFinishPosition per character. A lone human has nobody to rank against.
+  raceCompleted(race) {
+    const day = metricsDay(this.now());
+    const { playerCount, characters, durationMs, transport, places } = race;
+    this.count('races_completed', day);
+    if (transport) this.addDimension(day, 'race_transport', transport);
+    this.addDimension(day, 'race_duration_bucket', RACE_DURATION_BUCKETS.find(([, limit]) => durationMs < limit)[0]);
+    this.addAmount('race_duration_ms', durationMs, day);
+    const outcome = { completed: 1, duration_ms: durationMs };
+    if (PLAYER_COUNT_TRANSPORTS.includes(transport)) outcome[transport] = 1;
+    this.addOutcome(race, outcome);
+    if (!characters) return;
+    this.addRows('metrics_daily_characters', ['character'], ['completed'], [...tally(characters)]);
+    if (!places || playerCount < 2) return;
+    const ranks = humanRanks(places);
+    const finishes = tally(characters.map((character, i) => `${character}:${ranks[i]}`));
+    this.addRows('metrics_daily_finish_positions', ['character', 'player_count', 'position'], ['count'],
+      [...finishes].map(([key, count]) => {
+        const [character, position] = key.split(':').map(Number);
+        return [character, playerCount, position, count];
+      }));
+  }
+
+  raceAbandoned(race) {
+    this.count('races_abandoned');
+    this.addOutcome(race, { abandoned: 1 });
+  }
+
+  playerCounts(from, to) {
+    return this.sql.all(`SELECT player_count, SUM(races) AS races, SUM(completed) AS completed, SUM(abandoned) AS abandoned,
+      SUM(duration_ms) AS duration_ms, SUM(direct) AS direct, SUM(relay) AS relay, SUM(mixed) AS mixed
+      FROM metrics_daily_player_counts WHERE day >= ? AND day <= ? GROUP BY player_count ORDER BY player_count`, from, to);
+  }
+
+  raceOutcomes(dimension, from, to) {
+    return this.sql.all(`SELECT value, SUM(races) AS races, SUM(completed) AS completed, SUM(abandoned) AS abandoned,
+      SUM(duration_ms) AS duration_ms FROM metrics_daily_race_outcomes WHERE dimension = ? AND day >= ? AND day <= ?
+      GROUP BY value ORDER BY races DESC, value`, dimension, from, to);
+  }
+
+  raceCross(from, to) {
+    const cross = Object.fromEntries(CROSS_KINDS.map((k) => [k, []]));
+    for (const r of this.sql.all(`SELECT kind, a, b, SUM(count) AS count FROM metrics_daily_race_cross WHERE day >= ? AND day <= ?
+      GROUP BY kind, a, b ORDER BY count DESC, a, b`, from, to)) cross[r.kind]?.push({ a: r.a, b: r.b, count: r.count });
+    return cross;
+  }
+
+  characterStats(from, to, previousFrom, previousTo) {
+    const picksBefore = new Map(this.sql.all(`SELECT character, SUM(picks) AS picks FROM metrics_daily_characters
+      WHERE day >= ? AND day <= ? GROUP BY character`, previousFrom, previousTo).map((r) => [r.character, r.picks]));
+    const finishes = this.sql.all(`SELECT character, player_count, position, SUM(count) AS count FROM metrics_daily_finish_positions
+      WHERE day >= ? AND day <= ? GROUP BY character, player_count, position`, from, to);
+    return this.sql.all(`SELECT character, SUM(picks) AS picks, SUM(races) AS races, SUM(completed) AS completed
+      FROM metrics_daily_characters WHERE day >= ? AND day <= ? GROUP BY character ORDER BY picks DESC, character`, from, to)
+      .map((row) => {
+        const mine = finishes.filter((f) => f.character === row.character);
+        const count = (test) => mine.filter(test).reduce((sum, f) => sum + f.count, 0);
+        const ranked = count(() => true);
+        const positions = [1, 2, 3, 4].map((position) => count((f) => f.position === position));
+        return { ...row, previous_picks: picksBefore.get(row.character) ?? 0, ranked, positions, wins: positions[0],
+          podiums: count((f) => f.position <= Math.min(3, f.player_count - 1)),
+          last_places: count((f) => f.position === f.player_count),
+          average_finish: ranked ? Math.round(100 * mine.reduce((sum, f) => sum + f.position * f.count, 0) / ranked) / 100 : null };
+      });
+  }
+
+  characterCombinations(from, to) {
+    const compositions = Object.fromEntries([2, 3, 4].map((n) => [n, []]));
+    for (const r of this.sql.all(`SELECT player_count, composition, SUM(races) AS races FROM metrics_daily_compositions
+      WHERE day >= ? AND day <= ? GROUP BY player_count, composition ORDER BY races DESC, composition`, from, to)) {
+      compositions[r.player_count]?.push({ characters: r.composition.split('+').map(Number), races: r.races });
+    }
+    const pairs = this.sql.all(`SELECT a, b, SUM(races) AS races FROM metrics_daily_character_pairs WHERE day >= ? AND day <= ?
+      GROUP BY a, b ORDER BY races DESC, a, b`, from, to);
+    const multiplayer = Object.values(compositions).flat().reduce((sum, c) => sum + c.races, 0);
+    return { pairs, compositions, multiplayer_races: multiplayer };
+  }
+
+  roomRaceCount(races) {
+    if (races <= 0) return;
+    const day = metricsDay(this.now());
+    this.count('rooms_with_race', day);
+    if (races >= 2) this.count('rooms_rematched', day);
+    this.addAmount('races_in_rooms', races, day);
+    this.addDimension(day, 'races_per_room', races >= 4 ? '4+' : String(races));
+  }
+
+  addAmount(column, amount, day = metricsDay(this.now())) {
+    if (!RACE_SUM_COLUMNS.has(column)) throw new Error(`unknown sum column ${column}`);
+    this.sql.run(`INSERT INTO metrics_daily (day, ${column}) VALUES (?, ?)
+      ON CONFLICT(day) DO UPDATE SET ${column} = ${column} + excluded.${column}`, day, amount);
   }
 
   recordRoom(room) {
@@ -266,7 +472,11 @@ export class Metrics {
     const totals = this.totals(first, last);
     const previous = this.totals(daysBefore(first, days), daysBefore(first, 1));
     return { generated: now, time_zone: METRICS_TIME_ZONE, days, first, last, sample_ms: SAMPLE_MS, daily, dimensions, samples,
-      totals, previous, comparison: compare(totals, previous), recent: this.recent(first, recentLimit) };
+      totals, previous, comparison: compare(totals, previous), recent: this.recent(first, recentLimit),
+      player_counts: this.playerCounts(first, last), competitions: this.raceOutcomes('competition', first, last),
+      tracks: this.raceOutcomes('track', first, last), race_cross: this.raceCross(first, last),
+      characters: this.characterStats(first, last, daysBefore(first, days), daysBefore(first, 1)),
+      ...this.characterCombinations(first, last) };
   }
 }
 
@@ -276,7 +486,8 @@ const emptyDay = () => Object.fromEntries(DAY_COLUMNS.map((c) => [c, 0]));
 export const percentChange = (current, previous) => (previous > 0 ? Math.round(1000 * (current - previous) / previous) / 10 : null);
 
 export const COMPARED = ['sessions', 'rooms_created', 'rooms_started', 'rooms_with_guest', 'joins', 'invites', 'direct_selected',
-  'relay_selected', 'peak_online', 'peak_in_rooms', 'peak_rooms'];
+  'relay_selected', 'peak_online', 'peak_in_rooms', 'peak_rooms', 'races_started', 'races_completed', 'races_abandoned',
+  'rooms_with_race', 'rooms_rematched'];
 
 export function compare(current, previous) {
   return Object.fromEntries(COMPARED.map((c) => [c, { current: current[c], previous: previous[c],

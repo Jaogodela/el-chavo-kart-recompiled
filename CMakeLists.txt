@@ -213,6 +213,8 @@ set(ECK_SOURCES
     src/online_probe.cpp
     src/online_probe_guest.cpp
     src/online_race.cpp
+    src/online_race_telemetry.cpp
+    src/online_race_telemetry_guest.cpp
     src/online_race_url.cpp
     src/online_runtime.cpp
     src/ping_display.cpp

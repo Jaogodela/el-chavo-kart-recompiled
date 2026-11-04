@@ -96,6 +96,13 @@ struct OnlineProfile {
 // What AddFriend did with the text it was given; only kSent reaches the service.
 enum class FriendRequestResult { kSent, kNotConnected, kInvalid, kOwnCode, kAlreadyFriends, kAlreadyPending };
 
+// Whether a race can be reported now, and where. `room` is set only for a started room.
+struct RaceTelemetryContext {
+  bool ready = false;  // signed in to a service that takes race telemetry
+  std::string room;
+  int seat = -1;
+};
+
 // Where the game sends one peer's datagrams: a proven UDP endpoint, or RelayPeerEndpoint(seat) through the relay.
 struct GamePeer {
   int seat = -1;
@@ -143,6 +150,11 @@ class OnlineService {
   // A line from the launcher page, in the same log.
   void LogLine(const std::string& line) { Log(line); }
 
+  // Race telemetry: dropped, never queued, when the service cannot take it; a refusal is only logged.
+  RaceTelemetryContext RaceContext() const;
+  bool ReportRaceStart(const RaceStartFields& race);
+  bool ReportRaceComplete(const RaceCompleteFields& race);
+
   // Round trip to one peer, measured by the game's own traffic.
   void SetPeerRtt(int seat, std::optional<int> rtt_ms);
   // The peers whose path is decided, with where to send their datagrams.
@@ -158,7 +170,7 @@ class OnlineService {
   enum class Step { kIdle, kOpening, kGreeting, kOnline };
   enum class Purpose {
     kHello, kFriends, kRequests, kAdd, kAccept, kDecline, kRemove, kRoomHost, kRoomUpdate, kRoomLeave, kRoomSearch,
-    kRoomJoin, kRoomStart, kInviteSend, kInviteAccept, kInviteDecline, kEndpoint, kReady, kResume, kTransport
+    kRoomJoin, kRoomStart, kInviteSend, kInviteAccept, kInviteDecline, kEndpoint, kReady, kResume, kTransport, kRace
   };
   struct Pending {
     Purpose purpose = Purpose::kHello;

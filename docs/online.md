@@ -98,6 +98,9 @@ tools\online-instance.ps1 -Name d    # port 7104, a fourth player
 The instance letters a to j map to ports 7101 to 7110; any other name needs `-Port`. Switch Online play on from each
 instance's own Online page. Every instance makes its own friend code, so add the instances to each other as friends.
 
+Only the window with keyboard focus reads the keyboard, the mouse and the controllers, all of them, so click an
+instance to play it. The others stay connected and keep running with a neutral controller.
+
 ## Tests
 
 `tools\test.ps1 -Filter online` builds and runs `eck_online_identity_tests`, `eck_online_protocol_tests`,

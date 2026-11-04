@@ -238,6 +238,7 @@ ServiceCapabilities ReadCapabilities(const json::Value& v) {
   if (const int n = IntOf(v.Find("max_players")); n > 0) caps.max_players = n;
   caps.four_player_rooms = BoolOf(v.Find("four_player_rooms"), false);
   caps.seat_routing = BoolOf(v.Find("seat_routing"), false);
+  caps.race_telemetry = BoolOf(v.Find("race_telemetry"), false);
   return caps;
 }
 
@@ -444,6 +445,32 @@ std::string EncodeMatchTransport(int seq, const std::string& room, int seat, Pat
 }
 
 std::string EncodeMatchResume(int seq, const std::string& room) { return WithRoom("match.resume", seq, room); }
+
+namespace {
+
+std::string IntList(const std::vector<int>& values) {
+  std::string list = "[";
+  for (size_t i = 0; i < values.size(); ++i) list += (i ? "," : "") + std::to_string(values[i]);
+  return list + "]";
+}
+
+std::string RaceRoom(const std::string& room) { return room.empty() ? std::string() : ",\"room\":" + Quote(room); }
+
+}  // namespace
+
+std::string EncodeRaceStart(int seq, const RaceStartFields& race) {
+  std::string more = RaceRoom(race.room) + ",\"race\":" + std::to_string(race.race) + ",\"competition\":" + Quote(race.competition) +
+                     ",\"players\":" + std::to_string(race.players);
+  if (race.track) more += ",\"track\":" + std::to_string(*race.track);
+  if (!race.characters.empty()) more += ",\"characters\":" + IntList(race.characters);
+  return Envelope("race.start", seq, more);
+}
+
+std::string EncodeRaceComplete(int seq, const RaceCompleteFields& race) {
+  std::string more = RaceRoom(race.room) + ",\"race\":" + std::to_string(race.race) + ",\"duration_ms\":" + std::to_string(race.duration_ms);
+  if (!race.places.empty()) more += ",\"places\":" + IntList(race.places);
+  return Envelope("race.complete", seq, more);
+}
 
 std::string NormalizeFriendCode(std::string_view text) {
   std::string compact;

@@ -12,6 +12,8 @@ export const PROTECTION = {
   resumeAccount: { burst: 12, perSecond: 1 / 10 },
   inviteAccount: { burst: 20, perSecond: 1 / 3 },
   inviteAddress: { burst: 60, perSecond: 1 / 2 },
+  raceAccount: { burst: 30, perSecond: 1 / 3 },
+  raceRoom: { burst: 40, perSecond: 1 / 2 },
   trackedKeys: 4096,
 };
 

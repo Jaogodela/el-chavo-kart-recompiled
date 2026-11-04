@@ -157,3 +157,12 @@ export function party(env, size, capacity = size, { first = 1, options = {} } = 
   }
   return { clients, host, guests, room: hosted.room.room, token: hosted.relay_token };
 }
+
+// A party whose room has reached `racing` (every seat ready), the state race.start requires.
+export function racingParty(env, size, capacity = size, options = {}) {
+  const p = party(env, size, capacity, options);
+  assertOk(p.host.call('room.start', { room: p.room }), 'room.start');
+  for (const c of p.clients) assertOk(c.call('match.ready', { room: p.room, ready: true }), 'match.ready');
+  for (const c of p.clients) c.inbox = [];
+  return p;
+}

@@ -15,6 +15,7 @@
 #include "online/instance.h"
 #include "online/local_addresses.h"
 #include "online_game_hook.h"
+#include "online_race_telemetry_guest.h"
 #include "online_setting.h"
 #include "port_version.h"
 #include "settings.h"
@@ -122,6 +123,7 @@ void PumpOnlineService() {
     g_runtime_signed_in = signed_in;
     REXLOG_INFO("online runtime signed in={}", signed_in);
   }
+  race_telemetry::PumpRaceTelemetry(Online(), OnlineNowSeconds());
   PumpOnlineGameDebug();  // DEBUG_SAULO
 }
 

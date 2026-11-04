@@ -70,6 +70,7 @@ bool IsRaceStartCommand(std::string_view command) {
 }
 
 std::string GameModeOfPrefix(std::string_view prefix) {
+  if (prefix.empty()) return "NormalRace";
   static constexpr std::pair<std::string_view, std::string_view> kModes[] = {
       {"TA", "TimeAttack"},     {"SU", "Survival"},          {"EN", "Endurance"},         {"CT", "CTF"},
       {"MA", "Matador"},        {"MAT", "MatadorTeams"},     {"CO", "Coins"},             {"FO", "FollowTheLeader"},
@@ -92,8 +93,8 @@ std::optional<RaceUrl> ParseRaceUrl(std::string_view command) {
 
   const size_t first = rest.find('?');
   url.map = std::string(Trim(rest.substr(0, first)));
-  const size_t underscore = url.map.find('_');
-  url.map_prefix = url.map.substr(0, underscore);
+  const size_t dash = url.map.find('-');
+  url.map_prefix = dash == std::string::npos ? std::string() : url.map.substr(0, dash);
   url.game_mode = GameModeOfPrefix(url.map_prefix);
 
   std::string_view options = first == std::string_view::npos ? std::string_view() : rest.substr(first + 1);
