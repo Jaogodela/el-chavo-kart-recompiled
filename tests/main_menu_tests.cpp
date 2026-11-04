@@ -225,6 +225,21 @@ void TestMenuTable() {
   }
 }
 
+void TestReservedKeys() {
+  using eck::ReservedKey;
+  Check(eck::ClassifyReservedKey("ECK_EXIT_GAME") == ReservedKey::kExit, "exit key");
+  Check(eck::ClassifyReservedKey("ECK_ONLINE_ENTER") == ReservedKey::kOnlineEnter, "Online enter key");
+  Check(eck::ClassifyReservedKey("ECK_ONLINE_MENU") == ReservedKey::kOnlineMenu, "menu loaded key");
+  for (const char* key : {"", "ECK_", "ECK_ONLINE", "ECK_ONLINE_ENTER2", "eck_online_enter", "ECK_ONLINE_ENTE", "Exhibition",
+                          "mainMenu_exhibition", "ECK_ONLINE_ROOMS", " ECK_ONLINE_MENU"}) {
+    Check(eck::ClassifyReservedKey(key) == ReservedKey::kNone, std::string("unknown key falls through: ") + key);
+  }
+  Check(eck::kExhibitionCommand == eck::kMainMenuItems[2].command, "the Online request is bound to the Exhibition row");
+  Check(!eck::MainMenuTextOverride("PTB", "ECK_ONLINE_ENTER") && !eck::MainMenuTextOverride("INT", "ECK_ONLINE_MENU"),
+        "reserved keys have no text override");
+  Check(eck::MainMenuTextOverride("PTB", "mainMenu_exhibition").has_value(), "Free Race / Multiplayer text still overridden");
+}
+
 void TestText() {
   struct Expected {
     const char* package;
@@ -320,7 +335,30 @@ void CheckPatched(const Synthetic& original, const Bytes& patched) {
   Bytes exit_name = Text("mainMenu_exit");
   exit_name.push_back(0);
   Check(CountOf(patched, exit_name) == 1, "the exit row is named once");
-  Check(CountOf(patched, Text("RequestTextFieldUpdate")) == 1, "the exit action uses the text request");
+  Check(CountOf(patched, Text("RequestTextFieldUpdate")) == 3,
+        "the exit, Online and menu-loaded requests use the text request");
+  for (const char* key : {"ECK_ONLINE_ENTER", "ECK_ONLINE_MENU"}) {
+    Bytes b = Text(key);
+    b.push_back(0);
+    Check(CountOf(patched, b) == 1, std::string("the reserved key is sent from one place: ") + key);
+  }
+  // Local: the original OnGamepadA is stored once and called after the Online request, never replaced.
+  Bytes base = Text("ECK_BaseOnGamepadA");
+  base.push_back(0);
+  Check(CountOf(patched, base) == 2, "the original OnGamepadA is saved once and called once");
+  const auto find_at = [&](const Bytes& needle, bool last) {
+    auto it = last ? std::find_end(patched.begin(), patched.end(), needle.begin(), needle.end())
+                   : std::search(patched.begin(), patched.end(), needle.begin(), needle.end());
+    return it == patched.end() ? std::ptrdiff_t(-1) : it - patched.begin();
+  };
+  Bytes enter = Text("ECK_ONLINE_ENTER");
+  enter.push_back(0);
+  Check(find_at(enter, false) > 0 && find_at(enter, false) < find_at(base, true),
+        "the Online request comes before the call to the original Exhibition handler");
+  Bytes exhibition = Text("Exhibition");
+  exhibition.push_back(0);
+  Check(find_at(exhibition, true) > 0 && find_at(exhibition, true) < find_at(enter, false),
+        "the Online request is guarded by the Exhibition command");
 }
 
 void TestSwfPatch() {
@@ -459,6 +497,7 @@ void TestHookRegistration() {
 int main(int argc, char** argv) {
   TestMenuTable();
   TestText();
+  TestReservedKeys();
   TestSwfPatch();
   TestHookRegistration();
   if (argc > 1) {

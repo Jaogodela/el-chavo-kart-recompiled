@@ -38,6 +38,8 @@
 #include "launcher_achievements.h"
 #include "launcher_quit.h"
 #include "log_filter.h"
+#include "online_page.h"
+#include "online_runtime.h"
 #include "platform.h"
 #include "player_names.h"
 #include "port_version.h"
@@ -166,6 +168,10 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     trg::SetTranslator(&TranslateLauncherText);
     SetActiveUiLanguage(settings_.Get(kLanguageSetting, kDefaultLanguage));
     header_art_ = LoadHeaderArt(paths_.immediate_drawer);
+    ConfigureOnline(paths_.user_dir);
+    online_page_.SetSaveNow([this](std::string_view key, const std::string& value) {
+      return settings_.SaveNow({{std::string(key), value}});
+    });
     launcher_ = std::make_unique<trg::Launcher>(MakeConfig());
     if (WindowFullscreen()) {
       restore_when_windowed_ = true;
@@ -201,6 +207,10 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       // TRG's hotkeys read the same key state, so release it before Frame() runs.
       io.ClearInputKeys();
       io.ClearInputMouse();
+    }
+    online_page_.SetOwnerWindow(WindowHandle());
+    for (const std::string& notice : online_page_.Tick(settings_)) {
+      launcher_->SetStatus(notice, 6.0);
     }
     ImGui::BeginDisabled(starting_);
     const trg::Result result = launcher_->Frame();
@@ -413,6 +423,8 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
          [this](trg::Ui& ui) { PageGraphics(ui); }},
         {"Gameplay", "Language, and what the window shows while you play.", [](trg::Ui& ui) { PageGameplay(ui); }},
         {"Achievements", "Your achievements on this PC.", [this](trg::Ui& ui) { PageAchievements(ui); }},
+        {"Online", "Online play, friends and the connection test.", [this](trg::Ui& ui) { online_page_.Draw(ui); },
+         [this] { return online_page_.NeedsAttention(); }},
         {"Controls", "Controller and keyboard.", [](trg::Ui& ui) { PageControls(ui); }},
         {"About", "About this port, and where your files and settings live.",
          [this](trg::Ui& ui) { PageAbout(ui); }},
@@ -422,6 +434,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
         return trg::PlayCheck{false, "Wait for the install to finish.", 0};
       }
       if (game_files_ == GameFiles::kReady) {
+        if (online_page_.PlayNeedsTest(settings_)) {
+          return trg::PlayCheck{false, kConnectionTestRequired, launcher_ ? launcher_->FindPage("Online") : 0};
+        }
         return trg::PlayCheck{};
       }
       return trg::PlayCheck{false, "The game files are not ready: see the Play page.", 0};
@@ -902,6 +917,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   std::string install_failure_text_;
   std::shared_ptr<InstallOutcome> outcome_;
   trg::Task install_;
+  OnlinePage online_page_;
   std::unique_ptr<LauncherAchievements> achievements_;
   bool achievements_tried_ = false;
 };

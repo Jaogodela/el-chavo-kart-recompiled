@@ -1,0 +1,17 @@
+{
+  "name": "eck-lobby",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "El Chavo Kart PC recompilation: online lobby (friends, rooms of 2 to 4 players; races run peer-to-peer)",
+  "license": "GPL-2.0-only",
+  "engines": {
+    "node": ">=22.15"
+  },
+  "scripts": {
+    "local": "node local/server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy"
+  }
+}

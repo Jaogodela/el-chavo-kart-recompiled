@@ -25,6 +25,9 @@
 #include "debug_telemetry.h"
 #include "diagnostics.h"
 #include "frame_counter.h"
+#include "online_menu_overlay.h"
+#include "online_runtime.h"
+#include "ping_display.h"
 #include "game_files.h"
 #include "gpu_plugin_check.h"
 #include "guest_functions.h"
@@ -34,6 +37,7 @@
 #include "log_filter.h"
 #include "log_path.h"
 #include "main_menu_hooks.h"
+#include "online_game_hook.h"
 #include "modal_dialog.h"
 #include "platform.h"
 #include "port_version.h"
@@ -107,6 +111,7 @@ class ElChavoKartApp : public rex::ReXApp {
     REXLOG_INFO("{}", eck::FormatApplicationVersion(identity));
     REXLOG_INFO("{}", eck::FormatBuildIdentity(identity));
     eck::LogMainMenuHooks();  // DEBUG_SAULO
+    eck::LogOnlineGameHooks();  // DEBUG_SAULO
     REXLOG_INFO("{}", eck::GameFilesLogText(eck::CheckGameFiles(game_data_root())));
     REXLOG_INFO("Profile settings: <user data>/{:08X}/profile/User; achievements: <user data>/achievements/{:08X}.toml",
                 eck::kTitleId, eck::kTitleId);
@@ -227,6 +232,11 @@ class ElChavoKartApp : public rex::ReXApp {
     }
     if (window() && imgui_drawer()) {
       eck::CreateFrameCounter(imgui_drawer());
+      eck::ConfigureOnline(user_data_root());
+      eck::CreatePingDisplay(imgui_drawer());
+      eck::InstallOnlineMenu(imgui_drawer(), [this](std::function<void()> run) {
+        app_context().CallInUIThreadDeferred(std::move(run));
+      });
       CreateCursorSync(imgui_drawer());
       if (auto* input = static_cast<rex::input::InputSystem*>(runtime()->input_system())) {
         input->SetActiveCallback([] { return !eck::ModalDialog::AnyOpen(); });

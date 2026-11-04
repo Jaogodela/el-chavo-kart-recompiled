@@ -21,6 +21,7 @@
 #include "language_setting.h"
 #include "main_menu.h"
 #include "main_menu_swf.h"
+#include "online_menu_overlay.h"
 #include "sha256.h"
 
 REXCVAR_DECLARE(std::string, eck_language);
@@ -396,9 +397,19 @@ REX_HOOK_RAW(sub_82A46B68) {
 
   const std::string key = AsciiKey(base, name);
   if (!key.empty()) {
-    if (eck::IsExitCommand(key)) {
-      REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] action={}", key);
-      eck::HardExit("Exit Game selected, hard-exiting process.");
+    switch (eck::ClassifyReservedKey(key)) {
+      case eck::ReservedKey::kExit:
+        REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] action={}", key);
+        eck::HardExit("Exit Game selected, hard-exiting process.");
+        break;
+      case eck::ReservedKey::kOnlineEnter:
+        REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] action={}", key);
+        eck::RequestOnlineMenu();
+        break;
+      case eck::ReservedKey::kOnlineMenu:
+        eck::NoteMainMenuShown();
+        break;
+      case eck::ReservedKey::kNone: break;
     }
     if (const uint32_t replacement = OverrideText(base, frame, key)) {
       source = replacement;

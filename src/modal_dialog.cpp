@@ -29,7 +29,7 @@ class EscapeKey final : public rex::ui::WindowInputListener {
     if (ModalDialog* open = g_open.load(std::memory_order_acquire)) {
       e.set_handled(true);
       if (!e.prev_state()) {
-        open->RequestClose();
+        open->RequestBack();
       }
     }
   }
@@ -84,7 +84,7 @@ void ModalDialog::OnDraw(ImGuiIO& io) {
   gamepad_.Update(io);
   TrackPressedKeys();
   if (!close_.requested() && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
-    close_.Request();
+    RequestBack();
   }
   if (close_.requested()) {
     if (close_.Step(pressed_.any(), ImGui::GetTime())) {

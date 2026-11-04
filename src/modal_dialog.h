@@ -27,8 +27,13 @@ class ModalDialog : public rex::ui::ImGuiDialog {
   static void DetachEscapeKey();
 
   void RequestClose() { close_.Request(); }
+  // B and Escape: a dialog with pages of its own steps back first, and only the last step closes.
+  void RequestBack() {
+    if (!InterceptBack()) close_.Request();
+  }
 
  protected:
+  virtual bool InterceptBack() { return false; }
   explicit ModalDialog(rex::ui::ImGuiDrawer* drawer);
   ~ModalDialog() override;
 

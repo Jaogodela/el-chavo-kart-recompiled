@@ -61,6 +61,13 @@ REXCVAR_DEFINE_STRING(eck_player_3_name, "Player 3", "El Chavo Kart",
                       "Name shown for local player 3; save data is not affected");
 REXCVAR_DEFINE_STRING(eck_player_4_name, "Player 4", "El Chavo Kart",
                       "Name shown for local player 4; save data is not affected");
+REXCVAR_DEFINE_BOOL(eck_online_enabled, false, "El Chavo Kart",
+                    "Online play: friends and rooms of 2 to 4 players over the internet");
+REXCVAR_DEFINE_STRING(eck_online_name, "Player", "El Chavo Kart",
+                      "Name other players see during online play (letters, digits, - and _)");
+REXCVAR_DEFINE_STRING(eck_online_connection_test, "", "El Chavo Kart",
+                      "UDP configuration of the last connection test finished with Online play on, written by the "
+                      "launcher; empty: none since Online play was turned on");
 REXCVAR_DEFINE_INT32(eck_launcher_x, 0, "El Chavo Kart", "Launcher window left edge, written by the launcher");
 REXCVAR_DEFINE_INT32(eck_launcher_y, 0, "El Chavo Kart", "Launcher window top edge, written by the launcher");
 REXCVAR_DEFINE_INT32(eck_launcher_width, 0, "El Chavo Kart", "Launcher window restored width, written by the launcher");
@@ -101,6 +108,9 @@ std::vector<std::string> GameSettingKeys() {
       "eck_player_2_name",
       "eck_player_3_name",
       "eck_player_4_name",
+      "eck_online_enabled",
+      "eck_online_name",
+      "eck_online_connection_test",
   };
   for (const KeyboardAction& action : kKeyboardActions) {
     keys.emplace_back(action.key);

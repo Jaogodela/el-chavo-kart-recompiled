@@ -221,6 +221,112 @@ Saves, achievements and settings are stored in the folder given by --user_data_r
 Saves, achievements and settings are stored in the system user data folder, because the portable user_data folder is not writable	Jogos salvos, conquistas e configurações ficam na pasta de dados do sistema, porque a pasta portátil user_data não permite gravação
 Saves, achievements and settings are stored in the previous system folder, because moving them into the portable user_data folder failed. It is tried again at the next start	Jogos salvos, conquistas e configurações ficam na pasta anterior do sistema, porque a mudança para a pasta portátil user_data falhou. Uma nova tentativa é feita na próxima inicialização
 A  OK     B  Close	A  OK     B  Fechar
+Online	Online
+Online play, friends and the connection test.	Jogo online, amigos e o teste de conexão.
+Online play	Jogo online
+Lets you create and join rooms of 2 to 4 players with your friends. Players meet through the online service; the race itself runs directly between your PCs.	Permite criar salas e entrar em salas de 2 a 4 jogadores com seus amigos. Os jogadores se encontram pelo serviço online; a corrida roda direto entre os seus PCs.
+Online name	Nome online
+What other players see: up to 16 letters, digits, - or _.	O que os outros jogadores veem: até 16 letras, números, - ou _.
+Other players see 	Os outros jogadores veem
+Friend requests	Pedidos de amizade
+wants to be your friend	quer ser seu amigo
+ wants to be your friend.	 quer ser seu amigo.
+ is now your friend.	 agora é seu amigo.
+Accept	Aceitar
+Decline	Recusar
+Your friend code	Seu código de amigo
+Share this code so another player can add you.	Compartilhe este código para outro jogador adicionar você.
+Not available right now	Indisponível no momento
+Connecting...	Conectando...
+Connecting	Conectando
+Reconnecting	Reconectando
+Copy	Copiar
+Friend code copied.	Código de amigo copiado.
+Could not copy the friend code.	Não foi possível copiar o código de amigo.
+Connection test	Teste de conexão
+Connection test required	Teste de conexão necessário
+Run the Connection test on the Online page before playing online.	Faça o teste de conexão na página Online antes de jogar online.
+Checks that you can reach the online service and that other players can reach you. Takes a few seconds.	Verifica se você alcança o serviço online e se os outros jogadores alcançam você. Leva alguns segundos.
+Run test	Executar teste
+Testing...	Testando...
+If Windows asks whether to allow network access, choose Allow access so other players can connect to you.	Se o Windows perguntar se deve permitir o acesso à rede, escolha Permitir acesso para que outros jogadores possam se conectar a você.
+Friends	Amigos
+Add a friend	Adicionar um amigo
+Their friend code, for example ABCD-EFGH.	O código de amigo dele, por exemplo ABCD-EFGH.
+Send request	Enviar pedido
+Cancel request	Cancelar pedido
+Your request is waiting for an answer.	Seu pedido aguarda uma resposta.
+Remove	Remover
+That is not a valid friend code.	Esse não é um código de amigo válido.
+No friends yet. Add someone with their friend code.	Nenhum amigo ainda. Adicione alguém com o código de amigo dele.
+Cannot reach the online service right now. Run the Connection test for details.	Não foi possível alcançar o serviço online agora. Faça o teste de conexão para ver os detalhes.
+Create Room	Criar sala
+Find Room	Procurar sala
+Invite Friends	Convidar amigos
+Start Race	Iniciar corrida
+Leave Room	Sair da sala
+Waiting for players	Aguardando jogadores
+Room full	Sala cheia
+Player left	Jogador saiu
+Connection lost	Conexão perdida
+Unable to connect	Não foi possível conectar
+Version mismatch	Versões incompatíveis
+Direct	Direta
+Relay	Retransmissão
+Hosting	Hospedando
+In game	No jogo
+Offline	Offline
+ joined.	 entrou.
+ invited you to a room.	 convidou você para uma sala.
+Friend request sent.	Pedido de amizade enviado.
+You are now friends.	Vocês agora são amigos.
+Already friends.	Já são amigos.
+Friend request already pending.	Pedido de amizade já pendente.
+That is your own friend code.	Esse é o seu próprio código de amigo.
+Not connected to the online service.	Sem conexão com o serviço online.
+Online identity is unavailable.	A identidade online não está disponível.
+The host closed the room.	O anfitrião fechou a sala.
+The room expired.	A sala expirou.
+No player has that friend code.	Nenhum jogador tem esse código de amigo.
+That player is not your friend.	Esse jogador não é seu amigo.
+Your friend is not online.	Seu amigo não está online.
+One of you is already in a room.	Um de vocês já está em uma sala.
+The race has already started.	A corrida já começou.
+Too many requests. Try again in a moment.	Muitos pedidos. Tente novamente em instantes.
+The online service needs a different version of the game.	O serviço online precisa de outra versão do jogo.
+The online service did not accept this game.	O serviço online não aceitou este jogo.
+The connection through the online service is not available.	A conexão pelo serviço online não está disponível.
+The online service refused the request (	O serviço online recusou o pedido (
+The online service answered unexpectedly.	O serviço online respondeu de forma inesperada.
+Online service	Serviço online
+Direct connections	Conexões diretas
+Router configuration	Configuração do roteador
+Your online identity could not be created.	Não foi possível criar a sua identidade online.
+Cannot reach the online service. Check your internet connection.	Não foi possível alcançar o serviço online. Verifique sua conexão com a internet.
+Connected.	Conectado.
+Connected · 	Conectado ·
+ ms	 ms
+ on UDP port 	 na porta UDP
+Cannot open UDP port 	Não foi possível abrir a porta UDP
+. Another program may already be using it, or network security may be blocking it.	. Outro programa pode já estar usando a porta, ou a segurança da rede pode estar bloqueando.
+ or 	 ou
+Not checked.	Não verificado.
+May be blocked by your network or firewall	Pode estar bloqueado pela sua rede ou firewall
+UDP endpoint available	Endpoint UDP disponível
+UDP endpoint available through your router	Endpoint UDP disponível pelo seu roteador
+, but your network's NAT type could not be confirmed (only one STUN server answered).	, mas o tipo de NAT da sua rede não pôde ser confirmado (apenas um servidor STUN respondeu).
+ Direct peer connectivity will be verified when joining a room.	 A conectividade direta com os outros jogadores será verificada ao entrar em uma sala.
+Your router may stop some players from connecting to you.	Seu roteador pode impedir que alguns jogadores se conectem a você.
+Another router is in front of yours (often your provider's), so it cannot be opened automatically.	Há outro roteador na frente do seu (geralmente o do provedor), por isso ele não pode ser aberto automaticamente.
+Automatic setup is not available on your router.	A configuração automática não está disponível no seu roteador.
+Available. A room that cannot connect directly connects through the online service.	Disponível. Uma sala que não consegue conectar diretamente conecta pelo serviço online.
+Ready for online play	Pronto para jogar online
+Limited: the multiplayer UDP port could not be opened	Limitado: não foi possível abrir a porta UDP do multijogador
+Probably ready: your network's NAT type could not be fully tested	Provavelmente pronto: o tipo de NAT da sua rede não pôde ser totalmente testado
+Limited: direct connections may be blocked by your network	Limitado: as conexões diretas podem estar bloqueadas pela sua rede
+Limited: some players may not be able to connect to you	Limitado: alguns jogadores podem não conseguir se conectar a você
+Not ready: the online service did not accept this game	Não está pronto: o serviço online não aceitou este jogo
+Not ready: cannot reach the online service	Não está pronto: não foi possível alcançar o serviço online
 )PTBR";
 
 }  // namespace eck

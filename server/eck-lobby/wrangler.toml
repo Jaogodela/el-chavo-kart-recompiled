@@ -1,0 +1,16 @@
+name = "eck-lobby"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "ECKLobby"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ECKLobby"]
+
+[[ratelimits]]
+name = "WS_UPGRADE_LIMITER"
+namespace_id = "4004"
+simple = { limit = 30, period = 60 }

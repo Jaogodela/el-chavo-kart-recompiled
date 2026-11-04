@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Where tools\codegen.ps1 unpacks the pinned SDK.
 if(WIN32)
+    list(APPEND ECK_SOURCES src/clipboard_win32.cpp src/online/websocket_win.cpp)
+else()
+    # libssl is loaded at run time by websocket_posix.cpp, so no OpenSSL is needed to build.
+    list(APPEND ECK_SOURCES src/clipboard_sdl.cpp src/online/websocket_posix.cpp)
+endif()
+if(WIN32)
     set(ECK_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tools/rexglue/win-amd64")
 else()
     set(ECK_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tools/rexglue/linux-amd64")
@@ -186,6 +192,7 @@ set(ECK_SOURCES
     src/frame_counter.cpp
     src/frame_limiter.cpp
     src/frame_wait.cpp
+    src/friend_code_field.cpp
     src/game_files.cpp
     src/graphics_adapters.cpp
     src/guest_functions.cpp
@@ -200,6 +207,15 @@ set(ECK_SOURCES
     src/main_menu_swf.cpp
     src/modal_dialog.cpp
     src/notice_dialog.cpp
+    src/online_game_hook.cpp
+    src/online_menu_overlay.cpp
+    src/online_page.cpp
+    src/online_probe.cpp
+    src/online_probe_guest.cpp
+    src/online_race.cpp
+    src/online_race_url.cpp
+    src/online_runtime.cpp
+    src/ping_display.cpp
     src/platform.cpp
     src/port_version.cpp
     src/pt_br_ui_text.cpp
@@ -212,7 +228,33 @@ set(ECK_SOURCES
     src/user_data.cpp
     src/window_host.cpp
     src/xiso.cpp
+    src/online/connection_test.cpp
+    src/online/friend_view.cpp
+    src/online/game_socket.cpp
+    src/online/identity.cpp
+    src/online/instance.cpp
+    src/online/json.cpp
+    src/online/lobby_link.cpp
+    src/online/local_addresses.cpp
+    src/online/net_addr.cpp
+    src/online/online_service.cpp
+    src/online/peer_table.cpp
+    src/online/protocol.cpp
+    src/online/random.cpp
+    src/online/relay_frame.cpp
+    src/online/rendezvous.cpp
+    src/online/stun.cpp
+    src/online/udp_transport.cpp
+    src/online/upnp.cpp
+    src/online/websocket.cpp
+    src/online/websocket_frame.cpp
 )
+if(WIN32)
+    list(APPEND ECK_SOURCES src/clipboard_win32.cpp src/online/websocket_win.cpp)
+else()
+    # libssl is loaded at run time by websocket_posix.cpp, so no OpenSSL is needed to build.
+    list(APPEND ECK_SOURCES src/clipboard_sdl.cpp src/online/websocket_posix.cpp)
+endif()
 if(WIN32)
     # Resource 1 is the first icon in the executable: Explorer, and SDL's window class, use it.
     enable_language(RC)
@@ -232,7 +274,7 @@ target_include_directories(el_chavo_kart PRIVATE src)
 rexglue_setup_host_target(el_chavo_kart GPU_PLUGINS xenos)
 target_link_libraries(el_chavo_kart PRIVATE trg::launcher)
 if(WIN32)
-    target_link_libraries(el_chavo_kart PRIVATE shcore synchronization dxgi shell32)
+    target_link_libraries(el_chavo_kart PRIVATE shcore synchronization dxgi shell32 winhttp ws2_32 bcrypt)
     # The SDK stages its DLLs only when the program links, so a rebuilt runtime or GPU plugin has to
     # make it link again; tools\build.ps1 also checks the staged copies.
     foreach(_sdk_dll rexruntime rexruntimed rexruntimerd rexgpu-xenos rexgpu-xenosd rexgpu-xenosrd)

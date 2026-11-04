@@ -50,3 +50,63 @@ add_executable(eck_main_menu_tests
 )
 target_include_directories(eck_main_menu_tests PRIVATE "${ECK_SRC_DIR}")
 target_compile_definitions(eck_main_menu_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+# The client side of online play (src/online) without the launcher page or the game: protocol, identity, peer table,
+# relay frames, rendezvous and the service against a scripted connection.
+set(ECK_ONLINE_SOURCES
+    "${ECK_SRC_DIR}/online/connection_test.cpp"
+    "${ECK_SRC_DIR}/online/friend_view.cpp"
+    "${ECK_SRC_DIR}/online/game_socket.cpp"
+    "${ECK_SRC_DIR}/online/identity.cpp"
+    "${ECK_SRC_DIR}/online/instance.cpp"
+    "${ECK_SRC_DIR}/online/json.cpp"
+    "${ECK_SRC_DIR}/online/lobby_link.cpp"
+    "${ECK_SRC_DIR}/online/local_addresses.cpp"
+    "${ECK_SRC_DIR}/online/net_addr.cpp"
+    "${ECK_SRC_DIR}/online/online_service.cpp"
+    "${ECK_SRC_DIR}/online/peer_table.cpp"
+    "${ECK_SRC_DIR}/online/protocol.cpp"
+    "${ECK_SRC_DIR}/online/random.cpp"
+    "${ECK_SRC_DIR}/online/relay_frame.cpp"
+    "${ECK_SRC_DIR}/online/rendezvous.cpp"
+    "${ECK_SRC_DIR}/online/stun.cpp"
+    "${ECK_SRC_DIR}/online/udp_transport.cpp"
+    "${ECK_SRC_DIR}/online/upnp.cpp"
+    "${ECK_SRC_DIR}/online/websocket.cpp"
+    "${ECK_SRC_DIR}/online/websocket_frame.cpp"
+    "${ECK_SRC_DIR}/pt_br_ui_text.cpp"
+    "${ECK_SRC_DIR}/sha256.cpp"
+    "${ECK_SRC_DIR}/ui_text.cpp"
+)
+if(WIN32)
+    list(APPEND ECK_ONLINE_SOURCES "${ECK_SRC_DIR}/online/websocket_win.cpp")
+else()
+    list(APPEND ECK_ONLINE_SOURCES "${ECK_SRC_DIR}/online/websocket_posix.cpp")
+endif()
+add_library(eck_online_lib STATIC ${ECK_ONLINE_SOURCES})
+target_include_directories(eck_online_lib PUBLIC "${ECK_SRC_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(eck_online_lib PUBLIC Threads::Threads)
+if(WIN32)
+    target_link_libraries(eck_online_lib PUBLIC ws2_32 winhttp bcrypt)
+    target_compile_definitions(eck_online_lib PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    target_link_libraries(eck_online_lib PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
+# The race model and the guest fingerprint check are pure: no service, no sockets.
+add_executable(eck_online_race_tests online_race_tests.cpp "${ECK_SRC_DIR}/online_race.cpp")
+target_include_directories(eck_online_race_tests PRIVATE "${ECK_SRC_DIR}")
+
+# Race URL parser, probe registry, dry-run mapping and the guest fingerprint tables: pure, no ReXGlue.
+add_executable(eck_online_probe_tests online_probe_tests.cpp "${ECK_SRC_DIR}/online_probe.cpp"
+    "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race.cpp")
+target_include_directories(eck_online_probe_tests PRIVATE "${ECK_SRC_DIR}")
+
+# The Online menu model and the Start Race seam against a scripted service.
+add_executable(eck_online_menu_tests online_menu_tests.cpp "${ECK_SRC_DIR}/online_race.cpp")
+target_link_libraries(eck_online_menu_tests PRIVATE eck_online_lib)
+
+foreach(_online_test identity protocol peer service launcher)
+    add_executable(eck_online_${_online_test}_tests online_${_online_test}_tests.cpp)
+    target_link_libraries(eck_online_${_online_test}_tests PRIVATE eck_online_lib)
+endforeach()
