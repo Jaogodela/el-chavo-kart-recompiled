@@ -1,8 +1,12 @@
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <string_view>
 
 #include "internal_render_scale.h"
+#include "launcher.h"
 #include "player_names.h"
 #include "window_title.h"
 
@@ -94,11 +98,50 @@ void OriginalDisplay() {
   }
 }
 
+std::string Source(const std::string& name) {
+  std::ifstream file(std::string(ECK_SRC_DIR) + "/" + name, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+bool Contains(const std::string& text, std::string_view needle) {
+  return text.find(needle) != std::string::npos;
+}
+
+void ShowThisLauncher() {
+  using eck::LauncherWanted;
+  constexpr bool kReady = true;
+  constexpr bool kSkip = true;
+  constexpr bool kShift = true;
+  constexpr bool kOn = true;
+  Check(LauncherWanted(kReady, !kSkip, !kShift, kOn), "on by choice: the launcher opens");
+  Check(!LauncherWanted(kReady, !kSkip, !kShift, !kOn), "off: the game starts directly");
+  Check(LauncherWanted(kReady, !kSkip, kShift, !kOn), "off, Shift held: the launcher opens");
+  Check(LauncherWanted(kReady, !kSkip, kShift, kOn), "on, Shift held: the launcher opens");
+  Check(!LauncherWanted(kReady, kSkip, !kShift, kOn), "the relaunch after Play skips the launcher");
+  Check(!LauncherWanted(kReady, kSkip, kShift, kOn), "Shift still held on the relaunch does not reopen it");
+  Check(LauncherWanted(!kReady, !kSkip, !kShift, !kOn), "off, but no game: it is the only way to install");
+  Check(LauncherWanted(!kReady, kSkip, !kShift, !kOn), "the relaunch flag cannot hide a missing game");
+
+  const std::string settings = Source("settings.cpp");
+  Check(Contains(settings, "REXCVAR_DEFINE_BOOL(eck_launcher, true"), "Show this launcher defaults on");
+  Check(Contains(settings, "\"eck_launcher\","), "the choice is saved with the other settings");
+  const std::string launcher = Source("launcher.cpp");
+  Check(Contains(launcher, "ui.LauncherVisibilityRow(\"eck_launcher\")"), "the row is on the Play page");
+  Check(Contains(launcher, "rex::cvar::ResetToDefault(\"eck_skip_launcher\")"), "the skip lasts one start");
+  Check(Contains(launcher, "ShiftHeld()"), "Shift is read at start");
+
+  const std::string app = Source("el_chavo_kart_app.h");
+  Check(Contains(app, "eck::RelaunchSelf(L\"--eck_skip_launcher=true\")"), "the window relaunch skips the launcher");
+  Check(Contains(app, "game_window_ = eck::FitWindowToDisplay();"),
+        "the game window keeps the player's display settings when the launcher is skipped");
+}
+
 int main() {
   InternalRenderScale();
   WindowTitle();
   LocalPlayers();
   OriginalDisplay();
+  ShowThisLauncher();
   std::printf("%s\n", g_failures ? "FAILED" : "passed");
   return g_failures ? 1 : 0;
 }

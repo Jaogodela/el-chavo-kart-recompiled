@@ -60,16 +60,36 @@ struct CrashReport {
   uint64_t frame_pointer = 0;
   uint32_t frame_count = 0;
   CrashFrame frames[kCrashReportMaxFrames];
+  char system_sdk[32] = {};
+  char system_os[96] = {};
+  char system_cpu[96] = {};
   char runtime_gpu[96] = {};
-  char runtime_display[96] = {};
+  char runtime_selected_adapter[96] = {};
+  char runtime_display[128] = {};
   char runtime_timing[128] = {};
   char runtime_renderer[160] = {};
+  char runtime_language[16] = {};
+  char runtime_online[16] = {};
 };
 
 void SetCrashGameVersion(const char* version);
 
+// Written early, so a crash in the launcher reports them too.
+void SetCrashSystemInfo(const char* sdk, const char* os, const char* cpu);
+
+// No field may carry a path, a player name or an address: the report goes into logs users post publicly.
+struct CrashRuntimeState {
+  const char* gpu = "";
+  const char* selected_adapter = "";
+  const char* display = "";
+  const char* timing = "";
+  const char* renderer = "";
+  const char* language = "";
+  const char* online = "";
+};
+
 // Last runtime state shown in the crash report. Written once the startup diagnostics are logged.
-void SetCrashRuntimeState(const char* gpu, const char* display, const char* timing, const char* renderer);
+void SetCrashRuntimeState(const CrashRuntimeState& state);
 
 // Resolves a native instruction address to a recompiled guest function. Installed by the guest-function lookup.
 using CrashGuestFunctionResolver = void (*)(uint64_t host_address, CrashGuestRef* out);
@@ -97,6 +117,9 @@ namespace crash_detail {
 bool EnterCrashWrite();
 bool CrashWriteActive();
 void ResetCrashWrite();
+
+// The file name of a module path: a full path would carry the Windows account name.
+const wchar_t* ModuleBaseName(const wchar_t* path);
 
 }  // namespace crash_detail
 

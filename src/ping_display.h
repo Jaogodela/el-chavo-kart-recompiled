@@ -35,8 +35,7 @@ inline std::vector<std::optional<int>> MeasuredRtts(const std::vector<online::Pe
 // Shown with Online play on and while the player is seated in a room.
 constexpr bool PingVisible(bool online_enabled, bool in_room) { return online_enabled && in_room; }
 
-// Adds the in-game Ping panel under the frame counter's corner. There is no toggle key: F3 is reserved by the game's
-// own bindings.
+// Adds the in-game Ping panel under the frame counter's corner. There is no toggle key.
 void CreatePingDisplay(rex::ui::ImGuiDrawer* drawer);
 
 }  // namespace eck

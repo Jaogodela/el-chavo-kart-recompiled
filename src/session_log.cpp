@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <cwchar>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -24,6 +23,7 @@
 
 #include "active_log.h"
 #include "log_filter.h"
+#include "log_path.h"
 
 namespace eck {
 namespace {
@@ -37,27 +37,6 @@ constexpr char kSessionParentVariable[] = "ECK_SESSION_PARENT";
 #endif
 
 std::atomic<bool> g_handed_off{false};
-
-bool LogContainsCrashReport(const std::filesystem::path& file) {
-  std::ifstream in(file, std::ios::binary);
-  if (!in) {
-    return false;
-  }
-  constexpr size_t kNeedle = sizeof("CRASH REPORT") - 1;
-  std::string window;
-  char buffer[4096];
-  while (in) {
-    in.read(buffer, sizeof(buffer));
-    window.append(buffer, static_cast<size_t>(in.gcount()));
-    if (window.find("CRASH REPORT") != std::string::npos) {
-      return true;
-    }
-    if (window.size() > kNeedle) {
-      window.erase(0, window.size() - kNeedle);
-    }
-  }
-  return false;
-}
 
 void WaitForPreviousProcess(unsigned long pid) {
 #if defined(_WIN32)

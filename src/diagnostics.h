@@ -23,7 +23,6 @@ struct SystemIdentity {
 };
 
 struct GraphicsAdapterIdentity {
-  std::string selected;
   std::string resolved;
   int adapter = -1;
   uint32_t vendor_id = 0;

@@ -43,6 +43,16 @@ INSTALL
 To repair the game files, use "Reinstall from disc image..." on the Play page.
 Your settings and saves are kept.
 
+To start the game directly, turn "Show this launcher" off on the Play page.
+Hold Shift while starting the program to bring the launcher back.
+
+
+REPORTING A BUG
+---------------
+On the launcher's About page, "Report a bug" shows the newest log file and
+opens the project's issue page. Nothing is uploaded: check the log, then attach
+it to your report yourself.
+
 
 UPDATES
 -------

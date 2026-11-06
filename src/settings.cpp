@@ -19,6 +19,7 @@
 #include "trg/settings.h"
 
 #include "crash_report.h"
+#include "online_setting.h"
 #include "diagnostics.h"
 #include "dpi.h"
 #include "frame_limiter.h"
@@ -51,12 +52,12 @@ REXCVAR_DEFINE_BOOL(eck_show_fps, true, "El Chavo Kart", "Show the frame rate in
 REXCVAR_DEFINE_BOOL(eck_show_render_resolution, false, "El Chavo Kart",
                     "Show the render resolution in the window title");
 REXCVAR_DEFINE_BOOL(eck_show_frame_counter, false, "El Chavo Kart",
-                    "Show the frame counter in the corner (F2 toggles it)");
+                    "Show the frame counter in the corner (F3 toggles it)");
 REXCVAR_DEFINE_BOOL(eck_msaa_compatibility, false, "El Chavo Kart",
                     "Draw the game's 2x MSAA render targets with 4x MSAA, for GPUs or drivers whose "
                     "native 2x MSAA misrenders (sets native_2x_msaa)");
-REXCVAR_DEFINE_STRING(eck_graphics_adapter, "auto", "El Chavo Kart",
-                      "Graphics card: auto, or the index d3d12_adapter takes (applied at start)");
+REXCVAR_DEFINE_STRING(eck_graphics_adapter, "", "El Chavo Kart",
+                      "Graphics card: the index d3d12_adapter takes, empty for the first usable card (applied at start)");
 REXCVAR_DEFINE_STRING(eck_player_1_name, "Player 1", "El Chavo Kart",
                       "Name shown for local player 1; save data is not affected");
 REXCVAR_DEFINE_STRING(eck_player_2_name, "Player 2", "El Chavo Kart",
@@ -145,6 +146,8 @@ std::string WindowValue(std::string_view key, const std::string& value) {
   }
   return value;
 }
+
+bool g_graphics_adapter_stale = false;
 
 std::string TomlValue(std::string_view key, const std::string& value) {
   const rex::cvar::FlagEntry* info = rex::cvar::GetFlagInfo(key);
@@ -329,6 +332,12 @@ void GameSettings::Capture(const std::filesystem::path& player_file, const std::
     }
   }
   pending_ = saved_;
+  // Captured after the correction, so Save would never see that the file still holds the old value.
+  if (g_graphics_adapter_stale) {
+    g_graphics_adapter_stale = false;
+    const std::string key = "eck_graphics_adapter";
+    SaveNow({{key, TomlValue(key, saved_[key])}});
+  }
 }
 
 void GameSettings::CaptureLateRegistered() {
@@ -474,10 +483,11 @@ void ApplyGraphicsAdapter() {
   const auto chosen = std::find_if(adapters.begin(), adapters.end(),
                                    [&](const GraphicsAdapter& adapter) { return adapter.index == *index; });
   if (ParseGraphicsAdapter(setting) && ParseGraphicsAdapter(setting) != index) {
-    REXLOG_WARN("Graphics card {} is not available, using {} (adapter {})", setting, chosen->name, *index);
+    REXLOG_WARN("Graphics card {} is not available, using {}", setting, chosen->name);
   } else {
-    REXLOG_INFO("Graphics card: {} (adapter {})", chosen->name, *index);
+    REXLOG_INFO("Graphics card: {}", chosen->name);
   }
+  g_graphics_adapter_stale = GraphicsAdapterSettingIsStale(setting, adapters);
   rex::cvar::SetFlagByName("d3d12_adapter", std::to_string(*index));
   rex::cvar::SetFlagByName("eck_graphics_adapter", std::to_string(*index));
 #endif
@@ -535,7 +545,6 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   diagnostics.system.cpu = CpuDescription();
   diagnostics.system.logical_processors = LogicalProcessorCount();
 
-  diagnostics.gpu.selected = selected_card;
   const GraphicsAdapterDetails adapter =
       EffectiveGraphicsAdapter(std::atoi(CvarText("d3d12_adapter", "-1").c_str()));
   diagnostics.gpu.resolved = adapter.name;
@@ -591,17 +600,26 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   for (const std::string& line : FormatStartupDiagnostics(diagnostics)) {
     REXLOG_INFO("{}", line);
   }
-  SetCrashRuntimeState(diagnostics.gpu.resolved_known ? diagnostics.gpu.resolved.c_str() : "unknown",
-                       (std::to_string(display.width) + "x" + std::to_string(display.height) + " | window=" +
-                        std::to_string(window.configured_width) + "x" + std::to_string(window.configured_height) +
-                        " | output=" + std::to_string(window.output_width) + "x" +
-                        std::to_string(window.output_height))
-                           .c_str(),
-                       ("frame_rate=" + FrameRateLabel(frame_rate) + " | " + diagnostics.gameplay.present).c_str(),
-                       ("render=" + std::to_string(diagnostics.graphics.render_width) + "x" +
-                        std::to_string(diagnostics.graphics.render_height) + " | msaa=" + diagnostics.graphics.msaa +
-                        " | language=" + language.package)
-                           .c_str());
+  const std::string crash_display =
+      std::to_string(display.width) + "x" + std::to_string(display.height) +
+      (window.fullscreen ? " | borderless fullscreen" : " | windowed") + " | window=" +
+      std::to_string(window.configured_width) + "x" + std::to_string(window.configured_height) + " | output=" +
+      std::to_string(window.output_width) + "x" + std::to_string(window.output_height);
+  const std::string crash_timing = "frame_rate=" + FrameRateLabel(frame_rate) + " | " + diagnostics.gameplay.present;
+  const std::string crash_renderer =
+      "render=" + std::to_string(diagnostics.graphics.render_width) + "x" +
+      std::to_string(diagnostics.graphics.render_height) + " | internal=" + std::to_string(percent) +
+      "% | msaa=" + diagnostics.graphics.msaa + " | anti-aliasing=" + diagnostics.graphics.anti_aliasing +
+      " | texture filtering=" + diagnostics.graphics.texture_filtering;
+  CrashRuntimeState crash_state;
+  crash_state.gpu = diagnostics.gpu.resolved_known ? diagnostics.gpu.resolved.c_str() : "unknown";
+  crash_state.selected_adapter = selected_card.c_str();
+  crash_state.display = crash_display.c_str();
+  crash_state.timing = crash_timing.c_str();
+  crash_state.renderer = crash_renderer.c_str();
+  crash_state.language = language.key;
+  crash_state.online = settings.GetBool(kOnlineEnabledSetting, kDefaultOnlineEnabled) ? "enabled" : "disabled";
+  SetCrashRuntimeState(crash_state);
 }
 
 void GameSettings::MarkWindowCreated(bool launcher_window) {

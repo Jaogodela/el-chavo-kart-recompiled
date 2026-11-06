@@ -95,15 +95,19 @@ game files, saves, settings and logs are never touched.
 
 ## The launcher
 
-The launcher opens before the game. Hold **Shift** while starting to show it when it is turned off.
+The launcher opens before the game. Turn **Show this launcher** off on the Play page to start the game directly; hold
+**Shift** while starting to bring the launcher back.
 
-- **Play**: game file status and the disc image installer.
+- **Play**: game file status, Show this launcher, and the disc image installer. Reinstalling verifies the new files
+  before it replaces the old ones, so a failed or wrong image leaves the game as it was. Your saves, settings and logs
+  live outside the game folder and are not touched.
 - **Display**: Windowed or Borderless Fullscreen, window size, monitor and VSync.
-- **Graphics**: graphics card, render resolution, anti-aliasing, multisampling and texture filtering.
+- **Graphics**: graphics card, render resolution, anti-aliasing, multisampling and texture filtering. A card that is no
+  longer present falls back to the first available card.
 - **Gameplay**: language, unlock secret characters, unlock race tracks, frame rate in the window title and player names.
 - **Achievements**: the game's achievements and which ones you have unlocked.
 - **Controls**: keyboard on or off, and every keyboard key.
-- **About**: the game, save and log folders, the settings file, detailed logging and version information.
+- **About**: the game, save and log folders, the settings file, detailed logging, Report a bug and version information.
 
 Enter plays, Ctrl+S saves, F11 switches fullscreen and Alt+F4 quits. Escape does not quit.
 
@@ -137,8 +141,8 @@ Default keyboard layout:
 | D-pad | Shift + arrows |
 | Right stick | I / J / K / L |
 
-Port hotkeys: **F2** frame counter (session only; the Gameplay page sets the starting state), **F7** achievements,
-**F11** Windowed / Borderless Fullscreen, **Alt+F4** exit. **F3** and **F4** are unassigned; Escape does not quit.
+Port hotkeys: **F3** frame counter (session only; the Gameplay page sets the starting state), **F7** achievements,
+**F11** Windowed / Borderless Fullscreen, **Alt+F4** exit. **F2** and **F4** are unassigned; Escape does not quit.
 
 ## Saves and achievements
 
@@ -147,7 +151,10 @@ Everything is kept in `user_data` beside the program (`build\user_data` for a de
 - Saves: `user_data\<profile>\475807D7\00000001\`, written through the game's own Xbox 360 save calls.
 - Achievements: `user_data\achievements\475807D7.toml`.
 - Settings: `user_data\settings.toml`, loaded after `el_chavo_kart.toml`.
-- Logs: in the logs folder the About page opens.
+- Logs: in the logs folder the About page opens. A crash adds a `CRASH REPORT` block to that session's log.
+
+To report a bug, use **Report a bug** on the About page: it shows the newest log and opens the project's issue page.
+Nothing is uploaded; check the log and attach it yourself.
 
 ## Known limitations
 

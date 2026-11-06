@@ -41,7 +41,7 @@ Off	Desligado
 On	Ligado
 Default	Padrão
 Graphics card	Placa de vídeo
-Selects which GPU renders the game and restarts the game window.	Escolhe qual GPU renderiza o jogo e reinicia a janela do jogo.
+Selects which GPU renders the game. If the selected GPU is no longer available, the first available GPU is used.	Escolhe qual GPU renderiza o jogo. Se a GPU selecionada não estiver mais disponível, a primeira disponível será usada.
 Render resolution	Resolução de render
 Anti-aliasing	Antisserrilhamento
 Smooths jagged edges after the frame is drawn. Extreme is softer but cleaner.	Suaviza as bordas serrilhadas depois que o quadro é desenhado. Extreme deixa a imagem mais suave, porém mais limpa.
@@ -64,7 +64,7 @@ Frame rate in title	FPS no título
 Render resolution in title	Resolução de render no título
 Shows the game's render resolution in the window title	Mostra a resolução de render do jogo no título da janela
 Frame counter	Contador de FPS
-Shows the game's frame rate in the corner. F2 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F2 liga e desliga durante o jogo.
+Shows the game's frame rate in the corner. F3 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F3 liga e desliga durante o jogo.
 Hidden	Oculto
 Shown	Visível
 Install the game to see its achievements.	Instale o jogo para ver as conquistas dele.
@@ -95,6 +95,9 @@ Keeps logs for normal sessions. Crash diagnostics are always preserved.	Guarda r
 Logs folder	Pasta de registros
 Open the folder containing session and crash logs	Abre a pasta com os registros de sessão e de falhas
 Open logs folder	Abrir pasta de registros
+Bug report	Relato de bug
+Shows the newest log and opens the project's issue page. Nothing is uploaded: check the log, then attach it yourself.	Mostra o registro mais recente e abre a página de problemas do projeto. Nada é enviado: confira o registro e anexe-o você mesmo.
+Report a bug	Relatar um bug
 Port version	Versão do port
 Libraries	Bibliotecas
 Verifying installation...	Verificando a instalação...
@@ -106,6 +109,8 @@ The game files were not changed.	Os arquivos do jogo não foram alterados.
 No game folder	Sem pasta do jogo
 Start the game with --game_data_root to choose where the game files go.	Inicie o jogo com --game_data_root para escolher onde ficam os arquivos do jogo.
 Game folder not empty	A pasta do jogo não está vazia
+Disc image in the game folder	Imagem de disco na pasta do jogo
+Move the disc image out of the game folder and try again.	Mova a imagem de disco para fora da pasta do jogo e tente novamente.
 The game folder holds other files, so it was not replaced.	A pasta do jogo contém outros arquivos, então não foi substituída.
 Could not open the file	Não foi possível abrir o arquivo
 Check that the file exists and that it is not in use.	Verifique se o arquivo existe e se não está em uso.

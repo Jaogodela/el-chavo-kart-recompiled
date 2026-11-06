@@ -27,12 +27,11 @@ struct GraphicsAdapterDetails {
   bool known = false;
 };
 
-// Windows: the adapter ReXGlue's d3d12_adapter selection will use for `configured_index` (-1 automatic, -2 WARP).
-// Mirrors the runtime's enumeration, so Automatic reports the GPU that is actually picked.
+// Windows: the adapter ReXGlue's d3d12_adapter selection will use for `configured_index` (-1 lets ReXGlue choose, -2
+// WARP). Mirrors the runtime's enumeration.
 GraphicsAdapterDetails EffectiveGraphicsAdapter(int configured_index);
 
-// The adapter index a eck_graphics_adapter value names; empty for anything that is not an index, such as the retired
-// "auto".
+// The adapter index a eck_graphics_adapter value names; empty for anything that is not an index.
 inline std::optional<int> ParseGraphicsAdapter(std::string_view setting) {
   int index = 0;
   const char* end = setting.data() + setting.size();
@@ -55,6 +54,12 @@ inline std::optional<int> ResolveGraphicsAdapter(std::string_view setting, const
     }
   }
   return adapters.front().index;
+}
+
+// Whether a saved value names no adapter and should be replaced by the resolved one. Empty is the default, not stale.
+inline bool GraphicsAdapterSettingIsStale(std::string_view setting, const std::vector<GraphicsAdapter>& adapters) {
+  const std::optional<int> index = ResolveGraphicsAdapter(setting, adapters);
+  return index && !setting.empty() && setting != std::to_string(*index);
 }
 
 // The Graphics card choices as {value, label}, one per adapter.

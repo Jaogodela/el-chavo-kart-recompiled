@@ -33,6 +33,29 @@ target_include_directories(eck_achievements_tests PRIVATE "${ECK_SRC_DIR}" stubs
 
 add_executable(eck_launcher_logic_tests launcher_logic_tests.cpp)
 target_include_directories(eck_launcher_logic_tests PRIVATE "${ECK_SRC_DIR}")
+target_compile_definitions(eck_launcher_logic_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
+# Crash report text, a real unhandled exception in a child process, and what Report a bug resolves to.
+add_executable(eck_crash_report_tests
+    crash_report_tests.cpp
+    "${ECK_SRC_DIR}/crash_report.cpp"
+    "${ECK_SRC_DIR}/diagnostics.cpp"
+    "${ECK_SRC_DIR}/log_path.cpp"
+)
+target_include_directories(eck_crash_report_tests PRIVATE "${ECK_SRC_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(eck_crash_report_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
+add_executable(eck_cursor_input_tests cursor_input_tests.cpp)
+target_include_directories(eck_cursor_input_tests PRIVATE "${ECK_SRC_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" stubs)
+target_compile_definitions(eck_cursor_input_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
+add_executable(eck_hotkey_tests hotkey_tests.cpp)
+target_include_directories(eck_hotkey_tests PRIVATE "${ECK_SRC_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(eck_hotkey_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
+
+add_executable(eck_graphics_adapter_tests graphics_adapter_tests.cpp)
+target_include_directories(eck_graphics_adapter_tests PRIVATE "${ECK_SRC_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(eck_graphics_adapter_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
 
 add_executable(eck_game_window_tests game_window_tests.cpp)
 target_include_directories(eck_game_window_tests PRIVATE "${ECK_SRC_DIR}")

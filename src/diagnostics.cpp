@@ -87,7 +87,7 @@ std::vector<std::string> FormatStartupDiagnostics(const StartupDiagnostics& diag
   lines.push_back("Runtime CPU: " + diagnostics.system.cpu +
                   " | logical processors=" + std::to_string(diagnostics.system.logical_processors));
 
-  std::string gpu = "Runtime GPU: selected=" + diagnostics.gpu.selected + " | resolved=";
+  std::string gpu = "Runtime GPU: ";
   if (diagnostics.gpu.resolved_known && !diagnostics.gpu.resolved.empty()) {
     gpu += diagnostics.gpu.resolved;
   } else {

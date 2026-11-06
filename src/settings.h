@@ -71,7 +71,7 @@ void ApplyInternalRenderPath();
 void ApplyPlayerNames();
 
 // Sets d3d12_adapter from the launcher's Graphics card choice. Call once the player settings are loaded and
-// before the graphics device is created; Automatic leaves the SDK's own preference alone.
+// before the graphics device is created.
 void ApplyGraphicsAdapter();
 
 struct StartupWindowInfo {

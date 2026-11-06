@@ -20,11 +20,6 @@ constexpr const char* kBackupFolder = "game-install-backup";
 constexpr uint64_t kSpaceMargin = 256ull << 20;
 constexpr int kRenameAttempts = 10;
 
-struct RequiredFile {
-  const char* path;
-  uint64_t size;
-};
-
 // Files the game cannot start, load its front end or play its intro without, with their size on the disc.
 constexpr RequiredFile kRequiredFiles[] = {
     {"ChavoKartGame/Xbox360TOC.txt", 25370},
@@ -73,6 +68,29 @@ bool IsReplaceable(const std::filesystem::path& dir) {
          std::filesystem::exists(dir / "ChavoKartGame", ec);
 }
 
+bool IsInsideFolder(const std::filesystem::path& path, const std::filesystem::path& folder) {
+  std::error_code ec;
+  const std::filesystem::path absolute = std::filesystem::absolute(path, ec).lexically_normal();
+  if (path.empty() || ec) {
+    return false;
+  }
+  const std::filesystem::path relative = absolute.lexically_relative(folder);
+  return !relative.empty() && *relative.begin() != "..";
+}
+
+// The normalized game folder, or nothing when it has no parent to stage next to.
+std::filesystem::path ResolveTarget(const std::filesystem::path& game_dir) {
+  std::error_code ec;
+  std::filesystem::path target = std::filesystem::absolute(game_dir, ec).lexically_normal();
+  if (!target.has_filename()) {
+    target = target.parent_path();
+  }
+  if (game_dir.empty() || ec || target.parent_path().empty() || target.parent_path() == target) {
+    return {};
+  }
+  return target;
+}
+
 class StagingGuard {
  public:
   explicit StagingGuard(std::filesystem::path dir) : dir_(std::move(dir)) {}
@@ -116,6 +134,11 @@ InstallStatus FromImage(xiso::Status status) {
 
 }  // namespace
 
+const GameSpec& SupportedGame() {
+  static const GameSpec spec{kXexSize, kXexSha256, kRequiredFiles};
+  return spec;
+}
+
 std::filesystem::path DefaultGameFolder(const std::filesystem::path& port_folder) {
   std::ifstream in(port_folder / "game-folder.txt", std::ios::binary);
   std::string line;
@@ -130,7 +153,7 @@ std::filesystem::path DefaultGameFolder(const std::filesystem::path& port_folder
   return port_folder / "game";
 }
 
-GameCheck CheckGameFiles(const std::filesystem::path& game_dir) {
+GameCheck CheckGameFiles(const std::filesystem::path& game_dir, const GameSpec& spec) {
   GameCheck check;
   const auto xex = game_dir / "default.xex";
   std::error_code ec;
@@ -138,15 +161,15 @@ GameCheck CheckGameFiles(const std::filesystem::path& game_dir) {
     return check;
   }
   check.state = GameFiles::kUnsupported;
-  if (std::filesystem::file_size(xex, ec) != kXexSize || ec) {
+  if (std::filesystem::file_size(xex, ec) != spec.xex_size || ec) {
     return check;
   }
   std::string error;
   check.xex_sha256 = NormalizeSha256(Sha256FileHex(xex, error));
-  if (check.xex_sha256 != kXexSha256) {
+  if (check.xex_sha256 != spec.xex_sha256) {
     return check;
   }
-  for (const RequiredFile& required : kRequiredFiles) {
+  for (const RequiredFile& required : spec.required_files) {
     const std::filesystem::path path = game_dir / std::filesystem::path(required.path).make_preferred();
     const uintmax_t size = std::filesystem::file_size(path, ec);
     if (ec || size != required.size) {
@@ -184,23 +207,42 @@ std::string GameFilesLogText(const GameCheck& check) {
   return text + ")";
 }
 
+bool RecoverInterruptedInstall(const std::filesystem::path& game_dir) {
+  const std::filesystem::path target = ResolveTarget(game_dir);
+  if (target.empty()) {
+    return false;
+  }
+  const std::filesystem::path backup = target.parent_path() / kBackupFolder;
+  std::error_code ec;
+  if (std::filesystem::exists(target, ec) || !std::filesystem::is_regular_file(backup / "default.xex", ec)) {
+    return false;
+  }
+  return RenameWithRetry(backup, target);
+}
+
 InstallResult InstallFromDiscImage(const std::filesystem::path& image, const std::filesystem::path& game_dir,
-                                   const InstallHooks& hooks) {
+                                   const InstallHooks& hooks, const GameSpec& spec) {
   const auto phase = [&](const char* text) {
     if (hooks.phase) {
       hooks.phase(text);
     }
   };
+  const auto swap_folder = [&](const std::filesystem::path& from, const std::filesystem::path& to) {
+    return hooks.rename ? hooks.rename(from, to) : RenameWithRetry(from, to);
+  };
 
-  std::error_code ec;
-  std::filesystem::path target = std::filesystem::absolute(game_dir, ec).lexically_normal();
-  if (!target.has_filename()) {
-    target = target.parent_path();
-  }
-  const std::filesystem::path parent = target.parent_path();
-  if (game_dir.empty() || ec || parent.empty() || parent == target) {
+  const std::filesystem::path target = ResolveTarget(game_dir);
+  if (target.empty()) {
     return Failure(InstallStatus::kNoGameFolder);
   }
+  const std::filesystem::path parent = target.parent_path();
+  if (IsInsideFolder(image, target)) {
+    return Failure(InstallStatus::kImageInGameFolder);
+  }
+  if (IsInsideFolder(hooks.user_data, target)) {
+    return Failure(InstallStatus::kForeignFolder, "the user data folder is inside the game folder");
+  }
+  RecoverInterruptedInstall(target);
 
   phase("Reading disc image...");
   xiso::Image disc;
@@ -219,11 +261,12 @@ InstallResult InstallFromDiscImage(const std::filesystem::path& image, const std
   }
   const std::string xex_sha256 =
       Sha256Hex(std::string_view(reinterpret_cast<const char*>(xex_bytes.data()), xex_bytes.size()));
-  if (xex_bytes.size() != kXexSize || NormalizeSha256(xex_sha256) != kXexSha256) {
+  if (xex_bytes.size() != spec.xex_size || NormalizeSha256(xex_sha256) != spec.xex_sha256) {
     return Failure(InstallStatus::kWrongVersion, "default.xex SHA-256 " + xex_sha256);
   }
   xex_bytes = {};
 
+  std::error_code ec;
   std::filesystem::create_directories(parent, ec);
   if (ec) {
     return Failure(InstallStatus::kWriteFailed, "cannot create the parent folder: " + ec.message());
@@ -255,7 +298,7 @@ InstallResult InstallFromDiscImage(const std::filesystem::path& image, const std
   }
 
   phase("Verifying installation...");
-  const GameCheck check = CheckGameFiles(staging);
+  const GameCheck check = CheckGameFiles(staging, spec);
   switch (check.state) {
     case GameFiles::kReady:
       break;
@@ -273,20 +316,18 @@ InstallResult InstallFromDiscImage(const std::filesystem::path& image, const std
   const bool replacing = std::filesystem::exists(target, ec);
   if (replacing) {
     std::filesystem::remove_all(backup, ec);
-    if (!RenameWithRetry(target, backup)) {
+    if (!swap_folder(target, backup)) {
       return Failure(InstallStatus::kWriteFailed, "cannot move the old game folder aside");
     }
   }
-  if (!RenameWithRetry(staging, target)) {
+  if (!swap_folder(staging, target)) {
     if (replacing) {
-      RenameWithRetry(backup, target);
+      swap_folder(backup, target);
     }
     return Failure(InstallStatus::kWriteFailed, "cannot activate the new game folder");
   }
   guard.Release();
-  if (replacing) {
-    std::filesystem::remove_all(backup, ec);
-  }
+  std::filesystem::remove_all(backup, ec);
 
   InstallResult result;
   result.bytes = disc.total_bytes();
@@ -304,6 +345,8 @@ InstallMessage DescribeInstall(InstallStatus status) {
       return {"No game folder", "Start the game with --game_data_root to choose where the game files go."};
     case InstallStatus::kForeignFolder:
       return {"Game folder not empty", "The game folder holds other files, so it was not replaced."};
+    case InstallStatus::kImageInGameFolder:
+      return {"Disc image in the game folder", "Move the disc image out of the game folder and try again."};
     case InstallStatus::kOpenFailed:
       return {"Could not open the file", "Check that the file exists and that it is not in use."};
     case InstallStatus::kNotImage:

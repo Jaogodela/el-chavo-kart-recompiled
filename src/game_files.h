@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <span>
 #include <string>
+#include <string_view>
 
 namespace eck {
 
@@ -18,6 +20,23 @@ inline constexpr char kXexSha256[] = "1db4e96b413d5629206ffe63e73c0e1cfaca9eea24
 
 enum class GameFiles { kReady, kMissing, kIncomplete, kUnsupported };
 
+inline bool GameCanStart(GameFiles files, bool installing) {
+  return files == GameFiles::kReady && !installing;
+}
+
+struct RequiredFile {
+  const char* path;
+  uint64_t size;
+};
+
+// What makes a folder this game. Only the tests name another: nothing can build a default.xex with the real hash.
+struct GameSpec {
+  uint64_t xex_size;
+  std::string_view xex_sha256;
+  std::span<const RequiredFile> required_files;
+};
+const GameSpec& SupportedGame();
+
 struct GameCheck {
   GameFiles state = GameFiles::kMissing;
   std::string xex_sha256;    // set when default.xex was read
@@ -29,7 +48,7 @@ struct GameCheck {
 std::filesystem::path DefaultGameFolder(const std::filesystem::path& port_folder);
 
 // The one readiness check: launcher state, install verification and the clean-start decision all use it.
-GameCheck CheckGameFiles(const std::filesystem::path& game_dir);
+GameCheck CheckGameFiles(const std::filesystem::path& game_dir, const GameSpec& spec = SupportedGame());
 
 // A support log line about the game files that carries no folder: state, size and SHA-256.
 std::string GameFilesLogText(const GameCheck& check);
@@ -39,6 +58,7 @@ enum class InstallStatus {
   kCancelled,
   kNoGameFolder,
   kForeignFolder,
+  kImageInGameFolder,
   kOpenFailed,
   kNotImage,
   kWrongTitle,
@@ -61,12 +81,20 @@ struct InstallHooks {
   std::function<void(const char* phase)> phase;
   // Returns false to cancel. Cancelling is possible until the new files are activated.
   std::function<bool(uint64_t done, uint64_t total)> progress;
+  // Refused as a target when it lies inside the game folder, which an install replaces whole.
+  std::filesystem::path user_data;
+  // The folder swap; empty uses the file system. Tests fail it to reach the rollback.
+  std::function<bool(const std::filesystem::path& from, const std::filesystem::path& to)> rename;
 };
 
 // Checks the image's default.xex first, then extracts the disc into a staging folder next to `game_dir`, checks it
 // with CheckGameFiles and only then swaps it in. On any failure or cancellation `game_dir` is left as it was.
 InstallResult InstallFromDiscImage(const std::filesystem::path& image, const std::filesystem::path& game_dir,
-                                   const InstallHooks& hooks = {});
+                                   const InstallHooks& hooks = {}, const GameSpec& spec = SupportedGame());
+
+// A process killed between the two renames of the swap leaves no game folder and the previous one in the backup.
+// Puts it back; returns whether it did.
+bool RecoverInterruptedInstall(const std::filesystem::path& game_dir);
 
 struct InstallMessage {
   const char* title;

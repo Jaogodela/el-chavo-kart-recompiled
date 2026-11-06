@@ -7,7 +7,7 @@
 
 namespace rex::input {
 
-// A passive hook added by patches/rexglue-sdk/0047-input-activity-callback.patch.
+// A passive hook added by patches/rexglue-sdk/0011-input-activity-callback.patch.
 // Called on the input polling thread when a device's state changes.
 void SetInputActivityCallback(
     std::function<void(DeviceId device, const X_INPUT_GAMEPAD& gamepad)> callback);

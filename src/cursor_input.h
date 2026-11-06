@@ -11,7 +11,8 @@ namespace eck {
 enum class CursorInputDevice { kMouse, kKeyboard, kController };
 
 // The last meaningful gameplay input device decides the cursor. Overlays and a
-// lost focus force it visible until they go away.
+// lost focus force it visible until they go away. Every game process sees the
+// same controllers, so input noted without focus belongs to another window.
 class CursorHider {
  public:
   bool visible() const { return visible_; }
@@ -33,6 +34,9 @@ class CursorHider {
 
  private:
   std::optional<bool> Note(CursorInputDevice device) {
+    if (!focused_) {
+      return std::nullopt;
+    }
     last_device_ = device;
     return Recalculate();
   }

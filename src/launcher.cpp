@@ -28,6 +28,7 @@
 #include "trg/launcher.h"
 #include "trg/platform.h"
 
+#include "bug_report.h"
 #include "dpi.h"
 #include "frame_limiter.h"
 #include "game_files.h"
@@ -38,12 +39,14 @@
 #include "launcher_achievements.h"
 #include "launcher_quit.h"
 #include "log_filter.h"
+#include "log_path.h"
 #include "online_page.h"
 #include "online_runtime.h"
 #include "platform.h"
 #include "player_names.h"
 #include "port_version.h"
 #include "settings.h"
+#include "system_info.h"
 #include "ui_text.h"
 #include "window_host.h"
 #if defined(_WIN32)
@@ -259,7 +262,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
 
   // Every PLAY (mouse, Enter, Xbox Start) ends here. The one save happens here; StartGame never saves.
   void RequestPlay() {
-    if (starting_ || install_.running() || game_files_ != GameFiles::kReady) {
+    if (starting_ || !GameCanStart(game_files_, install_.running())) {
       return;
     }
     if (!launcher_->Save()) {
@@ -530,7 +533,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       if (install_.running()) {
         return trg::PlayCheck{false, "Wait for the install to finish.", 0};
       }
-      if (game_files_ == GameFiles::kReady) {
+      if (GameCanStart(game_files_, false)) {
         if (online_page_.PlayNeedsTest(settings_)) {
           return trg::PlayCheck{false, kConnectionTestRequired, launcher_ ? launcher_->FindPage("Online") : 0};
         }
@@ -612,8 +615,10 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     outcome_ = std::make_shared<InstallOutcome>();
     const bool started = install_.Start(
         "Reading disc image...",
-        [outcome = outcome_, image = PathFromUtf8(picked), game_dir = paths_.game_dir](trg::Task& task) {
+        [outcome = outcome_, image = PathFromUtf8(picked), game_dir = paths_.game_dir,
+         user_dir = paths_.user_dir](trg::Task& task) {
           InstallHooks hooks;
+          hooks.user_data = user_dir;
           hooks.phase = [&task](const char* text) {
             task.SetLabel(text);
             task.Progress(0, 0);
@@ -750,7 +755,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       for (const auto& [option_value, label] : GraphicsAdapterOptions(graphics_adapters_)) {
         adapters.push_back({option_value, label});
       }
-      ui.Combo("Graphics card", "Selects which GPU renders the game and restarts the game window.",
+      ui.Combo("Graphics card",
+               "Selects which GPU renders the game. If the selected GPU is no longer available, the first available "
+               "GPU is used.",
                "eck_graphics_adapter", value.c_str(), adapters);
     }
     ui.Combo("Render resolution",
@@ -805,7 +812,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
               true, "Off", "On");
     ui.Toggle("Render resolution in title", "Shows the game's render resolution in the window title",
               "eck_show_render_resolution", false, "Off", "On");
-    ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F2 toggles it while playing.",
+    ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F3 toggles it while playing.",
               "eck_show_frame_counter", false, "Hidden", "Shown");
     if (ui.Section("Local player names", true)) {
       ui.Help(kPlayerNamesHelp);
@@ -852,7 +859,8 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   }
 
   void PageAchievements(trg::Ui& ui) {
-    if (game_files_ != GameFiles::kReady) {
+    // An open icon file would keep a reinstall from swapping the game folder.
+    if (!GameCanStart(game_files_, install_.running())) {
       ui.Paragraph("Install the game to see its achievements.");
       return;
     }
@@ -965,7 +973,13 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       eck::ApplyDetailedLogging();
     }
     if (ui.ButtonRow("Logs folder", "Open the folder containing session and crash logs", "Open logs folder")) {
-      OpenLogsFolder();
+      trg::OpenInFileManager(Utf8(ReadyLogsFolder()));
+    }
+    if (ui.ButtonRow("Bug report",
+                     "Shows the newest log and opens the project's issue page. Nothing is uploaded: check the log, "
+                     "then attach it yourself.",
+                     "Report a bug")) {
+      ReportBug();
     }
     ui.Info("Port version", PortVersion().c_str());
     ui.Info("Libraries", "ReXGlue SDK " REXGLUE_VERSION_STRING "   \xC2\xB7   TRG Launcher " ECK_TRG_VERSION);
@@ -973,7 +987,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     ui.Link(DisplayUrl(kRepositoryUrl).c_str(), kRepositoryUrl);
   }
 
-  void OpenLogsFolder() {
+  std::filesystem::path ReadyLogsFolder() {
     std::error_code ec;
     std::filesystem::path folder = paths_.logs_dir;
     std::filesystem::create_directories(folder, ec);
@@ -981,7 +995,14 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       REXLOG_WARN("Could not create the logs folder: {}", ec.message());
       folder = folder.parent_path();
     }
-    trg::OpenInFileManager(Utf8(folder));
+    return folder;
+  }
+
+  void ReportBug() {
+    const std::filesystem::path folder = ReadyLogsFolder();
+    const std::filesystem::path log = BugReportLog(folder, paths_.active_log, kLogName);
+    trg::OpenInFileManager(Utf8(log.empty() ? folder : log));
+    trg::OpenUrl(BugReportUrl(kRepositoryUrl, PortVersion(), OsDescription()));
   }
 
   LauncherPaths paths_;

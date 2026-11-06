@@ -32,10 +32,16 @@ constexpr const char* kProduct = "El Chavo Kart";
 constexpr const char* kBuildConfig = ECK_CRASH_BUILD_CONFIG;
 
 char g_game_version[32] = "unknown";
+char g_system_sdk[32] = {};
+char g_system_os[96] = {};
+char g_system_cpu[96] = {};
 char g_runtime_gpu[96] = {};
-char g_runtime_display[96] = {};
+char g_runtime_selected_adapter[96] = {};
+char g_runtime_display[128] = {};
 char g_runtime_timing[128] = {};
 char g_runtime_renderer[160] = {};
+char g_runtime_language[16] = {};
+char g_runtime_online[16] = {};
 std::atomic<CrashGuestFunctionResolver> g_guest_resolver{nullptr};
 
 void CopyText(char* out, size_t size, const char* text) {
@@ -54,10 +60,16 @@ void CopyText(char* out, size_t size, const char* text) {
 }
 
 void FillRuntimeState(CrashReport& report) {
+  CopyText(report.system_sdk, sizeof(report.system_sdk), g_system_sdk);
+  CopyText(report.system_os, sizeof(report.system_os), g_system_os);
+  CopyText(report.system_cpu, sizeof(report.system_cpu), g_system_cpu);
   CopyText(report.runtime_gpu, sizeof(report.runtime_gpu), g_runtime_gpu);
+  CopyText(report.runtime_selected_adapter, sizeof(report.runtime_selected_adapter), g_runtime_selected_adapter);
   CopyText(report.runtime_display, sizeof(report.runtime_display), g_runtime_display);
   CopyText(report.runtime_timing, sizeof(report.runtime_timing), g_runtime_timing);
   CopyText(report.runtime_renderer, sizeof(report.runtime_renderer), g_runtime_renderer);
+  CopyText(report.runtime_language, sizeof(report.runtime_language), g_runtime_language);
+  CopyText(report.runtime_online, sizeof(report.runtime_online), g_runtime_online);
 }
 
 #if defined(_WIN32)
@@ -236,16 +248,10 @@ void FillModule(CrashModuleRef& module, const void* address) {
     return;
   }
   wchar_t path[MAX_PATH] = L"";
-  const DWORD length = GetModuleFileNameW(handle, path, MAX_PATH);
-  const wchar_t* name = path;
-  for (DWORD i = 0; i < length; ++i) {
-    if (path[i] == L'\\' || path[i] == L'/') {
-      name = path + i + 1;
-    }
-  }
+  GetModuleFileNameW(handle, path, MAX_PATH);
   module.known = true;
   module.base = reinterpret_cast<uint64_t>(handle);
-  NarrowModuleName(module.name, sizeof(module.name), name);
+  NarrowModuleName(module.name, sizeof(module.name), crash_detail::ModuleBaseName(path));
 }
 
 void FillContext(CrashReport& report, const CONTEXT* context) {
@@ -437,6 +443,18 @@ size_t FormatCrashReport(const CrashReport& report, char* buffer, size_t size) {
     }
     writer.Char('\n');
   }
+  const auto system_field = [&](const char* name, const char* value) {
+    if (value[0] == '\0') {
+      return;
+    }
+    Prefix(writer, report);
+    writer.Text(name);
+    writer.Text(value);
+    writer.Char('\n');
+  };
+  system_field("ReXGlue SDK: ", report.system_sdk);
+  system_field("OS: ", report.system_os);
+  system_field("CPU: ", report.system_cpu);
   Prefix(writer, report);
   writer.Text("Uptime: ");
   writer.Duration(report.uptime_ms);
@@ -571,8 +589,9 @@ size_t FormatCrashReport(const CrashReport& report, char* buffer, size_t size) {
   }
 
   const bool has_runtime_state =
-      report.runtime_gpu[0] != '\0' || report.runtime_display[0] != '\0' || report.runtime_timing[0] != '\0' ||
-      report.runtime_renderer[0] != '\0';
+      report.runtime_gpu[0] != '\0' || report.runtime_selected_adapter[0] != '\0' ||
+      report.runtime_display[0] != '\0' || report.runtime_timing[0] != '\0' || report.runtime_renderer[0] != '\0' ||
+      report.runtime_language[0] != '\0' || report.runtime_online[0] != '\0';
   if (has_runtime_state) {
     Prefix(writer, report);
     writer.Text("Last runtime state:\n");
@@ -588,9 +607,12 @@ size_t FormatCrashReport(const CrashReport& report, char* buffer, size_t size) {
       writer.Char('\n');
     };
     field("gpu", report.runtime_gpu);
+    field("selected_adapter", report.runtime_selected_adapter);
     field("display", report.runtime_display);
     field("timing", report.runtime_timing);
     field("renderer", report.runtime_renderer);
+    field("language", report.runtime_language);
+    field("online", report.runtime_online);
   }
 
   Separator(writer, report);
@@ -618,11 +640,20 @@ void SetCrashGameVersion(const char* version) {
   CopyText(g_game_version, sizeof(g_game_version), version);
 }
 
-void SetCrashRuntimeState(const char* gpu, const char* display, const char* timing, const char* renderer) {
-  CopyText(g_runtime_gpu, sizeof(g_runtime_gpu), gpu);
-  CopyText(g_runtime_display, sizeof(g_runtime_display), display);
-  CopyText(g_runtime_timing, sizeof(g_runtime_timing), timing);
-  CopyText(g_runtime_renderer, sizeof(g_runtime_renderer), renderer);
+void SetCrashSystemInfo(const char* sdk, const char* os, const char* cpu) {
+  CopyText(g_system_sdk, sizeof(g_system_sdk), sdk);
+  CopyText(g_system_os, sizeof(g_system_os), os);
+  CopyText(g_system_cpu, sizeof(g_system_cpu), cpu);
+}
+
+void SetCrashRuntimeState(const CrashRuntimeState& state) {
+  CopyText(g_runtime_gpu, sizeof(g_runtime_gpu), state.gpu);
+  CopyText(g_runtime_selected_adapter, sizeof(g_runtime_selected_adapter), state.selected_adapter);
+  CopyText(g_runtime_display, sizeof(g_runtime_display), state.display);
+  CopyText(g_runtime_timing, sizeof(g_runtime_timing), state.timing);
+  CopyText(g_runtime_renderer, sizeof(g_runtime_renderer), state.renderer);
+  CopyText(g_runtime_language, sizeof(g_runtime_language), state.language);
+  CopyText(g_runtime_online, sizeof(g_runtime_online), state.online);
 }
 
 void SetCrashGuestFunctionResolver(CrashGuestFunctionResolver resolver) {
@@ -653,6 +684,16 @@ bool CrashWriteActive() {
 
 void ResetCrashWrite() {
   g_crash_write = 0;
+}
+
+const wchar_t* ModuleBaseName(const wchar_t* path) {
+  const wchar_t* name = path;
+  for (const wchar_t* at = path; *at != L'\0'; ++at) {
+    if (*at == L'\\' || *at == L'/') {
+      name = at + 1;
+    }
+  }
+  return name;
 }
 
 }  // namespace crash_detail

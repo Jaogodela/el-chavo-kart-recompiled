@@ -11,8 +11,17 @@ class ImGuiDrawer;
 
 namespace eck {
 
-// Adds the in-game counter and its F2 toggle.
+// ReXGlue's developer overlays. Patch 0025 drops two of them from the release runtime, but Debug builds use the stock
+// one, where bind_debug_overlay would take F3 first: a key fires only the first bind that names it.
+inline constexpr const char* kRemovedSdkBinds[] = {"bind_debug_overlay", "bind_console", "bind_settings"};
+
+// Adds the in-game counter and its F3 toggle.
 void CreateFrameCounter(rex::ui::ImGuiDrawer* drawer);
+
+// The session value of eck_show_frame_counter after one F3 press; settings.toml keeps the starting state.
+inline const char* ToggledFrameCounterFlag(bool shown) {
+  return shown ? "false" : "true";
+}
 
 // "60 FPS  16.7 ms": the rate as a whole number and the average frame time to a tenth of a millisecond.
 inline std::string FrameCounterText(const GuestFrameStats& stats) {

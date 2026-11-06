@@ -17,11 +17,13 @@
 #include <rex/system.h>
 #include <rex/system/kernel_state.h>
 #include <rex/ui/flags.h>
+#include <rex/ui/keybinds.h>
 #include <rex/ui/windowed_app_context.h>
 
 #include "achievements_menu.h"
 #include "achievements_overlay.h"
 #include "active_log.h"
+#include "crash_report.h"
 #include "debug_telemetry.h"
 #include "diagnostics.h"
 #include "frame_counter.h"
@@ -114,12 +116,24 @@ class ElChavoKartApp : public rex::ReXApp {
     };
     REXLOG_INFO("{}", eck::FormatApplicationVersion(identity));
     REXLOG_INFO("{}", eck::FormatBuildIdentity(identity));
+    const std::string os = eck::OsDescription();
+    const std::string cpu = eck::CpuDescription();
+    eck::SetCrashSystemInfo(REXGLUE_VERSION_STRING, os.c_str(), cpu.c_str());
     eck::LogMainMenuHooks();
     eck::LogOnlineGameHooks();
+    if (eck::RecoverInterruptedInstall(game_data_root())) {
+      REXLOG_WARN("Restored the game files after an interrupted install");
+    }
     REXLOG_INFO("{}", eck::GameFilesLogText(eck::CheckGameFiles(game_data_root())));
     REXLOG_INFO("Profile settings: <user data>/{:08X}/profile/User; achievements: <user data>/achievements/{:08X}.toml",
                 eck::kTitleId, eck::kTitleId);
     eck::ApplyGraphicsAdapter();
+  }
+
+  void OnCreateDialogs(rex::ui::ImGuiDrawer*) override {
+    for (const char* bind : eck::kRemovedSdkBinds) {
+      rex::ui::UnregisterBind(bind);
+    }
   }
 
   void OnConfigureFonts(ImFontAtlas* atlas) override {
@@ -200,8 +214,8 @@ class ElChavoKartApp : public rex::ReXApp {
                         port_folder != rex::filesystem::GetExecutableFolder());
     eck::ShowLauncher(imgui_drawer(),
                       {defaults.game_data_root, defaults.user_data_root,
-                       eck::PlayerSettingsPath(defaults.user_data_root), logs_dir, user_data_.outcome,
-                       immediate_drawer()},
+                       eck::PlayerSettingsPath(defaults.user_data_root), logs_dir, eck::ActiveLogFile(),
+                       user_data_.outcome, immediate_drawer()},
                       game_settings_, std::move(callbacks));
     return std::nullopt;
   }

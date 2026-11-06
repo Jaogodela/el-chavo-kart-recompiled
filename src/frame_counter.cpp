@@ -46,8 +46,8 @@ class FrameCounterOverlay final : public rex::ui::ImGuiDialog {
 
 void CreateFrameCounter(rex::ui::ImGuiDrawer* drawer) {
   new FrameCounterOverlay(drawer);  // retained by the drawer for the session
-  rex::ui::RegisterBind("bind_eck_frame_counter", "F2", "Toggle frame counter", [] {
-    rex::cvar::SetFlagByName("eck_show_frame_counter", REXCVAR_GET(eck_show_frame_counter) ? "false" : "true");
+  rex::ui::RegisterBind("bind_eck_frame_counter", "F3", "Toggle frame counter", [] {
+    rex::cvar::SetFlagByName("eck_show_frame_counter", ToggledFrameCounterFlag(REXCVAR_GET(eck_show_frame_counter)));
   });
 }
 

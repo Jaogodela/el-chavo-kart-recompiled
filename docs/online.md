@@ -26,7 +26,7 @@ gameplay socket.
    the service offers its relay, Relay. With Online play on, **Play** waits until one test has finished (whatever its
    result); the test is remembered while Online play stays on and forgotten when it is switched off.
 5. The in-game ping panel reads `Ping: 38 / 51 / 44 ms`: one value per connected peer, lowest seat first, `--` until a
-   round trip is measured. It has no hotkey: F3 is reserved by the game's own bindings.
+   round trip is measured. It has no hotkey.
 
 Both players must run the same game image (`eck-usa-1db4e96b`) and build number; a friend on another build shows
 `Version mismatch` and cannot be joined or invited.

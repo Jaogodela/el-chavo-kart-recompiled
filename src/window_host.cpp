@@ -205,7 +205,14 @@ class WindowHost final : public rex::ui::WindowListener, public rex::ui::WindowI
       UpdateCursor();
       return;
     }
-    if (e.prev_state() || g_cursor.overlay_open()) {
+    if (e.prev_state()) {
+      // ReXGlue's binds fire on every repeat, which would strobe a toggle while the key is held.
+      if (e.virtual_key() == rex::ui::VirtualKey::kF3) {
+        e.set_handled(true);
+      }
+      return;
+    }
+    if (g_cursor.overlay_open()) {
       return;
     }
     g_cursor.KeyboardActivity();
