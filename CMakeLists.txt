@@ -360,6 +360,16 @@ add_custom_command(TARGET el_chavo_kart POST_BUILD
     VERBATIM
 )
 
+# Not POST_BUILD: a change to the PNG alone does not relink the program.
+add_custom_target(eck_launcher_assets ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:el_chavo_kart>/assets/launcher"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/launcher/header-art.png"
+        "$<TARGET_FILE_DIR:el_chavo_kart>/assets/launcher/header-art.png"
+    VERBATIM
+)
+add_dependencies(el_chavo_kart eck_launcher_assets)
+
 include(cmake/eck_guest.cmake)
 
 # The pure-logic tests (tests\CMakeLists.txt) are a separate CMake project with no ReXGlue SDK or TRG Launcher
