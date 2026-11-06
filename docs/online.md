@@ -25,14 +25,17 @@ gameplay socket.
    `Limited: ...` or `Not ready: ...`, with the lines Online service, Direct connections, Router configuration and, when
    the service offers its relay, Relay. With Online play on, **Play** waits until one test has finished (whatever its
    result); the test is remembered while Online play stays on and forgotten when it is switched off.
-5. The in-game ping panel reads `Ping: 38 / 51 / 44 ms`: one value per connected peer, lowest seat first, `--` until a
-   round trip is measured. It has no hotkey.
+5. **Ping display** (Online page, Off by default) shows the round trip to the other player in the corner, under the frame
+   counter when both are on; **F3** shows or hides it while playing, and does nothing with Online play off. With
+   several peers it reads `Ping: 38 / 51 / 44 ms`: one value per connected peer, lowest seat first. `Ping: --` means no
+   peer is connected or nothing has been measured yet. The value is the gameplay connection's own round trip (direct or
+   relayed), taken from the race sync acknowledgements. No extra packets are sent.
 
 Both players must run the same game image (`eck-usa-1db4e96b`) and build number; a friend on another build shows
 `Version mismatch` and cannot be joined or invited.
 
-Settings: `eck_online_enabled`, `eck_online_name` and `eck_online_connection_test` (written by the launcher) in
-`settings.toml`.
+Settings: `eck_online_enabled`, `eck_online_name`, `eck_online_ping_display` and `eck_online_connection_test` (written by
+the launcher) in `settings.toml`.
 
 ## Service address
 

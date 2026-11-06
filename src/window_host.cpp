@@ -207,7 +207,7 @@ class WindowHost final : public rex::ui::WindowListener, public rex::ui::WindowI
     }
     if (e.prev_state()) {
       // ReXGlue's binds fire on every repeat, which would strobe a toggle while the key is held.
-      if (e.virtual_key() == rex::ui::VirtualKey::kF3) {
+      if (e.virtual_key() == rex::ui::VirtualKey::kF2 || e.virtual_key() == rex::ui::VirtualKey::kF3) {
         e.set_handled(true);
       }
       return;

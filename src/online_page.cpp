@@ -123,6 +123,9 @@ void OnlinePage::Draw(trg::Ui& ui) {
       case OnlineSection::kOnlineName: OnlineNameRow(ui); break;
       case OnlineSection::kFriendCode: DrawFriendCode(ui, state); break;
       case OnlineSection::kConnectionTest: DrawConnectionTest(ui, state); break;
+      case OnlineSection::kPingDisplay:
+        ui.Toggle(kOnlinePingLabel, kOnlinePingHelp, kOnlinePingSetting, kDefaultOnlinePing, "Off", "On");
+        break;
       case OnlineSection::kFriends: DrawFriends(ui, state); break;
     }
   }

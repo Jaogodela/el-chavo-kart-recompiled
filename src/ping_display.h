@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -12,10 +13,12 @@ class ImGuiDrawer;
 
 namespace eck {
 
-// "Ping: 38 / 51 / 44 ms" for the connected peers in seat order, with "--" for a peer whose round trip has not been
-// measured; "Ping: --" with no peer.
+// "Ping: 42 ms" for one peer; "Ping: 38 / 51 / 44 ms" for several in seat order, with "--" for a peer whose round trip
+// has not been measured; "Ping: --" with no peer or nothing measured yet.
 inline std::string PingText(const std::vector<std::optional<int>>& rtts) {
-  if (rtts.empty()) return "Ping: --";
+  if (std::none_of(rtts.begin(), rtts.end(), [](const std::optional<int>& rtt) { return rtt.has_value(); })) {
+    return "Ping: --";
+  }
   std::string text = "Ping: ";
   for (size_t i = 0; i < rtts.size(); ++i) {
     text += (i ? " / " : "") + (rtts[i] ? std::to_string(*rtts[i]) : std::string("--"));
@@ -32,10 +35,12 @@ inline std::vector<std::optional<int>> MeasuredRtts(const std::vector<online::Pe
   return out;
 }
 
-// Shown with Online play on and while the player is seated in a room.
-constexpr bool PingVisible(bool online_enabled, bool in_room) { return online_enabled && in_room; }
+// Shown with Online play on and the display switched on; without a connected peer it reads "Ping: --".
+constexpr bool PingVisible(bool online_enabled, bool display_on) { return online_enabled && display_on; }
 
-// Adds the in-game Ping panel under the frame counter's corner. There is no toggle key.
+inline constexpr char kPingDisplayKey[] = "F3";
+
+// Adds the in-game Ping panel and its F3 toggle.
 void CreatePingDisplay(rex::ui::ImGuiDrawer* drawer);
 
 }  // namespace eck

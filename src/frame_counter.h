@@ -15,10 +15,15 @@ namespace eck {
 // one, where bind_debug_overlay would take F3 first: a key fires only the first bind that names it.
 inline constexpr const char* kRemovedSdkBinds[] = {"bind_debug_overlay", "bind_console", "bind_settings"};
 
-// Adds the in-game counter and its F3 toggle.
+inline constexpr char kFrameCounterKey[] = "F2";
+
+// Adds the in-game counter and its F2 toggle.
 void CreateFrameCounter(rex::ui::ImGuiDrawer* drawer);
 
-// The session value of eck_show_frame_counter after one F3 press; settings.toml keeps the starting state.
+// One corner readout in the frame counter's style, at `slot` (see corner_overlay.h).
+void DrawCornerText(const std::string& text, int slot);
+
+// The session value of eck_show_frame_counter after one F2 press; settings.toml keeps the starting state.
 inline const char* ToggledFrameCounterFlag(bool shown) {
   return shown ? "false" : "true";
 }

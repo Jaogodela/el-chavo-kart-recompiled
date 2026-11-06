@@ -14,13 +14,16 @@
 namespace eck {
 
 // Sections of the Online page, in order: with Online play off only its switch; friend requests come first.
-enum class OnlineSection { kOnlinePlay, kFriendRequests, kOnlineName, kFriendCode, kConnectionTest, kFriends };
+enum class OnlineSection {
+  kOnlinePlay, kFriendRequests, kOnlineName, kFriendCode, kConnectionTest, kPingDisplay, kFriends
+};
 inline std::vector<OnlineSection> OnlinePageSections(bool online_on, size_t friend_requests) {
   if (!online_on) return {OnlineSection::kOnlinePlay};
   std::vector<OnlineSection> sections{OnlineSection::kOnlinePlay};
   if (friend_requests > 0) sections.push_back(OnlineSection::kFriendRequests);
-  for (const OnlineSection section :
-       {OnlineSection::kOnlineName, OnlineSection::kFriendCode, OnlineSection::kConnectionTest, OnlineSection::kFriends}) {
+  for (const OnlineSection section : {OnlineSection::kOnlineName, OnlineSection::kFriendCode,
+                                      OnlineSection::kConnectionTest, OnlineSection::kPingDisplay,
+                                      OnlineSection::kFriends}) {
     sections.push_back(section);
   }
   return sections;

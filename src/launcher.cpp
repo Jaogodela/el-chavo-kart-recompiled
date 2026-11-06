@@ -812,7 +812,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
               true, "Off", "On");
     ui.Toggle("Render resolution in title", "Shows the game's render resolution in the window title",
               "eck_show_render_resolution", false, "Off", "On");
-    ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F3 toggles it while playing.",
+    ui.Toggle("Frame counter", "Shows the game's frame rate in the corner. F2 toggles it while playing.",
               "eck_show_frame_counter", false, "Hidden", "Shown");
     if (ui.Section("Local player names", true)) {
       ui.Help(kPlayerNamesHelp);

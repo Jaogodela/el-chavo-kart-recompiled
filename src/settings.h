@@ -30,6 +30,7 @@ REXCVAR_DECLARE(bool, detailed_logging);
 REXCVAR_DECLARE(std::string, eck_graphics_adapter);
 REXCVAR_DECLARE(bool, eck_online_enabled);
 REXCVAR_DECLARE(std::string, eck_online_name);
+REXCVAR_DECLARE(bool, eck_online_ping_display);
 REXCVAR_DECLARE(std::string, eck_online_connection_test);
 REXCVAR_DECLARE(int32_t, eck_launcher_x);
 REXCVAR_DECLARE(int32_t, eck_launcher_y);

@@ -9,6 +9,7 @@
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/keybinds.h>
 
+#include "corner_overlay.h"
 #include "settings.h"
 
 namespace eck {
@@ -23,30 +24,31 @@ class FrameCounterOverlay final : public rex::ui::ImGuiDialog {
   explicit FrameCounterOverlay(rex::ui::ImGuiDrawer* drawer) : ImGuiDialog(drawer) {}
 
  protected:
-  void OnDraw(ImGuiIO& io) override {
+  void OnDraw(ImGuiIO&) override {
     const GuestFrameStats stats = GetGuestFrameStats();
     if (!FrameCounterVisible(REXCVAR_GET(eck_show_frame_counter), stats)) {
       return;
     }
-    const std::string text = FrameCounterText(stats);
-    ImFont* font = ImGui::GetFont();
-    const float size = ImGui::GetFontSize();
-    const ImVec2 text_size = font->CalcTextSizeA(size, FLT_MAX, 0, text.c_str());
-    const ImVec2 pad(size * 0.6f, size * 0.3f);
-    const ImVec2 p1(io.DisplaySize.x - size, size + text_size.y + pad.y * 2);
-    const ImVec2 p0(p1.x - text_size.x - pad.x * 2, size);
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
-    draw->AddRectFilled(p0, p1, kPanelColor, size * 0.5f);
-    draw->AddRect(p0, p1, kBorderColor, size * 0.5f, 0, 1.0f);
-    draw->AddText(font, size, ImVec2(p0.x + pad.x, p0.y + pad.y), kTextColor, text.c_str());
+    DrawCornerText(FrameCounterText(stats), FrameCounterSlot());
   }
 };
 
 }  // namespace
 
+void DrawCornerText(const std::string& text, int slot) {
+  ImFont* font = ImGui::GetFont();
+  const float size = ImGui::GetFontSize();
+  const ImVec2 text_size = font->CalcTextSizeA(size, FLT_MAX, 0, text.c_str());
+  const CornerPanel panel = CornerPanelAt(ImGui::GetIO().DisplaySize.x, size, text_size.x, text_size.y, slot);
+  ImDrawList* draw = ImGui::GetForegroundDrawList();
+  draw->AddRectFilled(ImVec2(panel.x0, panel.y0), ImVec2(panel.x1, panel.y1), kPanelColor, size * 0.5f);
+  draw->AddRect(ImVec2(panel.x0, panel.y0), ImVec2(panel.x1, panel.y1), kBorderColor, size * 0.5f, 0, 1.0f);
+  draw->AddText(font, size, ImVec2(panel.text_x, panel.text_y), kTextColor, text.c_str());
+}
+
 void CreateFrameCounter(rex::ui::ImGuiDrawer* drawer) {
   new FrameCounterOverlay(drawer);  // retained by the drawer for the session
-  rex::ui::RegisterBind("bind_eck_frame_counter", "F3", "Toggle frame counter", [] {
+  rex::ui::RegisterBind("bind_eck_frame_counter", kFrameCounterKey, "Toggle frame counter", [] {
     rex::cvar::SetFlagByName("eck_show_frame_counter", ToggledFrameCounterFlag(REXCVAR_GET(eck_show_frame_counter)));
   });
 }

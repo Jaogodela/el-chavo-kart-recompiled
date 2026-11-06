@@ -14,6 +14,12 @@ inline constexpr char kDefaultOnlineNameValue[] = "Player";
 inline constexpr char kOnlineNameLabel[] = "Online name";
 inline constexpr char kOnlineNameHelp[] = "What other players see: up to 16 letters, digits, - or _.";
 
+inline constexpr char kOnlinePingSetting[] = "eck_online_ping_display";
+inline constexpr bool kDefaultOnlinePing = false;
+inline constexpr char kOnlinePingLabel[] = "Ping display";
+inline constexpr char kOnlinePingHelp[] =
+    "Shows the round trip to the other player in game. F3 switches it while playing.";
+
 // The UDP configuration of the last connection test finished with Online play on; empty: none since Online play was
 // turned on.
 inline constexpr char kConnectionTestSetting[] = "eck_online_connection_test";

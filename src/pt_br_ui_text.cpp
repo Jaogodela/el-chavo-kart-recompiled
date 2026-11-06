@@ -64,7 +64,7 @@ Frame rate in title	FPS no título
 Render resolution in title	Resolução de render no título
 Shows the game's render resolution in the window title	Mostra a resolução de render do jogo no título da janela
 Frame counter	Contador de FPS
-Shows the game's frame rate in the corner. F3 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F3 liga e desliga durante o jogo.
+Shows the game's frame rate in the corner. F2 toggles it while playing.	Mostra a taxa de quadros do jogo no canto da tela. F2 liga e desliga durante o jogo.
 Hidden	Oculto
 Shown	Visível
 Install the game to see its achievements.	Instale o jogo para ver as conquistas dele.
@@ -256,6 +256,8 @@ Connection test required	Teste de conexão necessário
 Run the Connection test on the Online page before playing online.	Faça o teste de conexão na página Online antes de jogar online.
 Checks that you can reach the online service and that other players can reach you. Takes a few seconds.	Verifica se você alcança o serviço online e se os outros jogadores alcançam você. Leva alguns segundos.
 Run test	Executar teste
+Ping display	Exibição do ping
+Shows the round trip to the other player in game. F3 switches it while playing.	Mostra, durante o jogo, o tempo de ida e volta até o outro jogador. F3 liga ou desliga enquanto você joga.
 Testing...	Testando...
 If Windows asks whether to allow network access, choose Allow access so other players can connect to you.	Se o Windows perguntar se deve permitir o acesso à rede, escolha Permitir acesso para que outros jogadores possam se conectar a você.
 Friends	Amigos

@@ -166,6 +166,7 @@ foreach(_online_test identity protocol peer service session launcher)
     add_executable(eck_online_${_online_test}_tests online_${_online_test}_tests.cpp)
     target_link_libraries(eck_online_${_online_test}_tests PRIVATE eck_online_lib)
 endforeach()
+target_compile_definitions(eck_online_launcher_tests PRIVATE ECK_SRC_DIR="${ECK_SRC_DIR}")
 target_sources(eck_online_session_tests PRIVATE "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race_telemetry.cpp"
                "${ECK_SRC_DIR}/online_race.cpp")
 

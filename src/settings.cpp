@@ -52,7 +52,7 @@ REXCVAR_DEFINE_BOOL(eck_show_fps, true, "El Chavo Kart", "Show the frame rate in
 REXCVAR_DEFINE_BOOL(eck_show_render_resolution, false, "El Chavo Kart",
                     "Show the render resolution in the window title");
 REXCVAR_DEFINE_BOOL(eck_show_frame_counter, false, "El Chavo Kart",
-                    "Show the frame counter in the corner (F3 toggles it)");
+                    "Show the frame counter in the corner (F2 toggles it)");
 REXCVAR_DEFINE_BOOL(eck_msaa_compatibility, false, "El Chavo Kart",
                     "Draw the game's 2x MSAA render targets with 4x MSAA, for GPUs or drivers whose "
                     "native 2x MSAA misrenders (sets native_2x_msaa)");
@@ -70,6 +70,8 @@ REXCVAR_DEFINE_BOOL(eck_online_enabled, false, "El Chavo Kart",
                     "Online play: friends and rooms of 2 to 4 players over the internet");
 REXCVAR_DEFINE_STRING(eck_online_name, "Player", "El Chavo Kart",
                       "Name other players see during online play (letters, digits, - and _)");
+REXCVAR_DEFINE_BOOL(eck_online_ping_display, false, "El Chavo Kart",
+                    "Shows the round trip to the other players during online play (F3 toggles it)");
 REXCVAR_DEFINE_STRING(eck_online_connection_test, "", "El Chavo Kart",
                       "UDP configuration of the last connection test finished with Online play on, written by the "
                       "launcher; empty: none since Online play was turned on");
@@ -117,6 +119,7 @@ std::vector<std::string> GameSettingKeys() {
       "eck_player_4_name",
       "eck_online_enabled",
       "eck_online_name",
+      "eck_online_ping_display",
       "eck_online_connection_test",
   };
   for (const KeyboardAction& action : kKeyboardActions) {
