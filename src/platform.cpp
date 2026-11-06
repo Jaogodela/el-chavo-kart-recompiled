@@ -298,6 +298,20 @@ MonitorInfo MonitorForSetting(int monitor) {
   return primary != monitors.end() ? *primary : monitors.front();
 }
 
+WindowFrame WindowFrameForScale(float scale) {
+#if defined(_WIN32)
+  RECT rect{};
+  const UINT dpi = UINT(std::lround(double(ValidDpiScale(scale)) * kBaseDpi));
+  if (!AdjustWindowRectExForDpi(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi)) {
+    return {};
+  }
+  return {int(rect.right - rect.left), int(rect.bottom - rect.top)};
+#else
+  (void)scale;
+  return {};
+#endif
+}
+
 #if defined(_WIN32)
 
 void ApplyWindowIcon() {}

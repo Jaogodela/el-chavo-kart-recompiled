@@ -289,25 +289,26 @@ bool SavedLauncherFullscreen() {
   return REXCVAR_GET(eck_launcher_fullscreen);
 }
 
-void FitWindowToDisplay() {
-  constexpr double kGameWindowDisplayShare = 0.9;
-  const int width = std::atoi(rex::cvar::GetFlagByName("window_width").c_str());
-  const int height = std::atoi(rex::cvar::GetFlagByName("window_height").c_str());
+std::optional<GameWindowStartup> FitWindowToDisplay() {
+  int width = std::atoi(rex::cvar::GetFlagByName("window_width").c_str());
+  int height = std::atoi(rex::cvar::GetFlagByName("window_height").c_str());
   if (width <= 0 || height <= 0) {
-    return;
+    width = kGuestWidth;
+    height = kGuestHeight;
   }
   const MonitorInfo display = MonitorForSetting(std::atoi(rex::cvar::GetFlagByName("monitor").c_str()));
   if (display.width == 0) {
-    return;
+    return std::nullopt;
   }
-  const DpiWindowSize fit =
-      FitWindowToWorkArea(width, height, display.work_width, display.work_height, display.scale, kGameWindowDisplayShare);
-  if (fit.width == width && fit.height == height) {
-    return;
-  }
-  REXLOG_INFO("Window reduced from {}x{} to {}x{} to fit the display", width, height, fit.width, fit.height);
-  rex::cvar::SetFlagByName("window_width", std::to_string(fit.width));
-  rex::cvar::SetFlagByName("window_height", std::to_string(fit.height));
+  GameWindowStartup startup;
+  startup.scale = display.scale;
+  startup.monitor = {display.width, display.height};
+  startup.work = {display.work_width, display.work_height};
+  startup.frame = WindowFrameForScale(display.scale);
+  startup.plan = PlanGameWindow({width, height}, startup.work, startup.frame, MonitorForSetting(0).scale);
+  rex::cvar::SetFlagByName("window_width", std::to_string(startup.plan.logical.width));
+  rex::cvar::SetFlagByName("window_height", std::to_string(startup.plan.logical.height));
+  return startup;
 }
 
 void GameSettings::Capture(const std::filesystem::path& player_file, const std::filesystem::path& shipped_config) {
@@ -595,10 +596,15 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
                            .c_str());
 }
 
-void GameSettings::MarkWindowCreated() {
+void GameSettings::MarkWindowCreated(bool launcher_window) {
+  const float scale = launcher_window ? MonitorForSetting(0).scale : 1.0f;
   window_created_.clear();
   for (const std::string& key : kWindowKeys) {
-    window_created_[key] = rex::cvar::GetFlagByName(key);
+    std::string value = rex::cvar::GetFlagByName(key);
+    if (launcher_window && (key == "window_width" || key == "window_height")) {
+      value = std::to_string(ScaleLogicalToPhysical(std::atoi(value.c_str()), scale));
+    }
+    window_created_[key] = std::move(value);
   }
 }
 

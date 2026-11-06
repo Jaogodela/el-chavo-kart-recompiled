@@ -138,8 +138,10 @@ class ElChavoKartApp : public rex::ReXApp {
     if (show_launcher_) {
       eck::PrepareLauncherWindow();
     }
-    game_settings_.MarkWindowCreated();
-    eck::FitWindowToDisplay();
+    game_settings_.MarkWindowCreated(show_launcher_);
+    if (!show_launcher_) {
+      game_window_ = eck::FitWindowToDisplay();
+    }
   }
 
   std::optional<rex::PathConfig> OnFinalizePaths(const rex::PathConfig& defaults,
@@ -212,16 +214,18 @@ class ElChavoKartApp : public rex::ReXApp {
         "window_width", std::atoi(rex::cvar::GetFlagByName("window_width").c_str()));
     startup_window.selected_height = game_settings_.GetInt(
         "window_height", std::atoi(rex::cvar::GetFlagByName("window_height").c_str()));
-    startup_window.configured_width = window() != nullptr ? int(window()->GetDesiredLogicalWidth())
-                                                          : startup_window.selected_width;
-    startup_window.configured_height = window() != nullptr ? int(window()->GetDesiredLogicalHeight())
-                                                           : startup_window.selected_height;
+    startup_window.configured_width = game_window_ ? game_window_->plan.client.width : startup_window.selected_width;
+    startup_window.configured_height = game_window_ ? game_window_->plan.client.height : startup_window.selected_height;
     const eck::WindowSize drawable = CurrentDrawableSize(window());
     startup_window.output_width = drawable.width;
     startup_window.output_height = drawable.height;
     startup_window.controller = eck::ControllerSummary();
     eck::LogStartupDiagnostics(game_settings_, eck::MonitorForSetting(monitor), monitor, game_data_root(),
                                startup_window);
+    if (game_window_ && window()) {
+      const eck::DpiWindowSize actual{int(window()->GetActualPhysicalWidth()), int(window()->GetActualPhysicalHeight())};
+      REXLOG_INFO("{}", eck::FormatGameWindowLine(*game_window_, actual, {drawable.width, drawable.height}));
+    }
     ReXApp::LaunchModule();
   }
 
@@ -321,4 +325,5 @@ class ElChavoKartApp : public rex::ReXApp {
   std::filesystem::path shipped_config_;
   eck::UserDataSelection user_data_;
   bool show_launcher_ = false;
+  std::optional<eck::GameWindowStartup> game_window_;
 };

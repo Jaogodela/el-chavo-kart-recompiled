@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "game_window.h"
 #include "window_placement.h"
 
 namespace eck {
@@ -71,6 +72,9 @@ std::vector<MonitorInfo> ListMonitors();
 
 // The display a `monitor` setting names. 0 (Default) and 1 are the primary display.
 MonitorInfo MonitorForSetting(int monitor);
+
+// The decorations of a resizable window at the display scale. Empty where the size is only known once the window exists.
+WindowFrame WindowFrameForScale(float scale);
 
 // Logs when the window did not open on the display the monitor setting names.
 void CheckWindowDisplay(void* native_window, int monitor);

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -10,6 +11,7 @@
 
 #include "trg/settings.h"
 
+#include "game_window.h"
 #include "window_placement.h"
 #include "window_sizes.h"
 
@@ -89,8 +91,9 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
 WindowPlacement SavedLauncherPlacement();
 bool SavedLauncherFullscreen();
 
-// Reduces the window_width/height cvars so a window at the display's scaling fits the work area.
-void FitWindowToDisplay();
+// Turns the window_width/height settings (physical client pixels) into the logical size the SDK creates its window
+// from, shrunk to fit the selected display's work area. Call once, before the window exists.
+std::optional<GameWindowStartup> FitWindowToDisplay();
 
 // Edits stay pending until Save() or Apply(), so nothing reaches the window while the launcher is open.
 class GameSettings final : public trg::SettingsStore {
@@ -117,8 +120,8 @@ class GameSettings final : public trg::SettingsStore {
   // Sets the running game's cvars that differ from the pending values.
   void Apply() const;
 
-  // Records the window settings this process creates its window with.
-  void MarkWindowCreated();
+  // Records the window settings this process creates its window with. The launcher window's size cvars are logical.
+  void MarkWindowCreated(bool launcher_window);
   // Whether the pending window size, monitor, VSync or graphics card needs a new process.
   bool WindowChanged() const;
 

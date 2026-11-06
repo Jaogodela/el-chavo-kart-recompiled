@@ -596,25 +596,16 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   }
 
   static bool WindowSizeFits(int width, int height, const MonitorInfo* monitor) {
-    return !monitor || FitWindowToWorkArea(width, height, monitor->work_width, monitor->work_height, monitor->scale,
-                                           kLauncherMaxShare) == DpiWindowSize{width, height};
+    return !monitor || FitClientToWorkArea({width, height}, {monitor->work_width, monitor->work_height},
+                                           WindowFrameForScale(monitor->scale)) == DpiWindowSize{width, height};
   }
 
-  // window_width/height are logical pixels; display scaling enlarges them.
   void WindowSizeCombo() {
     const int width = settings_.GetInt("window_width", 0);
     const int height = settings_.GetInt("window_height", 0);
     const MonitorInfo* monitor = SelectedMonitor();
-    const float scale = monitor ? monitor->scale : 1.0f;
-    auto label = [scale](int w, int h) {
-      if (w <= 0 || h <= 0) {
-        return std::string(Tr("Default"));
-      }
-      std::string text = Size(w, h);
-      if (scale != 1.0f) {
-        text += "   (" + Size(int(std::lround(w * scale)), int(std::lround(h * scale))) + " " + Tr("on screen") + ")";
-      }
-      return text;
+    auto label = [](int w, int h) {
+      return w <= 0 || h <= 0 ? std::string(Tr("Default")) : Size(w, h);
     };
     if (ImGui::BeginCombo("##window_size", label(width, height).c_str())) {
       for (const WindowSize& size : kWindowSizes) {
