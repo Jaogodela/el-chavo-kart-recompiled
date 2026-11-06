@@ -2,7 +2,7 @@
 
 # El Chavo Kart - PC Port
 
-### El Chavo Kart (Chaves Kart), the Xbox 360 kart racer, recompiled to run natively on Windows, with the TRG launcher and Brazilian Portuguese by default
+### El Chavo Kart (Chaves Kart), the Xbox 360 kart racer, recompiled to run natively on Windows, with the TRG launcher and Brazilian Portuguese support
 
 <sub>The original Xbox 360 game code, statically recompiled to native PC code with the <a href="https://github.com/rexglue/rexglue-sdk">ReXGlue SDK</a>. <b>No game files included</b>: bring your own El Chavo Kart (USA) Xbox 360 disc image.</sub>
 
@@ -19,10 +19,10 @@ been confirmed in a running game yet; the [known limitations](#known-limitations
 - **Native static recompilation** of the game's own code with ReXGlue 0.10.0. Native Windows build.
 - **TRG launcher** in the style of the other ports: Play, Display, Graphics, Gameplay, Achievements, Controls and About
   pages, keyboard and controller navigation, saved window placement, DPI-aware layout and fonts.
-- **Brazilian Portuguese first**: Português (Brasil) is the default language. It selects the game's own official
-  Brazilian localization (the `PTB` packages on the disc) and switches the launcher and overlays to Portuguese. English,
+- **Languages**: English is the default language. Português (Brasil) selects the game's own official Brazilian
+  localization (the `PTB` packages on the disc) and switches the launcher and overlays to Portuguese. English,
   Español (América Latina) and Español (España) select the game's `INT`, `ESM` and `ESN` text and keep the launcher in
-  English.
+  English. A saved language choice is kept.
 - **Disc image import**: the launcher and `tools\build.ps1` read your `.iso` directly, check its `default.xex` by SHA-256 and
   copy the game files (about 2 GB). Other games and other builds are refused with a clear message.
 - **Frame rate**: 30 (the console rate), 60, 90, 120, 144, 165, 240 or Unlimited, in the launcher; game speed follows real

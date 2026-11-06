@@ -39,7 +39,7 @@ REXCVAR_DEFINE_BOOL(eck_launcher, true, "El Chavo Kart",
                     "Show the launcher before the game starts (hold Shift at start to force it)");
 REXCVAR_DEFINE_BOOL(eck_skip_launcher, false, "El Chavo Kart",
                     "Skip the launcher once (set when the launcher restarts the game)");
-REXCVAR_DEFINE_STRING(eck_language, "pt-BR", "El Chavo Kart",
+REXCVAR_DEFINE_STRING(eck_language, eck::kDefaultLanguage, "El Chavo Kart",
                       "Game and launcher language: pt-BR, en-US, es-MX or es-ES (sets user_language and user_country "
                       "at start)");
 REXCVAR_DEFINE_BOOL(eck_skip_intro, false, "El Chavo Kart", "Skip the startup logos and intro movies");

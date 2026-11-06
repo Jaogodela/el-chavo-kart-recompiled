@@ -7,7 +7,8 @@ namespace eck {
 
 inline constexpr char kLanguageSetting[] = "eck_language";
 inline constexpr char kPortugueseBrazilKey[] = "pt-BR";
-inline constexpr char kDefaultLanguage[] = "pt-BR";
+inline constexpr char kEnglishKey[] = "en-US";
+inline constexpr char kDefaultLanguage[] = "en-US";
 inline constexpr char kLanguageLabel[] = "Language";
 inline constexpr char kLanguageHelp[] =
     "The language of the game's text and menus, and of this launcher. Applied when the game starts.";
@@ -25,19 +26,24 @@ struct GameLanguage {
 
 inline constexpr GameLanguage kGameLanguages[] = {
     {"pt-BR", "Portugu\xC3\xAAs (Brasil)", "PTB", 9, 13},
-    {"en-US", "English", "INT", 1, 103},
+    {kEnglishKey, "English", "INT", 1, 103},
     {"es-MX", "Espa\xC3\xB1ol (Am\xC3\xA9rica Latina)", "ESM", 5, 71},
     {"es-ES", "Espa\xC3\xB1ol (Espa\xC3\xB1" "a)", "ESN", 5, 31},
 };
 
 // An unknown value selects the default language.
-constexpr const GameLanguage& LanguageFor(std::string_view key) {
+constexpr const GameLanguage* FindLanguage(std::string_view key) {
   for (const GameLanguage& language : kGameLanguages) {
     if (key == language.key) {
-      return language;
+      return &language;
     }
   }
-  return kGameLanguages[0];
+  return nullptr;
+}
+
+constexpr const GameLanguage& LanguageFor(std::string_view key) {
+  const GameLanguage* language = FindLanguage(key);
+  return language ? *language : *FindLanguage(kDefaultLanguage);
 }
 
 }  // namespace eck

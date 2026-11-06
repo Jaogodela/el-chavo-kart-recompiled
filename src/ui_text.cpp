@@ -11,7 +11,7 @@ extern const char kPtBrUiTextTsv[];
 
 namespace {
 
-std::atomic<bool> g_portuguese_brazil{true};
+std::atomic<bool> g_portuguese_brazil{std::string_view(kDefaultLanguage) == kPortugueseBrazilKey};
 
 bool Decode(std::string_view escaped, std::string& out) {
   out.clear();
