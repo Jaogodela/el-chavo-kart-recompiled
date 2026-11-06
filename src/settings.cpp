@@ -339,7 +339,7 @@ void GameSettings::Capture(const std::filesystem::path& player_file, const std::
   if (g_graphics_adapter_stale) {
     g_graphics_adapter_stale = false;
     const std::string key = "eck_graphics_adapter";
-    SaveNow({{key, TomlValue(key, saved_[key])}});
+    SaveNow({{key, saved_[key]}});
   }
 }
 
@@ -405,7 +405,7 @@ bool GameSettings::Save() {
 bool GameSettings::SaveNow(const SettingValues& values) {
   trg::TextFileSettings file = OpenPlayerFile(player_file_);
   for (const auto& [key, value] : values) {
-    file.Set(key, value);
+    file.Set(key, TomlValue(key, value));
   }
   if (!file.Save()) {
     REXLOG_ERROR("Cannot write player settings to {}", Utf8(player_file_.filename()));

@@ -10,15 +10,14 @@
 
 ## Status
 
-**Early development, not yet released.** The full pipeline is in place (disc import, recompilation, patched runtime,
-launcher, saves, achievements), but the first build and the first runtime tests are still to be done. Nothing below has
-been confirmed in a running game yet; the [known limitations](#known-limitations) list what is still open.
+**v0.1.0, the first public Windows release.** This is a native PC recompilation, not an emulator, and it needs your own
+copy of the game. The [known limitations](#known-limitations) list what is still open.
 
 ## Features
 
 - **Native static recompilation** of the game's own code with ReXGlue 0.10.0. Native Windows build.
-- **TRG launcher** in the style of the other ports: Play, Display, Graphics, Gameplay, Achievements, Controls and About
-  pages, keyboard and controller navigation, saved window placement, DPI-aware layout and fonts.
+- **TRG launcher** in the style of the other ports: Play, Display, Graphics, Gameplay, Achievements, Online, Controls and
+  About pages, keyboard and controller navigation, saved window placement, DPI-aware layout and fonts.
 - **Languages**: English is the default language. Português (Brasil) selects the game's own official Brazilian
   localization (the `PTB` packages on the disc) and switches the launcher and overlays to Portuguese. English,
   Español (América Latina) and Español (España) select the game's `INT`, `ESM` and `ESN` text and keep the launcher in
@@ -27,13 +26,17 @@ been confirmed in a running game yet; the [known limitations](#known-limitations
   copy the game files (about 2 GB). Other games and other builds are refused with a clear message.
 - **Frame rate**: 30 (the console rate), 60, 90, 120, 144, 165, 240 or Unlimited, in the launcher; game speed follows real
   time. Rates above 60 are new and still being validated.
-- **Graphics options**: render resolution 1x to 4x of the game's 1280x720, FXAA, 2x/4x MSAA, anisotropic filtering,
-  graphics card selection, Windowed or Borderless Fullscreen (F11), VSync.
+- **Graphics options**: render resolution 1x to 4x of the game's 1280x720, internal render resolution, FXAA, 2x/4x MSAA,
+  anisotropic filtering, graphics card selection, Windowed or Borderless Fullscreen (F11), VSync.
+- **Local multiplayer**: the game's own 1 to 4 player split screen; players 2 to 4 each need a controller.
+- **Online play**: invite up to 3 friends to a race, with friend codes, a connection test, direct UDP and a relay
+  fallback. Off by default; see [Online play](#online-play).
 - **Controller and keyboard**: Xbox and SDL-compatible controllers work without setup; the keyboard drives the same
   pad with a kart layout, every key remappable in the launcher.
 - **Local saves and achievements**: no Xbox Live needed. The 46 achievements (1000G) come from the game's own data in
   the selected language, unlock from the game's own calls and are kept on this PC. F7 shows them in game.
-- **Portable user data**: saves, achievements, settings and logs are in a `user_data` folder beside the program.
+- **Portable user data**: saves, achievements and settings are in a `user_data` folder beside the program, and logs in a
+  `logs` folder next to it.
 
 ## What you need
 
@@ -80,7 +83,8 @@ build looks for them in a `game` folder beside the program, and the launcher can
 Lightweight, headless checks (no game files, no ReXGlue SDK, no GUI) live in `tools\test.ps1`: it builds and runs the
 console tests in `tests\`, validates the patch sets in `patches\rexglue-sdk` and `patches\trg-launcher`, checks
 `config\overrides.toml` against `config\discovered-functions.toml` for overlaps, reports `generated\default` freshness,
-and checks the source tree for tracked game data, temporary debug markers and hard-coded local paths.
+and checks the source tree for tracked game data and hard-coded local paths. The online service has its own tests:
+`npm test` in `server\eck-lobby`.
 
 Other developer tools: `tools\extract-iso.ps1` extracts the disc on its own, `python -I tools\xex_image.py` dumps the
 decrypted image to `game\analysis`, and `python -I tools\find-missing-functions.py` rescans it for functions reached
@@ -104,8 +108,10 @@ The launcher opens before the game. Turn **Show this launcher** off on the Play 
 - **Display**: Windowed or Borderless Fullscreen, window size, monitor and VSync.
 - **Graphics**: graphics card, render resolution, anti-aliasing, multisampling and texture filtering. A card that is no
   longer present falls back to the first available card.
-- **Gameplay**: language, unlock secret characters, unlock race tracks, frame rate in the window title and player names.
+- **Gameplay**: language, skip intro, unlock secret characters, unlock race tracks, frame rate, frame rate and render
+  resolution in the window title, frame counter and local player names.
 - **Achievements**: the game's achievements and which ones you have unlocked.
+- **Online**: Online play, online name, friends, the connection test and the Ping display.
 - **Controls**: keyboard on or off, and every keyboard key.
 - **About**: the game, save and log folders, the settings file, detailed logging, Report a bug and version information.
 
@@ -121,7 +127,7 @@ colours come from `patches\trg-launcher\0005-accent-outline.patch`; the applicat
 
 On a controller the game uses its own layout: left stick steers, **RT** accelerates, **LT** brakes and reverses, **A**
 jumps and drifts, **B** boosts, **X** uses the item, **Y** looks back, **Back** returns you to the track and **Start**
-pauses. These come from the game's own input configuration and still need to be confirmed in game.
+pauses. These come from the game's own input configuration.
 
 Default keyboard layout:
 
@@ -147,26 +153,36 @@ Port hotkeys: **F2** frame counter (session only; the Gameplay page sets the sta
 
 ## Saves and achievements
 
-Everything is kept in `user_data` beside the program (`build\user_data` for a development build):
+Everything is kept beside the program (in `build` for a development build):
 
 - Saves: `user_data\<profile>\475807D7\00000001\`, written through the game's own Xbox 360 save calls.
 - Achievements: `user_data\achievements\475807D7.toml`.
 - Settings: `user_data\settings.toml`, loaded after `el_chavo_kart.toml`.
-- Logs: in the logs folder the About page opens. A crash adds a `CRASH REPORT` block to that session's log.
+- Logs: `logs\`; the About page opens the folder. A crash adds a `CRASH REPORT` block to that session's log.
 
 To report a bug, use **Report a bug** on the About page: it shows the newest log and opens the project's issue page.
 Nothing is uploaded; check the log and attach it yourself.
 
+## Online play
+
+Online play is off by default.
+
+1. On the launcher's **Online** page, turn **Online play** on and choose an online name.
+2. Run the **Connection test**. Play waits until one test has finished, whatever its result.
+3. Share **Your friend code**. Add a friend's code under **Friends**; they accept it under **Friend requests**.
+4. In the game, go to Free Race and pick a competition and difficulty. On the character screen, **X** invites a friend, up
+   to 4 players in all.
+
+The race runs directly between the host and each friend over UDP; a friend the host cannot reach is relayed through the
+online service. **F3** shows the Ping while racing. See [docs/online.md](docs/online.md).
+
 ## Known limitations
 
-- Not yet built or run: everything in this README is implemented from static analysis of the game and the reference
-  ports, and still needs a first runtime pass.
+- Online play is new. The host simulates the race; items and their effects, laps, placement, the finish and the return
+  from the race are not synchronized between players.
 - Spanish (España) relies on the game reading the console country through ReXGlue's `user_country`; if the log shows
   the Spanish text from Latin America instead, that is the cause.
 - Localized voice banks were not identified statically; voice language follows the game's own package selection.
-- Local multiplayer for players 2 to 4 uses ReXGlue's default sign-in for extra controllers and has not been
-  investigated in this pass. Online play is not part of the port.
-- There is no Skip intro option yet.
 - Controller prompts stay the game's Xbox 360 buttons.
 
 ## Credits
@@ -179,8 +195,8 @@ Nothing is uploaded; check the log and attach it yourself.
   Marvel Ultimate Alliance and Crackdown Recompiled. Third-party notices are in
   [packaging/licenses](packaging/licenses).
 
-El Chavo Kart is a trademark of its respective owners. This project is not affiliated with or endorsed by them, and it
-contains no game code or assets.
+El Chavo Kart is a trademark of its respective owners. This project is not affiliated with or endorsed by them. This
+repository contains no game code or assets, and release packages contain no game files.
 
 ## License
 

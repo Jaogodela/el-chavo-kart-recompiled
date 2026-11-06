@@ -1167,6 +1167,19 @@ void TestKartOwnership() {
   const lobby::CanonicalRace four = RaceOf(4);
   Check(lobby::RaceCommand(four, 2, 0).find("PlayersArray=1-2-0-3") != std::string::npos, "C on pad 0");
   Check(lobby::RaceCommand(four, 3, 0).find("PlayersArray=1-2-3-0") != std::string::npos, "D on pad 0");
+
+  Check(lobby::GameCommandMatchesPads(RaceOf(2), 0) && lobby::GameCommandMatchesPads(four, 0),
+        "a host on pad 0 with every seat filled keeps the game's own command");
+  Check(!lobby::GameCommandMatchesPads(four, 1), "a host on another pad needs the race told by pad");
+  lobby::CanonicalRace gap = RaceOf(3);
+  gap.seats[1] = 2;
+  gap.seats[2] = 3;
+  Check(!lobby::GameCommandMatchesPads(gap, 0), "an empty seat needs it too, or a kart answers to a pad nobody drives");
+  Check(lobby::RaceCommand(gap, 0, 0).find("PlayersArray=0-1-2-") != std::string::npos, "the karts then take the pads in order");
+  for (int slot = 0; slot < gap.humans; ++slot) {
+    const int seat = gap.seats[size_t(slot)];
+    Check(lobby::PadOfSeat(gap, seat, 0, 0) == slot, "each seat drives the pad its own kart reads on the host");
+  }
 }
 
 void TestGuestConfirmation() {

@@ -73,7 +73,7 @@ void TestStaleValueIsReplacedOnce() {
   Check(!GraphicsAdapterSettingIsStale("7", {}), "with no cards the saved choice is kept");
 
   const std::string settings = Source("settings.cpp");
-  Check(Contains(settings, "SaveNow({{key, TomlValue(key, saved_[key])}})"), "the corrected value reaches settings.toml");
+  Check(Contains(settings, "SaveNow({{key, saved_[key]}})"), "the corrected value reaches settings.toml");
   const size_t capture = settings.find("void GameSettings::Capture");
   const size_t reset = settings.find("g_graphics_adapter_stale = false;", capture);
   Check(reset != std::string::npos && reset < settings.find("void GameSettings::CaptureLateRegistered"),

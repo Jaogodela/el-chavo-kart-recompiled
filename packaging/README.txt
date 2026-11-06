@@ -22,7 +22,7 @@ You need your own copy of the game: the El Chavo Kart (USA) Xbox 360 disc image
 REQUIREMENTS
 ------------
 - Windows 10 or 11, 64-bit
-- A DirectX 12 capable graphics card
+- A Direct3D 12 capable graphics card
 - The latest Microsoft Visual C++ Redistributable 2015-2022 (x64). Most PCs
   have it. If Windows reports a missing VCRUNTIME140.dll or MSVCP140.dll,
   install it from https://aka.ms/vs/17/release/vc_redist.x64.exe
@@ -45,6 +45,44 @@ Your settings and saves are kept.
 
 To start the game directly, turn "Show this launcher" off on the Play page.
 Hold Shift while starting the program to bring the launcher back.
+
+
+WHERE YOUR FILES ARE
+--------------------
+Next to the program:
+
+  game\                  the game files the launcher installed
+  user_data\             saves, achievements and settings.toml
+  logs\                  session and crash logs
+
+The launcher's About page opens these folders.
+
+
+HOTKEYS
+-------
+  F2      Frame counter
+  F3      Online Ping display (needs Online play)
+  F7      Achievements
+  F11     Windowed / Borderless Fullscreen
+  Alt+F4  Exit
+
+
+ONLINE PLAY
+-----------
+Online play is off by default.
+
+1. On the launcher's Online page, turn Online play on and choose an online
+   name.
+2. Run the Connection test. Play waits until one test has finished, whatever
+   its result.
+3. Share Your friend code. Add a friend's code under Friends; they accept it
+   under Friend requests.
+4. In the game, go to Free Race and pick a competition and difficulty. On the
+   character screen, X invites a friend, up to 4 players in all.
+
+The race runs directly between the host and each friend over UDP; a friend the
+host cannot reach is relayed through the online service. The host simulates the
+race; items, laps, placement and the finish are not synchronized yet.
 
 
 REPORTING A BUG

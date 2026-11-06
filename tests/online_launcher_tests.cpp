@@ -140,6 +140,10 @@ void TestPingSetting() {
   const std::string settings = Source("settings.cpp");
   Check(Contains(settings, "REXCVAR_DEFINE_BOOL(eck_online_ping_display, false"), "the cvar defaults to Off");
   Check(Contains(settings, "\"eck_online_ping_display\",\n"), "the launcher saves it with the other online options");
+  const size_t save_now = settings.find("bool GameSettings::SaveNow");
+  Check(save_now != std::string::npos &&
+            settings.find("file.Set(key, TomlValue(key, value));", save_now) < settings.find("void GameSettings::ResetToDefaults"),
+        "a value written at once stays valid TOML, so one string cannot void settings.toml");
   Check(Contains(Source("online_page.cpp"), "kOnlinePingLabel, kOnlinePingHelp, kOnlinePingSetting, kDefaultOnlinePing"),
         "the Online page draws the toggle");
   Check(Contains(Source("online_page.cpp"), "kDefaultOnlinePing, \"Off\", \"On\""), "as Off / On");

@@ -68,7 +68,7 @@ class OnlineGameSocket final : public Transport {
   bool relay_open() const;
   // One binary message from the online service; false when it is not a frame of the open relay.
   bool DeliverRelay(const uint8_t* data, size_t size);
-  // Why the relay can no longer carry the room ("receive_overflow", "send_refused"); empty while it can.
+  // Why the relay can no longer carry the room ("send_refused"); empty while it can.
   std::string relay_failure() const;
 
   void ResetTraffic();

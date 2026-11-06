@@ -22,7 +22,7 @@ using ClipboardWriter = std::function<bool(const std::string& text, const FieldL
 // can say why Send request stays off.
 std::string PastedFriendCode(std::string_view clipboard);
 
-// The Add a friend text box (Dragon's InputTextWithHint). Ctrl+V is read here from `read` instead of ImGui's own paste:
+// The Add a friend text box. Ctrl+V is read here from `read` instead of ImGui's own paste:
 // the SDK's ImGui never sees Ctrl held, because its window glue does not send ImGuiMod_Ctrl.
 class FriendCodeField {
  public:

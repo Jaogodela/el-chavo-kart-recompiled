@@ -201,6 +201,16 @@ inline int PadOfSeat(const CanonicalRace& race, int seat, int local_seat, int ow
   return -1;
 }
 
+// The game's URL names each kart by the panel it was picked on. It stands only while that is also the pad RaceSync drives,
+// which an empty seat or a host on another pad breaks.
+inline bool GameCommandMatchesPads(const CanonicalRace& race, int own_pad) {
+  for (int slot = 0; slot < race.humans; ++slot) {
+    const int seat = race.seats[size_t(slot)];
+    if (PadOfSeat(race, seat, 0, own_pad) != seat) return false;
+  }
+  return true;
+}
+
 // The same race on every PC: only PlayersArray and PrimaryControllerID belong to this PC.
 inline std::string RaceCommand(const CanonicalRace& race, int local_seat, int own_pad) {
   const auto list = [&](auto value) {

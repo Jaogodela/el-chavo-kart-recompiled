@@ -13,7 +13,7 @@
 namespace eck::online::net::upnp {
 namespace {
 
-constexpr char kDescription[] = "Super Street Fighter II Turbo HD Remix";
+constexpr char kDescription[] = "El Chavo Kart";
 
 struct Gateway {
   Endpoint http;        // the router's description server

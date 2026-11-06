@@ -93,11 +93,8 @@ bool OnlineGameSocket::DeliverRelay(const uint8_t* data, size_t size) {
     ++traffic_.relay_rejected;
     return false;
   }
-  if (relay_in_.size() >= kMaxRelayQueued) {
-    relay_failure_ = "receive_overflow";
-    relay_in_.clear();
-    return false;
-  }
+  // A map load stops the only reader, and the race state in these frames is resent anyway.
+  if (relay_in_.size() >= kMaxRelayQueued) relay_in_.pop_front();
   ++traffic_.relay_rx_packets;
   traffic_.relay_rx_bytes += frame->payload.size();
   relay_in_.emplace_back(int(frame->src), std::move(frame->payload));

@@ -10,23 +10,14 @@ namespace eck {
 namespace {
 
 constexpr size_t kMaxShownPaste = 32;
-constexpr size_t kMaxLoggedRaw = 64;
 
 bool CtrlDown() {
   return ImGui::GetIO().KeyCtrl || ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
 }
 
-// The clipboard text as one log line: control characters escaped, length bounded.
-std::string Printable(std::string_view text) {
-  std::string out;
-  for (const char c : text.substr(0, kMaxLoggedRaw)) {
-    if (c == '\r') out += "\\r";
-    else if (c == '\n') out += "\\n";
-    else if (c == '\t') out += "\\t";
-    else if (static_cast<unsigned char>(c) < ' ') out += '?';
-    else out += c;
-  }
-  return out;
+// The field can hold whatever the clipboard held, and players attach these logs to bug reports.
+std::string LoggedFieldText(std::string_view text) {
+  return online::NormalizeFriendCode(text).empty() ? "<not a friend code>" : std::string(text);
 }
 
 }  // namespace
@@ -55,10 +46,8 @@ void FriendCodeField::ReadPaste(const FieldLog& log) {
     log("online friend paste failed step=" + clipboard.text);
     return;
   }
-  log("online friend paste raw=" + Printable(clipboard.text));
   paste_ = PastedFriendCode(clipboard.text);
-  const bool code = !online::NormalizeFriendCode(paste_).empty();
-  log("online friend paste normalized=" + (code ? paste_ : "<not a friend code> shown=" + paste_));
+  log("online friend paste normalized=" + LoggedFieldText(paste_));
   has_paste_ = !paste_.empty();
 }
 
@@ -86,9 +75,9 @@ void FriendCodeField::Draw(char* buffer, size_t size, const FieldLog& log) {
   if (active != was_active_) out(std::string("online friend field ") + (active ? "focused" : "unfocused"));
   if (pasted_) {
     pasted_ = false;
-    out(std::string("online friend field value=") + buffer);
+    out("online friend field value=" + LoggedFieldText(buffer));
   } else if (changed) {
-    out(std::string("online friend input changed value=") + buffer);
+    out("online friend input changed value=" + LoggedFieldText(buffer));
   }
   if (!active) has_paste_ = false;
   was_active_ = active;

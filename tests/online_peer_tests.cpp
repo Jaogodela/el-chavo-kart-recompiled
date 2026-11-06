@@ -359,6 +359,11 @@ void TestGameSocketRelay() {
   Check(!socket.DeliverRelay(wrong_token.data(), wrong_token.size()), "a frame of another token is refused");
   Check(socket.traffic().relay_rejected == 1 && socket.traffic().relay_tx_packets == 2 && socket.traffic().relay_rx_packets == 1,
         "traffic counters");
+  for (int i = 0; i < 300; ++i) socket.DeliverRelay(stamped.data(), stamped.size());
+  Check(socket.relay_open() && socket.relay_failure().empty(), "a reader stopped by a map load does not end the relay");
+  size_t queued = 0;
+  while (socket.Receive(buffer, sizeof buffer, from)) ++queued;
+  Check(queued == 256, "the oldest frames go, as on the direct path");
   socket.CloseRelay();
   Check(!socket.relay_open() && !socket.Send(online::RelayPeerEndpoint(2), data, 2), "closing the relay forgets the seats");
 }

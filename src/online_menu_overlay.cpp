@@ -370,8 +370,9 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     }
     if (step.commit) {
       EnterRace(published_race_);
-      // The panels are by seat, so a host whose pad is not pad 0 needs the race told by pad.
-      g_lobby.ReleaseRace(race_pad_ == 0 ? std::string() : lobby::RaceCommand(published_race_, 0, race_pad_));
+      g_lobby.ReleaseRace(lobby::GameCommandMatchesPads(published_race_, race_pad_)
+                              ? std::string()
+                              : lobby::RaceCommand(published_race_, 0, race_pad_));
     }
     if (step.abort) AbortRace(step.abort);
   }
