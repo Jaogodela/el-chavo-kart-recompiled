@@ -51,7 +51,7 @@ std::array<std::atomic<uint32_t>, eck::roster::kWatched.size()> g_found{};
 bool ImageOk(const uint8_t* base) {
   static const bool ok = [base] {
     const char* bad = eck::online_guest::FirstMismatch(kFingerprints, base, kGuestSpan, 0);
-    if (bad != nullptr) REXLOG_WARN("[DEBUG_SAULO][CHAR-UNLOCK] fingerprint MISMATCH at {}", bad);
+    if (bad != nullptr) REXLOG_WARN("[CHAR-UNLOCK] fingerprint MISMATCH at {}", bad);
     return bad == nullptr;
   }();
   return ok;
@@ -78,7 +78,7 @@ Watched Classify(const uint8_t* base, uint32_t function) {
   for (size_t i = 0; i < table.size(); ++i) {
     if (table[i].watched != found) continue;
     g_found[i].store(function, std::memory_order_relaxed);
-    REXLOG_INFO("[DEBUG_SAULO][UNLOCK-HOOK] found {}.{} at 0x{:08X}", table[i].owner, table[i].name, function);
+    REXLOG_INFO("[UNLOCK-HOOK] found {}.{} at 0x{:08X}", table[i].owner, table[i].name, function);
   }
   return found;
 }
@@ -108,10 +108,10 @@ void RunLockCheck(PPCContext& ctx, uint8_t* base) {
   const bool remote = game_locked && OnlineOn() && eck::lobby::IsRemotePanel(eck::OnlineLobby().plan(), panel);
   const bool locked = eck::roster::LockedForPanel(game_locked, character.value_or(-1), option, remote);
   if (game_locked && !locked) ClearResult(base, result);
-  // DEBUG_SAULO
+
   static eck::roster::UnlockLog log;
   for (const std::string& line : log.Note(option, remote, character, game_locked, locked)) {
-    REXLOG_INFO("[DEBUG_SAULO][CHAR-UNLOCK] {}", line);
+    REXLOG_INFO("[CHAR-UNLOCK] {}", line);
   }
 }
 
@@ -123,16 +123,16 @@ void RunPreviewLock(PPCContext& ctx, uint8_t* base) {
     return;
   }
   CallWithoutBody(ctx, base);
-  // DEBUG_SAULO
+
   static std::atomic<bool> logged{false};
-  if (!logged.exchange(true)) REXLOG_INFO("[DEBUG_SAULO][CHAR-UNLOCK] preview_paint=skipped reason=session");
+  if (!logged.exchange(true)) REXLOG_INFO("[CHAR-UNLOCK] preview_paint=skipped reason=session");
 }
 
-// DEBUG_SAULO
+
 void NoteTrack(eck::tracks::Surface surface, std::optional<int> track, bool game_locked, bool locked) {
   static eck::tracks::UnlockLog log;
   for (const std::string& line : log.Note(surface, track, game_locked, locked)) {
-    REXLOG_INFO("[DEBUG_SAULO][TRACK-UNLOCK] {}", line);
+    REXLOG_INFO("[TRACK-UNLOCK] {}", line);
   }
 }
 

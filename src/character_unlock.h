@@ -145,7 +145,7 @@ std::optional<int> IntArgument(const Memory& memory, uint32_t frame) {
   return int(memory.U32(at));
 }
 
-// DEBUG_SAULO: each state the character screen reaches is logged once.
+// Each state the character screen reaches is logged once.
 class UnlockLog {
  public:
   std::vector<std::string> Note(bool option, bool remote_panel, std::optional<int> character, bool game_locked, bool locked) {

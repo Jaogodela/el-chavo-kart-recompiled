@@ -123,7 +123,7 @@ static void UpdateLocalInstancePacing() {
   if (wanted == active) return;
   active = wanted;
   SetLocalInstancePacing(active);
-  REXLOG_INFO("{}", LocalInstancePacingLine(active, ConfiguredFrameRate()));  // DEBUG_SAULO
+  REXLOG_INFO("{}", LocalInstancePacingLine(active, ConfiguredFrameRate()));
 }
 
 void PumpOnlineService() {
@@ -141,7 +141,7 @@ void PumpOnlineService() {
     REXLOG_INFO("online runtime signed in={}", signed_in);
   }
   race_telemetry::PumpRaceTelemetry(Online(), OnlineNowSeconds());
-  PumpOnlineGameDebug();  // DEBUG_SAULO
+  PumpOnlineGameDebug();
 }
 
 double OnlineNowSeconds() {

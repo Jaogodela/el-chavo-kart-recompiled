@@ -60,7 +60,7 @@ constexpr bool LockedForTrack(bool game_locked, int track, bool option) { return
 
 enum class Surface { kPreview, kList };
 
-// DEBUG_SAULO: each state the track screen reaches is logged once.
+// Each state the track screen reaches is logged once.
 class UnlockLog {
  public:
   std::vector<std::string> Note(Surface surface, std::optional<int> track, bool game_locked, bool locked) {

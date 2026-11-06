@@ -1,7 +1,6 @@
-"""DEBUG_SAULO: compares the [PERF-SUMMARY] lines of one or more logs across Internal render settings.
+"""Compares the [PERF-SUMMARY] lines of one or more logs across Internal render settings.
 
-Usage: python tools/debug_saulo_compare.py log1.log log2.log ...
-Remove with the DEBUG_SAULO telemetry during final review.
+Usage: python tools/compare_perf_summary.py log1.log log2.log ...
 """
 import re
 import sys
@@ -12,8 +11,8 @@ PAIR = re.compile(r"(\w+)=([^\s]+)")
 def sessions(path):
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if "[DEBUG_SAULO][PERF-SUMMARY]" in line:
-                yield path, dict(PAIR.findall(line.split("[DEBUG_SAULO][PERF-SUMMARY]", 1)[1]))
+            if "[PERF-SUMMARY]" in line:
+                yield path, dict(PAIR.findall(line.split("[PERF-SUMMARY]", 1)[1]))
 
 
 def main(paths):

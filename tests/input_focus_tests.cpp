@@ -190,10 +190,10 @@ void TestLauncherToGameWindow() {
 
 void TestDebugLines() {
   Check(eck::InputFocusLogLine(true, "a", 0x1234) ==
-            "[DEBUG_SAULO][INPUT] focus=active controller_input=enabled input_state_reset=yes instance=a window=0x1234",
+            "[INPUT] focus=active controller_input=enabled input_state_reset=yes instance=a window=0x1234",
         "gain line");
   Check(eck::InputFocusLogLine(false, "b", 0xAB) ==
-            "[DEBUG_SAULO][INPUT] focus=inactive controller_input=suppressed instance=b window=0xAB",
+            "[INPUT] focus=inactive controller_input=suppressed instance=b window=0xAB",
         "loss line");
   Check(Contains(eck::InputFocusLogLine(true, "", 0), "instance=none"), "no instance outside the instance script");
 }

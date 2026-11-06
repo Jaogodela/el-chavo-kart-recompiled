@@ -56,7 +56,7 @@ GameView ReadGame() {
   return view;
 }
 
-// DEBUG_SAULO
+
 void LogLines(const std::vector<std::string>& lines) {
   for (const std::string& line : lines) REXLOG_INFO("{} {}", kLogTag, line);
 }

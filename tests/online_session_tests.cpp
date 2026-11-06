@@ -513,13 +513,13 @@ void TestTwoPlayers() {
   Check(party.Settled(), "both ends settle");
   Check(a.PeerAt(1)->path == online::PeerPath::kDirect && b.PeerAt(0)->path == online::PeerPath::kDirect, "direct on both ends");
   Check(a.Snap().invited.empty(), "a seated friend is no longer invited");
-  Check(a.Logged("[DEBUG_SAULO][ONLINE] invite send friend=") && b.Logged("[DEBUG_SAULO][ONLINE] invite received"), "diagnostics: invite");
-  Check(b.Logged("[DEBUG_SAULO][ONLINE] invite accepted") && b.Logged("[DEBUG_SAULO][ONLINE] session joined seat=1"), "diagnostics: join");
-  Check(a.Logged("[DEBUG_SAULO][ONLINE] endpoint seat=0 public=no lan=0"), "diagnostics: endpoint");
-  Check(a.Logged("[DEBUG_SAULO][ONLINE] peer seat=1 probing") && a.Logged("[DEBUG_SAULO][ONLINE] peer seat=1 transport=direct"), "diagnostics: path");
+  Check(a.Logged("[ONLINE] invite send friend=") && b.Logged("[ONLINE] invite received"), "diagnostics: invite");
+  Check(b.Logged("[ONLINE] invite accepted") && b.Logged("[ONLINE] session joined seat=1"), "diagnostics: join");
+  Check(a.Logged("[ONLINE] endpoint seat=0 public=no lan=0"), "diagnostics: endpoint");
+  Check(a.Logged("[ONLINE] peer seat=1 probing") && a.Logged("[ONLINE] peer seat=1 transport=direct"), "diagnostics: path");
   Check(b.Logged("invite transition consumed generation=1"), "the accepted invite is consumed once");
   CheckStarRace(party);
-  Check(a.Logged("[DEBUG_SAULO][ONLINE] peer seat=1 ready=yes"), "diagnostics: ready");
+  Check(a.Logged("[ONLINE] peer seat=1 ready=yes"), "diagnostics: ready");
 }
 
 const eck::lobby::GameSetup kHostSetup{eck::lobby::kGameTypeStartMenu, 4, 2};
@@ -573,7 +573,7 @@ void TestCapturedSetupInvites() {
   Player& b = *party.guests[0];
   Check(a.Logged("session host requested") && a.Snap().room.has_value(), "selecting a friend has a hidden session");
   party.Invite(b);
-  Check(a.Logged("[DEBUG_SAULO][ONLINE] invite send friend="), "the invite is sent");
+  Check(a.Logged("[ONLINE] invite send friend="), "the invite is sent");
   const auto invited = lobby::SetupOfRules(b.Snap().invites.at(0).rules);
   Check(invited && invited->mode == 5 && invited->difficulty == 1, "the friend's invite carries the captured setup");
   party.Accept(b);

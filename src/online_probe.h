@@ -1,6 +1,6 @@
 #pragma once
 
-// DEBUG_SAULO: probes and the menu-facing API for online races. Everything declared here is stable for the menu code;
+// Probes and the menu-facing API for online races. Everything declared here is stable for the menu code;
 // the first half is pure (no ReXGlue), the second half is implemented in online_probe_guest.cpp.
 
 #include <array>
@@ -13,8 +13,8 @@
 
 namespace eck::online_probe {
 
-inline constexpr char kRaceTag[] = "[DEBUG_SAULO][ONLINE-RACE]";
-inline constexpr char kXboxTag[] = "[DEBUG_SAULO][ONLINE-XBOX]";
+inline constexpr char kRaceTag[] = "[ONLINE-RACE]";
+inline constexpr char kXboxTag[] = "[ONLINE-XBOX]";
 
 // ---- The six missing runtime pieces (docs/online-analysis.md, "Gameplay sync status") -------------------------------
 

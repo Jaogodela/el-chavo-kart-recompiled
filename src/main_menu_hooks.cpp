@@ -89,7 +89,7 @@ void LogOnce(const std::string& key, const std::string& message) {
   static std::set<std::string> logged;
   std::lock_guard lock(mutex);
   if (logged.insert(key).second) {
-    REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] {}", message);
+    REXLOG_INFO("[MAIN-MENU] {}", message);
   }
 }
 
@@ -101,7 +101,7 @@ void LogCandidate(const uint8_t* base, uint32_t data, uint32_t size) {
   }
   const std::string hash =
       size <= kMaxHashedBytes && IsReadable(data, size) ? HashOf(base + data, size) : std::string("-");
-  REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] gfx candidate size={} hash={}", size, hash);
+  REXLOG_INFO("[MAIN-MENU] gfx candidate size={} hash={}", size, hash);
 }
 
 // The patched bytes for a recognized main-menu movie; every other buffer is ignored and every rejection is logged.
@@ -124,7 +124,7 @@ std::optional<std::vector<uint8_t>> PatchedMovieBytes(const uint8_t* base, uint3
 }
 
 void LogPatchApplied(size_t size) {
-  REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] scaleform patch applied size={} fingerprint={}", size,
+  REXLOG_INFO("[MAIN-MENU] scaleform patch applied size={} fingerprint={}", size,
               eck::kMainMenuSwfFingerprint.sha256);
 }
 
@@ -187,7 +187,7 @@ void InspectOpenedFile(PPCContext& ctx, uint8_t* base, uint32_t url, uint32_t fi
   const eck::open_file::Inspection inspection = eck::open_file::InspectionOf(package);
   static std::atomic<int> logged{0};
   if (logged.fetch_add(1) < kLoggedOpens) {
-    REXLOG_INFO("[DEBUG_SAULO][OPEN-FILE] package={} file=0x{:08X} operation={}", package, file,
+    REXLOG_INFO("[OPEN-FILE] package={} file=0x{:08X} operation={}", package, file,
                 eck::open_file::InspectionName(inspection));
   }
   if (inspection == eck::open_file::Inspection::kPass) {
@@ -195,7 +195,7 @@ void InspectOpenedFile(PPCContext& ctx, uint8_t* base, uint32_t url, uint32_t fi
   }
   if (file == 0 || !IsReadable(file, 4)) {
     static std::once_flag once;
-    std::call_once(once, [] { REXLOG_INFO("[DEBUG_SAULO][OPEN-FILE] inspection skipped reason=invalid_pointer"); });
+    std::call_once(once, [] { REXLOG_INFO("[OPEN-FILE] inspection skipped reason=invalid_pointer"); });
     return;
   }
   eck::NoteOnlineMovie(package);
@@ -255,7 +255,7 @@ REX_HOOK_RAW(sub_82BD99F8) {
 
 void eck::LogMainMenuHooks() {
   REXLOG_INFO(
-      "[DEBUG_SAULO][MAIN-MENU] scaleform hooks linked memory_file=0x82BD99F8 open_file=0x82C22F28 text=0x82A46B68");
+      "[MAIN-MENU] scaleform hooks linked memory_file=0x82BD99F8 open_file=0x82C22F28 text=0x82A46B68");
 }
 
 namespace {
@@ -357,7 +357,7 @@ REX_HOOK_RAW(sub_82A46B68) {
   if (!key.empty()) {
     switch (eck::ClassifyReservedKey(key)) {
       case eck::ReservedKey::kExit:
-        REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] action={}", key);
+        REXLOG_INFO("[MAIN-MENU] action={}", key);
         eck::HardExit("Exit Game selected, hard-exiting process.");
         break;
       case eck::ReservedKey::kOnlineMenu:

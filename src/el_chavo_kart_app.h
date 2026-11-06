@@ -114,8 +114,8 @@ class ElChavoKartApp : public rex::ReXApp {
     };
     REXLOG_INFO("{}", eck::FormatApplicationVersion(identity));
     REXLOG_INFO("{}", eck::FormatBuildIdentity(identity));
-    eck::LogMainMenuHooks();  // DEBUG_SAULO
-    eck::LogOnlineGameHooks();  // DEBUG_SAULO
+    eck::LogMainMenuHooks();
+    eck::LogOnlineGameHooks();
     REXLOG_INFO("{}", eck::GameFilesLogText(eck::CheckGameFiles(game_data_root())));
     REXLOG_INFO("Profile settings: <user data>/{:08X}/profile/User; achievements: <user data>/achievements/{:08X}.toml",
                 eck::kTitleId, eck::kTitleId);
@@ -261,7 +261,7 @@ class ElChavoKartApp : public rex::ReXApp {
     if (auto* input = runtime() ? runtime()->input_system() : nullptr) {
       input->Shutdown();
     }
-    eck::debug::FlushSessionSummary();  // DEBUG_SAULO
+    eck::debug::FlushSessionSummary();
     eck::SetAchievementsMenuHandler({});
     eck::ModalDialog::DetachEscapeKey();
     delete achievements_;
@@ -312,10 +312,10 @@ class ElChavoKartApp : public rex::ReXApp {
         !immediate_drawer()) {
       return;
     }
-    REXLOG_INFO("[DEBUG_SAULO][Achievement] overlay open");
+    REXLOG_INFO("[Achievement] overlay open");
     achievements_ = new eck::AchievementsOverlay(imgui_drawer(), immediate_drawer(), runtime(), &achievements(),
                                                  [this] {
-                                                   REXLOG_INFO("[DEBUG_SAULO][Achievement] overlay closed");
+                                                   REXLOG_INFO("[Achievement] overlay closed");
                                                    achievements_ = nullptr;
                                                  });
   }

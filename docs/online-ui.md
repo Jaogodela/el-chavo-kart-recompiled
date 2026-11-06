@@ -240,65 +240,65 @@ four.
 
 ## What to look for at runtime
 
-`[DEBUG_SAULO][ONLINE-RACE]` carries one line per milestone (`race_begin host_confirmed`, `race_begin received`, `gameplay input_rx`,
-`gameplay snapshot_rx`, `remote seat=0 state_applied`), and `[DEBUG_SAULO][ONLINE-NET]` one summary per second with packets, bytes,
+`[ONLINE-RACE]` carries one line per milestone (`race_begin host_confirmed`, `race_begin received`, `gameplay input_rx`,
+`gameplay snapshot_rx`, `remote seat=0 state_applied`), and `[ONLINE-NET]` one summary per second with packets, bytes,
 drops and each peer's transport, last sequences, age and round trip.
 
 ```
-[DEBUG_SAULO][ONLINE] character_select entered online_play=on
-[DEBUG_SAULO][ONLINE] invite shortcut available remaining=3
-[DEBUG_SAULO][ONLINE] invite picker opened
-[DEBUG_SAULO][ONLINE-SETUP] free_race generation=<n>
-[DEBUG_SAULO][ONLINE-SETUP] mode committed value=<n>
-[DEBUG_SAULO][ONLINE-SETUP] difficulty committed value=<n>
-[DEBUG_SAULO][ONLINE-SETUP] ready generation=<n> game_type=<n> mode=<n> difficulty=<n>
-[DEBUG_SAULO][ONLINE-SETUP] incomplete missing=<free_race|mode|difficulty>
-[DEBUG_SAULO][ONLINE] invite picker waiting reason=service_not_ready
-[DEBUG_SAULO][ONLINE] session host requested
-[DEBUG_SAULO][ONLINE] invite send friend=<code>
-[DEBUG_SAULO][ONLINE] invite accepted generation=<n>
-[DEBUG_SAULO][ONLINE] session joined seat=1
-[DEBUG_SAULO][ONLINE] guest setup received mode=<n> difficulty=<n>
-[DEBUG_SAULO][ONLINE] travel command=start StartMenu?GoBackType=2...
-[DEBUG_SAULO][ONLINE] guest entered character select
-[DEBUG_SAULO][ONLINE] peer seat=1 transport=direct
-[DEBUG_SAULO][ONLINE] pick seat=<n> state=<n> character=<n>
-[DEBUG_SAULO][ONLINE-GAME] canonical_panels seat0=panel0 seat1=panel1 seat2=panel2 seat3=panel3 local_seat=<n>
-[DEBUG_SAULO][ONLINE-GAME] panel0 seat=0 owner=remote virtual=0 character=<n> state=<n>
-[DEBUG_SAULO][ONLINE-GAME] panel1 seat=1 owner=local physical=0 character=<n> state=<n>
-[DEBUG_SAULO][ONLINE-GAME] panel2 empty
-[DEBUG_SAULO][ONLINE-INVITE] picker_open room=none seat=-1
-[DEBUG_SAULO][ONLINE-INVITE] send_requested friend=<code>
-[DEBUG_SAULO][ONLINE-INVITE] host_create_begin
-[DEBUG_SAULO][ONLINE-INVITE] host_create_ready seat=0
-[DEBUG_SAULO][ONLINE-INVITE] sent friend=<code> pending=<n>
-[DEBUG_SAULO][ONLINE-INVITE] send_failed friend=<code> reason=<reason>
-[DEBUG_SAULO][ONLINE-INVITE] accepted friend=<code or name> seat=<n>
-[DEBUG_SAULO][ONLINE-INVITE] role_replace old_seat=0 new_role=guest
-[DEBUG_SAULO][ONLINE-INVITE] old_room_cleared
-[DEBUG_SAULO][ONLINE-INVITE] joined_inviter seat=<n>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] local_leave requested seat=<n> source=<guest_menu|host_menu|race_return|window_close|watchdog|menu>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] remote_leave seat=<n>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] guest_left seat=<n>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] host_left seat=0 reason=<reason>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] host_left seat=0 action=return_to_menu
-[DEBUG_SAULO][ONLINE-LIFECYCLE] cleanup room=<id> session_generation=<n>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] host_return command=start StartMenu?...GoBackType=<n>
-[DEBUG_SAULO][ONLINE-LIFECYCLE] after_race host destination=<2|3|9> generation=<n> sent=<0|1>
-[DEBUG_SAULO][ONLINE] after_race follow destination=<2|3> generation=<n>
-[DEBUG_SAULO][ONLINE-RACE] post_race host|guest
-[DEBUG_SAULO][ONLINE-LIFECYCLE] return_to_menu reason=<reason>
-[DEBUG_SAULO][ONLINE-RACE] race held command=start <map>?...
-[DEBUG_SAULO][ONLINE-RACE] race canonical generation=<n> start <map>?...
-[DEBUG_SAULO][ONLINE-RACE] race published generation=<n>
-[DEBUG_SAULO][ONLINE] race start generation=<n> seat=<n>
-[DEBUG_SAULO][ONLINE-RACE] race released
-[DEBUG_SAULO][ONLINE-RACE] race refused field=<field>
-[DEBUG_SAULO][ONLINE-RACE] race aborted reason=<reason>
-[DEBUG_SAULO][ONLINE-RACE] slot=<n> seat=<n> user=<pad> ... role=local|remote_designated
-[DEBUG_SAULO][OPEN-FILE] package=<url> file=0x<address> operation=<pass|track_screen|patch_main_menu>
-[DEBUG_SAULO][ANALYTICS] race.complete race=<n> duration_ms=<n> places=<n>
-[DEBUG_SAULO][ANALYTICS] race left before the end race=<n> last_state=<n> seconds=<n> reason=<world_gone|new_race|service_lost>
+[ONLINE] character_select entered online_play=on
+[ONLINE] invite shortcut available remaining=3
+[ONLINE] invite picker opened
+[ONLINE-SETUP] free_race generation=<n>
+[ONLINE-SETUP] mode committed value=<n>
+[ONLINE-SETUP] difficulty committed value=<n>
+[ONLINE-SETUP] ready generation=<n> game_type=<n> mode=<n> difficulty=<n>
+[ONLINE-SETUP] incomplete missing=<free_race|mode|difficulty>
+[ONLINE] invite picker waiting reason=service_not_ready
+[ONLINE] session host requested
+[ONLINE] invite send friend=<code>
+[ONLINE] invite accepted generation=<n>
+[ONLINE] session joined seat=1
+[ONLINE] guest setup received mode=<n> difficulty=<n>
+[ONLINE] travel command=start StartMenu?GoBackType=2...
+[ONLINE] guest entered character select
+[ONLINE] peer seat=1 transport=direct
+[ONLINE] pick seat=<n> state=<n> character=<n>
+[ONLINE-GAME] canonical_panels seat0=panel0 seat1=panel1 seat2=panel2 seat3=panel3 local_seat=<n>
+[ONLINE-GAME] panel0 seat=0 owner=remote virtual=0 character=<n> state=<n>
+[ONLINE-GAME] panel1 seat=1 owner=local physical=0 character=<n> state=<n>
+[ONLINE-GAME] panel2 empty
+[ONLINE-INVITE] picker_open room=none seat=-1
+[ONLINE-INVITE] send_requested friend=<code>
+[ONLINE-INVITE] host_create_begin
+[ONLINE-INVITE] host_create_ready seat=0
+[ONLINE-INVITE] sent friend=<code> pending=<n>
+[ONLINE-INVITE] send_failed friend=<code> reason=<reason>
+[ONLINE-INVITE] accepted friend=<code or name> seat=<n>
+[ONLINE-INVITE] role_replace old_seat=0 new_role=guest
+[ONLINE-INVITE] old_room_cleared
+[ONLINE-INVITE] joined_inviter seat=<n>
+[ONLINE-LIFECYCLE] local_leave requested seat=<n> source=<guest_menu|host_menu|race_return|window_close|watchdog|menu>
+[ONLINE-LIFECYCLE] remote_leave seat=<n>
+[ONLINE-LIFECYCLE] guest_left seat=<n>
+[ONLINE-LIFECYCLE] host_left seat=0 reason=<reason>
+[ONLINE-LIFECYCLE] host_left seat=0 action=return_to_menu
+[ONLINE-LIFECYCLE] cleanup room=<id> session_generation=<n>
+[ONLINE-LIFECYCLE] host_return command=start StartMenu?...GoBackType=<n>
+[ONLINE-LIFECYCLE] after_race host destination=<2|3|9> generation=<n> sent=<0|1>
+[ONLINE] after_race follow destination=<2|3> generation=<n>
+[ONLINE-RACE] post_race host|guest
+[ONLINE-LIFECYCLE] return_to_menu reason=<reason>
+[ONLINE-RACE] race held command=start <map>?...
+[ONLINE-RACE] race canonical generation=<n> start <map>?...
+[ONLINE-RACE] race published generation=<n>
+[ONLINE] race start generation=<n> seat=<n>
+[ONLINE-RACE] race released
+[ONLINE-RACE] race refused field=<field>
+[ONLINE-RACE] race aborted reason=<reason>
+[ONLINE-RACE] slot=<n> seat=<n> user=<pad> ... role=local|remote_designated
+[OPEN-FILE] package=<url> file=0x<address> operation=<pass|track_screen|patch_main_menu>
+[ANALYTICS] race.complete race=<n> duration_ms=<n> places=<n>
+[ANALYTICS] race left before the end race=<n> last_state=<n> seconds=<n> reason=<world_gone|new_race|service_lost>
 ```
 
 `after_race` and `host_return` come from any host menu command, the pause menu included, so neither means a race finished.
@@ -308,7 +308,7 @@ If `character_select entered` never appears, `ShowScreen` was not seen for the s
 Without the hint, `invite shortcut hidden reason=` says why. For panels, one line each when the outcome changes:
 
 ```
-[DEBUG_SAULO][ONLINE-GAME] panel_scan manager=<addr> base=<offset> panel0=<addr> readable=yes shift=<n> pad_hits=<offsets> game_hits=<offsets>
-[DEBUG_SAULO][ONLINE-GAME] panel_candidate pad_at=<offset> game_at=<offset> parent_at=<offset> parent=<addr> state_at=<offset> state=<n> character_at=<offset> character=<n> failed=<none|screen_parent|state_or_character|no_candidate>
-[DEBUG_SAULO][ONLINE-GAME] remote_panel_bridge=available|unavailable reason=<panels_not_seen|panel_unreadable|game_unreadable|layout_not_found>
+[ONLINE-GAME] panel_scan manager=<addr> base=<offset> panel0=<addr> readable=yes shift=<n> pad_hits=<offsets> game_hits=<offsets>
+[ONLINE-GAME] panel_candidate pad_at=<offset> game_at=<offset> parent_at=<offset> parent=<addr> state_at=<offset> state=<n> character_at=<offset> character=<n> failed=<none|screen_parent|state_or_character|no_candidate>
+[ONLINE-GAME] remote_panel_bridge=available|unavailable reason=<panels_not_seen|panel_unreadable|game_unreadable|layout_not_found>
 ```

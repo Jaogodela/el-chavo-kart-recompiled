@@ -20,7 +20,7 @@ constexpr std::chrono::milliseconds kLeaveFlush{200};
 void HardExit(const char* reason) {
   REXLOG_INFO("{}", reason);
   if (LeaveOnlineForExit()) std::this_thread::sleep_for(kLeaveFlush);
-  eck::debug::FlushSessionSummary();  // DEBUG_SAULO
+  eck::debug::FlushSessionSummary();
   PrepareHardExit();
   std::_Exit(0);
 }

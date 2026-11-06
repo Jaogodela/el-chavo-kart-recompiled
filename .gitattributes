@@ -7,3 +7,6 @@ patches/rexglue-sdk/* text eol=lf
 *.sh text eol=lf
 *.png binary
 *.ico binary
+
+# Rows whose English text ends in a space are joined to other text at run time.
+src/pt_br_ui_text.cpp whitespace=-blank-at-eol

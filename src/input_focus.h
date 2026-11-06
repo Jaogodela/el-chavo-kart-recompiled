@@ -56,12 +56,12 @@ NavInput<Buttons, Sticks> CombinePads(bool focused, const Pads& pads, ReadButton
   return input;
 }
 
-// DEBUG_SAULO
+
 inline std::string InputFocusLogLine(bool focused, std::string_view instance, uintptr_t window) {
   char handle[32];
   std::snprintf(handle, sizeof(handle), "0x%llX", static_cast<unsigned long long>(window));
-  std::string line = focused ? "[DEBUG_SAULO][INPUT] focus=active controller_input=enabled input_state_reset=yes"
-                             : "[DEBUG_SAULO][INPUT] focus=inactive controller_input=suppressed";
+  std::string line = focused ? "[INPUT] focus=active controller_input=enabled input_state_reset=yes"
+                             : "[INPUT] focus=inactive controller_input=suppressed";
   line += " instance=";
   line += instance.empty() ? std::string_view("none") : instance;
   line += " window=";

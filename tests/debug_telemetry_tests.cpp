@@ -1,4 +1,4 @@
-// DEBUG_SAULO: tests of the temporary telemetry logic. Remove with debug_telemetry_core.h.
+// Tests of the telemetry logic in debug_telemetry_core.h.
 
 #include <cmath>
 #include <cstdio>

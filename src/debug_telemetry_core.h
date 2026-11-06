@@ -1,6 +1,6 @@
 #pragma once
 
-// DEBUG_SAULO: temporary frame-pacing telemetry. Remove with debug_telemetry.cpp during final review.
+// Frame-pacing telemetry logic, free of ReXGlue so it can be tested.
 
 #include <algorithm>
 #include <array>

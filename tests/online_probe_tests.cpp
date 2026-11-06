@@ -129,8 +129,8 @@ void SixProbesAreRegistered() {
   }
   CHECK(numbers == (std::set<int>{1, 2, 3, 4, 5, 6}));
   CHECK(names.size() == 6);
-  CHECK(std::string(probe::kRaceTag) == "[DEBUG_SAULO][ONLINE-RACE]");
-  CHECK(std::string(probe::kXboxTag) == "[DEBUG_SAULO][ONLINE-XBOX]");
+  CHECK(std::string(probe::kRaceTag) == "[ONLINE-RACE]");
+  CHECK(std::string(probe::kXboxTag) == "[ONLINE-XBOX]");
 }
 
 probe::RaceStartPlan MakePlan(std::vector<int> seats, int local) {

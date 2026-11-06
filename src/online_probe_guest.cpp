@@ -20,7 +20,7 @@
 #include "online_race_url.h"
 #include "online_runtime.h"
 
-// DEBUG_SAULO: everything in this file is diagnostics for the online race work and is removed with it.
+// Diagnostics for the online race work.
 
 namespace eck::online_probe {
 

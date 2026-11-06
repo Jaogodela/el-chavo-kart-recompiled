@@ -260,9 +260,29 @@ else()
     list(APPEND ECK_SOURCES src/clipboard_sdl.cpp src/online/websocket_posix.cpp)
 endif()
 if(WIN32)
+    list(APPEND ECK_SOURCES
+        src/update_config.cpp
+        src/updater/github_release.cpp
+        src/updater/json.cpp
+        src/updater/sha256.cpp
+        src/updater/update_controller.cpp
+        src/updater/update_job.cpp
+        src/updater/update_paths.cpp
+        src/updater/update_platform.cpp
+        src/updater/update_ui.cpp
+        src/updater/update_zip.cpp
+        src/updater/version.cpp
+        src/updater/third_party/miniz/miniz.c
+    )
+    set_source_files_properties(src/updater/third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "-w")
+    set_property(SOURCE src/update_config.cpp src/updater/github_release.cpp src/updater/json.cpp
+        src/updater/sha256.cpp src/updater/update_controller.cpp src/updater/update_job.cpp
+        src/updater/update_paths.cpp src/updater/update_platform.cpp src/updater/update_ui.cpp
+        src/updater/update_zip.cpp src/updater/version.cpp APPEND PROPERTY COMPILE_OPTIONS -Wall -Wextra)
     # Resource 1 is the first icon in the executable: Explorer, and SDL's window class, use it.
     enable_language(RC)
-    set(ECK_APP_RC "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/el_chavo_kart.rc")
+    set(ECK_APP_RC "${CMAKE_CURRENT_BINARY_DIR}/el_chavo_kart.rc")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/el_chavo_kart.rc.in" "${ECK_APP_RC}" @ONLY)
     set_source_files_properties("${ECK_APP_RC}" PROPERTIES
         OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/app-icon.ico")
     list(APPEND ECK_SOURCES "${ECK_APP_RC}")
@@ -279,6 +299,24 @@ rexglue_setup_host_target(el_chavo_kart GPU_PLUGINS xenos)
 target_link_libraries(el_chavo_kart PRIVATE trg::launcher)
 if(WIN32)
     target_link_libraries(el_chavo_kart PRIVATE shcore synchronization dxgi shell32 winhttp ws2_32 bcrypt)
+
+    # The update helper runs from the temporary update workspace, away from the installation, so it keeps its runtime
+    # inside the executable. Release packages ship the MSYS2 CLANG64 build of these sources (tools/build-updater.ps1).
+    add_executable(trg-updater WIN32
+        src/updater/helper_main.cpp
+        src/updater/install_transaction.cpp
+        src/updater/sha256.cpp
+        src/updater/update_job.cpp
+        src/updater/update_paths.cpp
+        src/updater/update_platform.cpp
+    )
+    target_include_directories(trg-updater PRIVATE src)
+    target_link_libraries(trg-updater PRIVATE shell32)
+    target_link_options(trg-updater PRIVATE -static)
+    set_property(TARGET trg-updater PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    target_compile_options(trg-updater PRIVATE -Wall -Wextra)
+    add_dependencies(el_chavo_kart trg-updater)
+
     # The SDK stages its DLLs only when the program links, so a rebuilt runtime or GPU plugin has to
     # make it link again; tools\build.ps1 also checks the staged copies.
     foreach(_sdk_dll rexruntime rexruntimed rexruntimerd rexgpu-xenos rexgpu-xenosd rexgpu-xenosrd)

@@ -1,7 +1,7 @@
 # Pure-logic tests: no game data, no ReXGlue SDK, no TRG Launcher. tools\test.ps1 configures and builds this
 # tree by itself so these checks run without the prerequisites the main build needs.
 cmake_minimum_required(VERSION 3.25)
-project(el_chavo_kart_tests LANGUAGES CXX)
+project(el_chavo_kart_tests LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -145,3 +145,54 @@ foreach(_online_test identity protocol peer service session launcher)
 endforeach()
 target_sources(eck_online_session_tests PRIVATE "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race_telemetry.cpp"
                "${ECK_SRC_DIR}/online_race.cpp")
+
+# Updater logic without the runtime: versions, release JSON, SHA-256, ZIP safety, staging, jobs and rollback.
+set(ECK_UPDATER_DIR "${ECK_SRC_DIR}/updater")
+set_source_files_properties("${ECK_UPDATER_DIR}/third_party/miniz/miniz.c" PROPERTIES COMPILE_OPTIONS "-w")
+add_executable(eck_update_tests
+    update_tests.cpp
+    "${ECK_UPDATER_DIR}/github_release.cpp"
+    "${ECK_UPDATER_DIR}/install_transaction.cpp"
+    "${ECK_UPDATER_DIR}/json.cpp"
+    "${ECK_UPDATER_DIR}/sha256.cpp"
+    "${ECK_UPDATER_DIR}/update_job.cpp"
+    "${ECK_UPDATER_DIR}/update_paths.cpp"
+    "${ECK_UPDATER_DIR}/update_platform.cpp"
+    "${ECK_UPDATER_DIR}/update_zip.cpp"
+    "${ECK_UPDATER_DIR}/version.cpp"
+    "${ECK_UPDATER_DIR}/third_party/miniz/miniz.c"
+)
+target_include_directories(eck_update_tests PRIVATE "${ECK_SRC_DIR}")
+target_compile_definitions(eck_update_tests PRIVATE ECK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_options(eck_update_tests PRIVATE -Wall -Wextra)
+if(WIN32)
+    target_link_libraries(eck_update_tests PRIVATE shell32)
+
+    # The same sources as the trg-updater target of the main build.
+    add_executable(eck_trg_updater WIN32
+        "${ECK_UPDATER_DIR}/helper_main.cpp"
+        "${ECK_UPDATER_DIR}/install_transaction.cpp"
+        "${ECK_UPDATER_DIR}/sha256.cpp"
+        "${ECK_UPDATER_DIR}/update_job.cpp"
+        "${ECK_UPDATER_DIR}/update_paths.cpp"
+        "${ECK_UPDATER_DIR}/update_platform.cpp"
+    )
+    set_target_properties(eck_trg_updater PROPERTIES OUTPUT_NAME trg-updater)
+    target_include_directories(eck_trg_updater PRIVATE "${ECK_SRC_DIR}")
+    target_link_libraries(eck_trg_updater PRIVATE shell32)
+    target_link_options(eck_trg_updater PRIVATE -static)
+    set_property(TARGET eck_trg_updater PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    target_compile_options(eck_trg_updater PRIVATE -Wall -Wextra)
+
+    add_executable(eck_update_restart_marker WIN32 update_restart_marker.cpp)
+    target_link_libraries(eck_update_restart_marker PRIVATE shell32)
+    target_link_options(eck_update_restart_marker PRIVATE -static)
+    target_compile_options(eck_update_restart_marker PRIVATE -Wall -Wextra)
+
+    add_executable(eck_update_helper_tests update_helper_tests.cpp)
+    target_compile_options(eck_update_helper_tests PRIVATE -Wall -Wextra)
+    target_compile_definitions(eck_update_helper_tests PRIVATE
+        ECK_UPDATER_EXE="$<TARGET_FILE:eck_trg_updater>"
+        ECK_RESTART_MARKER_EXE="$<TARGET_FILE:eck_update_restart_marker>")
+    add_dependencies(eck_update_helper_tests eck_trg_updater eck_update_restart_marker)
+endif()

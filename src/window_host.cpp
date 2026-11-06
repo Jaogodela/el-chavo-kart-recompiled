@@ -55,7 +55,7 @@ constexpr double kSampleSeconds = 1.0;
 constexpr size_t kWindowHostZOrder = 1000;
 // Above the ImGui drawer (64) and the listeners that act on what reaches it.
 constexpr size_t kMouseFocusGateZOrder = 2000;
-constexpr char kInstanceEnv[] = "ECK_INSTANCE";  // DEBUG_SAULO
+constexpr char kInstanceEnv[] = "ECK_INSTANCE";
 
 using Clock = std::chrono::steady_clock;
 
@@ -297,9 +297,9 @@ void OnWindowFocus(bool focused, rex::ui::Window* window, rex::ui::ImGuiDrawer* 
   if (!focused && drawer) {
     ReleaseImGuiMouse(window, drawer);
   }
-  const char* instance = std::getenv(kInstanceEnv);  // DEBUG_SAULO
+  const char* instance = std::getenv(kInstanceEnv);
   REXLOG_INFO("{}", eck::InputFocusLogLine(focused, instance ? instance : "",
-                                           reinterpret_cast<uintptr_t>(window->GetNativeWindowHandle())));  // DEBUG_SAULO
+                                           reinterpret_cast<uintptr_t>(window->GetNativeWindowHandle())));
 }
 
 void AttachMouseFocusGate(rex::ui::Window* window) {
@@ -351,8 +351,8 @@ GuestFrameStats GetGuestFrameStats() {
 // Named like the SDK's export, so REX_EXTERN would call this hook again: the original is called by its entry point.
 REX_HOOK_RAW(__imp__VdSwap) {
   eck::PaceGuestFrame();
-  const auto swap_begin = Clock::now();  // DEBUG_SAULO
+  const auto swap_begin = Clock::now();
   rex::ppc::HostToGuestFunction<rex::kernel::xboxkrnl::VdSwap_entry>(ctx, base);
-  eck::debug::OnSwap(std::chrono::duration<double, std::milli>(Clock::now() - swap_begin).count());  // DEBUG_SAULO
+  eck::debug::OnSwap(std::chrono::duration<double, std::milli>(Clock::now() - swap_begin).count());
   CountGuestFrame();
 }

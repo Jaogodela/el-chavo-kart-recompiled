@@ -80,11 +80,18 @@ build looks for them in a `game` folder beside the program, and the launcher can
 Lightweight, headless checks (no game files, no ReXGlue SDK, no GUI) live in `tools\test.ps1`: it builds and runs the
 console tests in `tests\`, validates the patch sets in `patches\rexglue-sdk` and `patches\trg-launcher`, checks
 `config\overrides.toml` against `config\discovered-functions.toml` for overlaps, reports `generated\default` freshness,
-and checks the source tree for tracked game data, `DEBUG_SAULO` markers and hard-coded local paths.
+and checks the source tree for tracked game data, temporary debug markers and hard-coded local paths.
 
 Other developer tools: `tools\extract-iso.ps1` extracts the disc on its own, `python -I tools\xex_image.py` dumps the
 decrypted image to `game\analysis`, and `python -I tools\find-missing-functions.py` rescans it for functions reached
 only through vtables or function pointers (`--apply-high` rewrites `config\discovered-functions.toml`).
+
+## Releases and updates
+
+`tools\package-release.ps1` builds the Release configuration and writes `dist\ElChavoKart-v<version>-windows-x64.zip`
+and its `.sha256`; see [docs/release.md](docs/release.md). The launcher checks the latest stable GitHub release once per
+start and shows an update banner in its header. Nothing is installed until you choose UPDATE NOW and RESTART TO UPDATE;
+game files, saves, settings and logs are never touched.
 
 ## The launcher
 

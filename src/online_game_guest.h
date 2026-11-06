@@ -192,7 +192,7 @@ inline std::string GuestName(std::string_view name) {
   return out;
 }
 
-// ---- DEBUG_SAULO: transition-only, rate-limited logging -------------------------------------------------------------
+// ---- Transition-only, rate-limited logging -------------------------------------------------------------
 
 // A key logs when its value changed since the last line it logged, at most once per `min_gap` seconds, and at most
 // `max_lines` lines in total.

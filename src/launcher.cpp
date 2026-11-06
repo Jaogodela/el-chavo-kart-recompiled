@@ -46,6 +46,10 @@
 #include "settings.h"
 #include "ui_text.h"
 #include "window_host.h"
+#if defined(_WIN32)
+#include "update_config.h"
+#include "updater/update_ui.h"
+#endif
 
 namespace eck {
 namespace {
@@ -189,6 +193,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       return settings_.SaveNow({{std::string(key), value}});
     });
     launcher_ = std::make_unique<trg::Launcher>(MakeConfig());
+    StartUpdateCheck();
     if (WindowFullscreen()) {
       restore_when_windowed_ = true;
       RequestFullscreen(false);
@@ -204,6 +209,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     }
     SetActiveUiLanguage(settings_.Get(kLanguageSetting, kDefaultLanguage));
     PollInstall();
+    PollUpdate();
     TrackPlacement();
     if (!nav_taken_) {
       saved_nav_flags_ = io.ConfigFlags & kNavFlags;
@@ -231,6 +237,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     ImGui::BeginDisabled(starting_);
     const trg::Result result = launcher_->Frame();
     ImGui::EndDisabled();
+    if (result == trg::Result::kNone && !starting_) {
+      DrawUpdateBanner();
+    }
     if (starting_) {
       DrawStartingMessage();
     }
@@ -292,6 +301,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
 
   // Runs inside the last frame; the in-game overlays share this ImGui context.
   void OnClose() override {
+    ReleaseUpdater();
     ImGuiIO& io = GetIO();
     gamepad_.Release(io);
     io.ConfigFlags = (io.ConfigFlags & ~kNavFlags) | saved_nav_flags_;
@@ -301,13 +311,84 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
  private:
   void Finish(std::function<void()> action) {
     done_ = true;
-    SavePlacement(placement_.Flush());
+    ReleaseUpdater();
+    if (!skip_finish_save_) {
+      SavePlacement(placement_.Flush());
+    }
     REXLOG_INFO("Launcher closed");
     Close();
     if (action) {
       action();
     }
   }
+
+#if defined(_WIN32)
+  void StartUpdateCheck() {
+    updater_ = std::make_unique<trg::update::UpdateController>(MakeUpdateConfig(PortFolder()));
+    updater_->StartCheck();
+  }
+
+  void PollUpdate() {
+    if (updater_) {
+      updater_->Poll();
+    }
+  }
+
+  void ReleaseUpdater() {
+    if (!updater_) {
+      return;
+    }
+    updater_->Cancel();
+    if (updater_->Busy()) {
+      // Do not join a network call on the UI thread when the launcher leaves.
+      updater_.release();
+    }
+  }
+
+  void DrawUpdateBanner() {
+    if (!updater_) {
+      return;
+    }
+    switch (trg::update::DrawUpdateBanner(updater_->snapshot(), launcher_->config().theme, g_fonts)) {
+      case trg::update::UpdateUiAction::kDownload:
+        updater_->StartDownload();
+        break;
+      case trg::update::UpdateUiAction::kRetry:
+        if (updater_->RetryNeedsInstall()) {
+          RestartToUpdate([this] { return updater_->Retry(); });
+        } else {
+          updater_->Retry();
+        }
+        break;
+      case trg::update::UpdateUiAction::kRestart:
+        RestartToUpdate([this] { return updater_->BeginInstall(); });
+        break;
+      case trg::update::UpdateUiAction::kNone:
+        break;
+    }
+  }
+
+  template <typename Begin>
+  void RestartToUpdate(Begin begin) {
+    if (install_.running()) {
+      launcher_->SetStatus("Wait for the current install to finish.", 5.0);
+      return;
+    }
+    if (!launcher_->Save()) {
+      return;
+    }
+    SavePlacement(placement_.Flush());
+    if (begin()) {
+      skip_finish_save_ = true;
+      Finish(cb_.quit);
+    }
+  }
+#else
+  void StartUpdateCheck() {}
+  void PollUpdate() {}
+  void ReleaseUpdater() {}
+  void DrawUpdateBanner() {}
+#endif
 
   void* WindowHandle() const { return cb_.window_handle ? cb_.window_handle() : nullptr; }
 
@@ -918,6 +999,10 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   ImGuiConfigFlags saved_nav_flags_ = 0;
   ImGuiBackendFlags saved_has_gamepad_ = 0;
   bool done_ = false;
+  bool skip_finish_save_ = false;
+#if defined(_WIN32)
+  std::unique_ptr<trg::update::UpdateController> updater_;
+#endif
   std::optional<WindowPlacement> startup_;
   PlacementTracker placement_;
   FullscreenGate fullscreen_gate_;

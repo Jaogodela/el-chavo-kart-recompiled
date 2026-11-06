@@ -60,10 +60,10 @@ void TestLocalInstancePacing() {
   CHECK(LimiterRate(240) == 240);
 
   CHECK(LocalInstancePacingLine(true, kFrameRateUnlimited) ==
-        "[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=yes requested=unlimited effective=60");
-  CHECK(LocalInstancePacingLine(true, 60) == "[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=yes requested=60 effective=60");
+        "[ONLINE-PACING] local_multi_instance=yes requested=unlimited effective=60");
+  CHECK(LocalInstancePacingLine(true, 60) == "[ONLINE-PACING] local_multi_instance=yes requested=60 effective=60");
   CHECK(LocalInstancePacingLine(false, kFrameRateUnlimited) ==
-        "[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=no requested=unlimited effective=unlimited");
+        "[ONLINE-PACING] local_multi_instance=no requested=unlimited effective=unlimited");
 }
 
 void TestChoices() {

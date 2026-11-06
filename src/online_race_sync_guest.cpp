@@ -113,16 +113,16 @@ race_sync::SyncConfig ConfigOf(const lobby::CanonicalRace& race, int seat, int o
   return config;
 }
 
-// DEBUG_SAULO: proof of traffic, once per second.
+// Proof of traffic, once per second.
 void LogSummary(const race_sync::RaceSync& sync, const race_sync::PeerRoutes& routes, int race_state, double now) {
   const race_sync::Traffic& net = sync.traffic();
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE-NET] gameplay tx_packets={} rx_packets={} tx_bytes={} rx_bytes={} dropped_old={} rejected={} "
+  REXLOG_INFO("[ONLINE-NET] gameplay tx_packets={} rx_packets={} tx_bytes={} rx_bytes={} dropped_old={} rejected={} "
               "own_snaps={} race_state={} begun={}",
               net.tx_packets, net.rx_packets, net.tx_bytes, net.rx_bytes, net.dropped_old, net.rejected, net.own_snaps, race_state,
               sync.begun() ? "yes" : "no");
   for (const race_sync::PeerRoute& route : routes) {
     if (route.seat < 0) continue;
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-NET] peer seat={} transport={} last_input_seq={} last_snapshot_seq={} age_ms={} rtt_ms={}",
+    REXLOG_INFO("[ONLINE-NET] peer seat={} transport={} last_input_seq={} last_snapshot_seq={} age_ms={} rtt_ms={}",
                 route.seat, online::RelaySeatOf(route.endpoint) >= 0 ? "relay" : "direct", sync.last_input_seq(route.seat),
                 sync.last_snapshot_seq(), int(sync.LastHeardAge(route.seat, now) * 1000.0),
                 sync.RttMs(route.seat, now).value_or(-1));
@@ -148,7 +148,7 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
     if (running) {
       running.reset();
       bridge.SetRaceStatus({});
-      REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] gameplay stopped");
+      REXLOG_INFO("[ONLINE-RACE] gameplay stopped");
     }
     return false;
   }
@@ -157,7 +157,7 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
   if (!running || running->sync.config().generation != uint32_t(plan.race->generation)) {
     running = std::make_unique<Running>(ConfigOf(*plan.race, plan.local_seat, *own_pad), plan.routes);
     running->own_pad = *own_pad;
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] gameplay started generation={} seat={} own_pad={}", plan.race->generation, plan.local_seat,
+    REXLOG_INFO("[ONLINE-RACE] gameplay started generation={} seat={} own_pad={}", plan.race->generation, plan.local_seat,
                 *own_pad);
   }
   running->link.SetRoutes(plan.routes);
@@ -194,7 +194,7 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
   }
   bridge.SetRaceStatus(status);
 
-  for (const std::string& note : running->sync.TakeNotes()) REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] {}", note);
+  for (const std::string& note : running->sync.TakeNotes()) REXLOG_INFO("[ONLINE-RACE] {}", note);
   if (now >= running->next_summary) {
     running->next_summary = now + kSummarySeconds;
     LogSummary(running->sync, plan.routes, in.race_state, now);

@@ -75,17 +75,17 @@ std::span<const CodeFingerprint> TableOf(Group group) {
 
 bool EnvFlag(const char* name) { return EnvOn(std::getenv(name)); }
 
-// DEBUG_SAULO: one line per state transition, tagged for removal.
+// One line per state transition.
 void Log(const std::string& key, uint64_t value, const std::string& text) {
   static std::mutex mutex;
   static TransitionGate gate;
   std::lock_guard lock(mutex);
   if (gate.ShouldLog(key, value, eck::OnlineNowSeconds())) {
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] {} calls={}", text, gate.calls(key));
+    REXLOG_INFO("[ONLINE-GAME] {} calls={}", text, gate.calls(key));
   }
 }
 
-// DEBUG_SAULO: the passive session/XNet/socket trace. Socket traffic has its own, smaller budget.
+// The passive session/XNet/socket trace. Socket traffic has its own, smaller budget.
 void LogXbox(bool traffic, const std::string& key, uint64_t value, const char* api, const std::string& args,
              uint32_t result) {
   static std::mutex mutex;
@@ -94,7 +94,7 @@ void LogXbox(bool traffic, const std::string& key, uint64_t value, const char* a
   std::lock_guard lock(mutex);
   TransitionGate& gate = traffic ? traffic_gate : calls_gate;
   if (!gate.ShouldLog(key, value, eck::OnlineNowSeconds())) return;
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE-XBOX] api={} {} args={} result=0x{:08X} calls={}", api,
+  REXLOG_INFO("[ONLINE-XBOX] api={} {} args={} result=0x{:08X} calls={}", api,
               eck::online_probe::XboxContext(), args, result, gate.calls(key));
 }
 
@@ -106,7 +106,7 @@ bool GroupOk(Group group, const uint8_t* base) {
     const char* bad = FirstMismatch(TableOf(group), base, kGuestSpan, 0);
     seen = bad == nullptr ? 1 : 2;
     state[group] = seen;
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-XBOX] fingerprint group={} {}{}", int(group), seen == 1 ? "ok" : "MISMATCH at ",
+    REXLOG_INFO("[ONLINE-XBOX] fingerprint group={} {}{}", int(group), seen == 1 ? "ok" : "MISMATCH at ",
                 bad == nullptr ? "" : bad);
   }
   return seen == 1;
@@ -347,7 +347,7 @@ REX_HOOK_RAW(sub_826A1F30) {
     if (REXCVAR_GET(eck_online_enabled) && IsRaceLaunch(command)) {
       // The script only ever discards this result, but it frees what it is given.
       if (eck::OnlineLobby().HoldRace(command)) {
-        REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race held command={}", command);
+        REXLOG_INFO("[ONLINE-RACE] race held command={}", command);
         for (uint32_t offset = 0; offset < 12; offset += 4) eck::StoreBE32(base, ctx.r3.u32 + offset, 0);
         eck::NoteOnlineTravel();
         return;
@@ -367,7 +367,7 @@ REX_HOOK_RAW(sub_830B53B0) {
 }
 
 // Title-local profile. User 0 only: pads 1 to 3 stay local guests.
-// DEBUG_SAULO: sign-in queries, state changes per caller only.
+// Sign-in queries, state changes per caller only.
 void TraceSignin(const char* api, uint32_t lr, uint32_t user, uint32_t result, bool live_reported) {
   char text[96];
   std::snprintf(text, sizeof text, "user=%u lr=0x%08X live_reported=%s", user, lr, live_reported ? "yes" : "no");
@@ -482,23 +482,23 @@ void RunConsoleCommand(PPCContext& ctx, uint8_t* base, uint32_t actor, const std
   ctx.r1.u32 = saved_sp;
 }
 
-// DEBUG_SAULO: only when the outcome changes.
+// Only when the outcome changes.
 void LogPanelScan(const eck::lobby::PanelScan& scan, const eck::menu::PanelObjects& objects) {
   const auto hits = [](const std::vector<uint32_t>& at) {
     std::string text;
     for (const uint32_t offset : at) text += (text.empty() ? "" : ",") + std::to_string(offset);
     return text.empty() ? std::string("none") : text;
   };
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] panel_scan manager=0x{:08X} base=0x{:08X} panel0=0x{:08X} readable={} shift={} pad_hits={} "
+  REXLOG_INFO("[ONLINE-GAME] panel_scan manager=0x{:08X} base=0x{:08X} panel0=0x{:08X} readable={} shift={} pad_hits={} "
               "game_hits={}",
               scan.manager, scan.fields ? scan.fields->pad : 0, objects[0], scan.readable ? "yes" : "no", scan.shift,
               hits(scan.pad_hits), hits(scan.game_hits));
   const eck::lobby::ScanCandidate& seen = scan.candidate;
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] panel_candidate pad_at=0x{:X} game_at=0x{:X} parent_at=0x{:X} parent=0x{:08X} state_at=0x{:X} "
+  REXLOG_INFO("[ONLINE-GAME] panel_candidate pad_at=0x{:X} game_at=0x{:X} parent_at=0x{:X} parent=0x{:08X} state_at=0x{:X} "
               "state={} character_at=0x{:X} character={} failed={}",
               seen.pad_at, seen.game_at, seen.parent_at, seen.parent, seen.state_at, seen.state, seen.character_at, seen.character,
               seen.failed);
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] remote_panel_bridge={} reason={}", scan.fields ? "available" : "unavailable", scan.failure);
+  REXLOG_INFO("[ONLINE-GAME] remote_panel_bridge={} reason={}", scan.fields ? "available" : "unavailable", scan.failure);
 }
 
 // The layout is searched once per set of panels. A miss is retried at this pace, as the game may just not be readable yet.
@@ -541,10 +541,10 @@ bool RunTravel(PPCContext& ctx, uint8_t* base, const eck::lobby::TravelRequest& 
   }
   const std::string command = eck::lobby::TravelCommand(travel, primary);
   if (command.size() > eck::lobby::kMaxCommandChars) {
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE] travel skipped reason=command_too_long chars={}", command.size());
+    REXLOG_INFO("[ONLINE] travel skipped reason=command_too_long chars={}", command.size());
     return true;
   }
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE] travel command={}", command);
+  REXLOG_INFO("[ONLINE] travel command={}", command);
   eck::NoteOnlineTravel();
   RunConsoleCommand(ctx, base, game, command);
   return true;
@@ -562,7 +562,7 @@ void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
     if (!RunTravel(ctx, base, travel) && travel.kind != lobby::TravelKind::kRace) bridge.RetryTravel(travel);
   }
   if (const std::string race = bridge.TakeReleasedRace(); !race.empty() && race.size() <= lobby::kMaxCommandChars) {
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race released");
+    REXLOG_INFO("[ONLINE-RACE] race released");
     RunConsoleCommand(ctx, base, CurrentGame(), race);
   }
   static lobby::LobbyPads pads;
@@ -572,7 +572,7 @@ void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
     session = plan.session;
     pads.NewSession();
     bridge.ClearOwn();
-    if (plan.local_seat >= 0) REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] {}", lobby::CanonicalPanelsLine(plan.local_seat));
+    if (plan.local_seat >= 0) REXLOG_INFO("[ONLINE-GAME] {}", lobby::CanonicalPanelsLine(plan.local_seat));
   }
   const std::optional<lobby::Panels> panels = plan.on_screen ? CurrentPanels(plan.panels) : std::nullopt;
   const std::optional<int> physical = panels ? OwnPanel() : std::nullopt;
@@ -589,7 +589,7 @@ void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
   bridge.SetRules(pads.Step(OnlineNowSeconds(), plan, *panels, *physical));
   bridge.ReportOwn((*panels)[size_t(lobby::LocalPanel(plan, *physical))], plan.session);
   bridge.SetPadSeats(lobby::CanonicalPadSeats(plan), *physical);
-  // DEBUG_SAULO: one line per panel change, all four when the room changes.
+  // One line per panel change, all four when the room changes.
   if (plan.local_seat < 0) return;
   const uint64_t room = uint64_t(plan.session) << 16 | uint64_t(plan.local_seat + 1) << 8;
   for (int i = 0; i < lobby::kPanels; ++i) {
@@ -601,7 +601,7 @@ void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
 }
 
 void LogOnlineGameHooks() {
-  REXLOG_INFO("[DEBUG_SAULO][ONLINE-XBOX] hooks linked: identity=4 xuid=2 xgi_session=9 xnet=3 live_virtuals=6 engine=2 "
+  REXLOG_INFO("[ONLINE-XBOX] hooks linked: identity=4 xuid=2 xgi_session=9 xnet=3 live_virtuals=6 engine=2 "
               "net_socket=3 race_url=1 crt_srand=1 screen_calls=1 input_state=1 live_profile_env={} debug_env={}",
               EnvFlag(kLiveProfileEnv), EnvFlag(kDebugEnv));
 }
@@ -670,7 +670,7 @@ void PumpOnlineGameDebug() {
         const std::string line = DescribeRoom(state);
         if (line != last) {
           last = line;
-          REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] {}", line);
+          REXLOG_INFO("[ONLINE-GAME] {}", line);
         }
         const std::string roles = DescribeSeatRoles(state);
         if (roles != last_roles) {

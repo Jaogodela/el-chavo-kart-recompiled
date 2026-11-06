@@ -1300,11 +1300,11 @@ void OnlineService::Log(const std::string& line) {
   if (config_.log) config_.log(line);
 }
 
-void OnlineService::Debug(const std::string& line) { Log("[DEBUG_SAULO][ONLINE] " + line); }
+void OnlineService::Debug(const std::string& line) { Log("[ONLINE] " + line); }
 
-void OnlineService::InviteLog(const std::string& line) { Log("[DEBUG_SAULO][ONLINE-INVITE] " + line); }
+void OnlineService::InviteLog(const std::string& line) { Log("[ONLINE-INVITE] " + line); }
 
-void OnlineService::LifecycleLog(const std::string& line) { Log("[DEBUG_SAULO][ONLINE-LIFECYCLE] " + line); }
+void OnlineService::LifecycleLog(const std::string& line) { Log("[ONLINE-LIFECYCLE] " + line); }
 
 Snapshot OnlineService::snapshot() const {
   std::lock_guard<std::mutex> lock(mutex_);

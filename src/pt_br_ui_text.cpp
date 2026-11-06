@@ -330,6 +330,149 @@ Limited: direct connections may be blocked by your network	Limitado: as conexõe
 Limited: some players may not be able to connect to you	Limitado: alguns jogadores podem não conseguir se conectar a você
 Not ready: the online service did not accept this game	Não está pronto: o serviço online não aceitou este jogo
 Not ready: cannot reach the online service	Não está pronto: não foi possível alcançar o serviço online
+Checking for updates	Verificando atualizações
+Update available	Atualização disponível
+Downloading update	Baixando atualização
+Verifying update	Verificando atualização
+Update ready	Atualização pronta
+Update check failed	Falha ao buscar atualizações
+Update failed	Falha na atualização
+Release notes	Notas da versão
+Contacting GitHub...	Contatando o GitHub...
+Version 	Versão 
+ is available	 está disponível
+You are using 	Você está usando 
+UPDATE NOW	ATUALIZAR AGORA
+Automatic installation is not available.	A instalação automática não está disponível.
+Downloading update 	Baixando atualização 
+Checking the download and preparing the files.	Verificando o download e preparando os arquivos.
+ is ready. The launcher will restart.	 está pronta. O launcher será reiniciado.
+RESTART TO UPDATE	REINICIAR PARA ATUALIZAR
+Check your connection and try again.	Verifique sua conexão e tente novamente.
+RETRY	TENTAR NOVAMENTE
+The update helper is missing from this installation. Reinstall this release to enable automatic updates.	O auxiliar de atualização não está presente nesta instalação. Reinstale esta versão para ativar as atualizações automáticas.
+Automatic installation is not available in this build.	A instalação automática não está disponível nesta compilação.
+The release response is too large.	A resposta da versão é grande demais.
+This build's version could not be read.	Não foi possível ler a versão desta compilação.
+The update address is not secure.	O endereço da atualização não é seguro.
+The update response could not be read.	Não foi possível ler a resposta da atualização.
+The updater has no package name for this build.	O atualizador não tem um nome de pacote para esta compilação.
+The latest release does not include 	A versão mais recente não inclui 
+The update package address is not secure.	O endereço do pacote de atualização não é seguro.
+The update package has an invalid size.	O pacote de atualização tem um tamanho inválido.
+The checksum address is not secure.	O endereço do checksum não é seguro.
+The update check could not start.	Não foi possível iniciar a verificação de atualização.
+The update check failed.	Falha na verificação de atualização.
+The published checksum file does not match its own digest.	O arquivo de checksum publicado não corresponde ao seu próprio resumo.
+The published checksum file is not valid.	O arquivo de checksum publicado não é válido.
+The release does not provide a trusted SHA-256 checksum.	A versão não fornece um checksum SHA-256 confiável.
+The update download is incomplete.	O download da atualização está incompleto.
+The downloaded update does not match its SHA-256 checksum.	A atualização baixada não corresponde ao seu checksum SHA-256.
+Cannot write the update manifest.	Não foi possível gravar o manifesto da atualização.
+The update download could not start.	Não foi possível iniciar o download da atualização.
+The update download failed.	Falha no download da atualização.
+The update helper is missing from this installation.	O auxiliar de atualização não está presente nesta instalação.
+The update helper is only used on Windows.	O auxiliar de atualização só é usado no Windows.
+Cannot find a temporary folder for the update.	Não foi possível encontrar uma pasta temporária para a atualização.
+Cannot find a free temporary folder for the update.	Não foi possível encontrar uma pasta temporária livre para a atualização.
+The update workspace cannot be inside the installation.	A área de trabalho da atualização não pode ficar dentro da instalação.
+Cannot create the update workspace.	Não foi possível criar a área de trabalho da atualização.
+Not a valid web address.	Endereço web inválido.
+Could not start the download.	Não foi possível iniciar o download.
+Could not reach the server. Check your internet connection and try again.	Não foi possível acessar o servidor. Verifique sua conexão com a internet e tente novamente.
+The server answered 	O servidor respondeu 
+Cancelled.	Cancelado.
+The download was interrupted.	O download foi interrompido.
+curl is needed to download. Install it with your package manager.	O curl é necessário para baixar. Instale-o com o gerenciador de pacotes.
+The download failed. Check your internet connection and try again.	O download falhou. Verifique sua conexão com a internet e tente novamente.
+Cannot write 	Não foi possível gravar 
+The request headers are not valid.	Os cabeçalhos da requisição não são válidos.
+Only web addresses can be downloaded.	Só é possível baixar endereços web.
+The server took too long to answer.	O servidor demorou demais para responder.
+The server sent more data than expected.	O servidor enviou mais dados que o esperado.
+The download address is not allowed.	O endereço de download não é permitido.
+The server sent an invalid redirect.	O servidor enviou um redirecionamento inválido.
+The server redirected too many times.	O servidor redirecionou vezes demais.
+Could not prepare the program environment.	Não foi possível preparar o ambiente do programa.
+Could not start the program (	Não foi possível iniciar o programa (
+).	).
+The launcher process could not be opened.	Não foi possível abrir o processo do launcher.
+The launcher did not exit in time.	O launcher não fechou a tempo.
+Waiting for the launcher failed.	A espera pelo launcher falhou.
+The release response is missing 	A resposta da versão não tem 
+The release response has an invalid 	A resposta da versão tem um valor inválido para 
+The release response is not a JSON object.	A resposta da versão não é um objeto JSON.
+The release tag is not a semantic version: 	A tag da versão não é uma versão semântica: 
+The release response has an invalid assets list.	A resposta da versão tem uma lista de arquivos inválida.
+The release response has an invalid asset.	A resposta da versão tem um arquivo inválido.
+The release response has an asset without a size.	A resposta da versão tem um arquivo sem tamanho.
+The release response has an asset with an invalid size.	A resposta da versão tem um arquivo com tamanho inválido.
+Cannot read the release fixture.	Não foi possível ler o arquivo de teste da versão.
+Checking for updates...	Verificando atualizações...
+Downloading update...	Baixando atualização...
+The update test checksum is not valid.	O checksum de teste da atualização não é válido.
+The update job contains an invalid path.	A tarefa de atualização contém um caminho inválido.
+The update job contains an invalid argument.	A tarefa de atualização contém um argumento inválido.
+Cannot write the update job.	Não foi possível gravar a tarefa de atualização.
+Cannot read the downloaded update.	Não foi possível ler a atualização baixada.
+The downloaded update is too large.	A atualização baixada é grande demais.
+Cannot create the update staging folder.	Não foi possível criar a pasta de preparação da atualização.
+The downloaded update is not a valid ZIP archive.	A atualização baixada não é um arquivo ZIP válido.
+The update archive holds too many files.	O arquivo da atualização contém arquivos demais.
+The update archive is damaged.	O arquivo da atualização está danificado.
+The update archive holds an entry without a name.	O arquivo da atualização contém um item sem nome.
+The update archive contains an unsafe path (	O arquivo da atualização contém um caminho inseguro (
+The update archive contains a protected path: 	O arquivo da atualização contém um caminho protegido: 
+The update archive contains the same path twice: 	O arquivo da atualização contém o mesmo caminho duas vezes: 
+The update archive uses an unsupported entry.	O arquivo da atualização usa um item não compatível.
+The update archive contains a symbolic link: 	O arquivo da atualização contém um link simbólico: 
+The update archive is too large when unpacked.	O arquivo da atualização é grande demais depois de descompactado.
+The update archive contains a path outside the staging folder.	O arquivo da atualização contém um caminho fora da pasta de preparação.
+Cannot write the update file 	Não foi possível gravar o arquivo de atualização 
+The update does not contain 	A atualização não contém 
+The update staging folder is missing.	A pasta de preparação da atualização não existe.
+The update staging folder contains a symbolic link.	A pasta de preparação da atualização contém um link simbólico.
+The update staging folder contains an unsupported file.	A pasta de preparação da atualização contém um arquivo não compatível.
+The update staging folder contains an unsafe path (	A pasta de preparação da atualização contém um caminho inseguro (
+The update staging folder contains a protected path: 	A pasta de preparação da atualização contém um caminho protegido: 
+The update staging folder is too large.	A pasta de preparação da atualização é grande demais.
+Cannot read the update staging folder.	Não foi possível ler a pasta de preparação da atualização.
+The update archive is empty.	O arquivo da atualização está vazio.
+The updater requires an invalid file: 	O atualizador exige um arquivo inválido: 
+The update is missing 	A atualização não tem 
+The update staging folder contains an unsafe path.	A pasta de preparação da atualização contém um caminho inseguro.
+empty path	caminho vazio
+absolute path	caminho absoluto
+drive-qualified path	caminho com letra de unidade
+path too long	caminho longo demais
+empty path segment	segmento de caminho vazio
+path traversal	travessia de caminho
+path segment too long	segmento de caminho longo demais
+invalid character in path	caractere inválido no caminho
+invalid path segment ending	final de segmento de caminho inválido
+reserved path name	nome de caminho reservado
+Cannot read 	Não foi possível ler 
+unexpected text after the JSON value	texto inesperado depois do valor JSON
+unexpected end of JSON	fim inesperado do JSON
+invalid JSON literal	literal JSON inválido
+JSON nesting is too deep	aninhamento JSON profundo demais
+expected ':' after a JSON object key	esperado ':' depois de uma chave de objeto JSON
+duplicate JSON object key	chave de objeto JSON duplicada
+expected ',' or '}' in a JSON object	esperado ',' ou '}' em um objeto JSON
+expected ',' or ']' in a JSON array	esperado ',' ou ']' em uma lista JSON
+expected a JSON string	esperada uma string JSON
+invalid UTF-8 in a JSON string	UTF-8 inválido em uma string JSON
+control character in a JSON string	caractere de controle em uma string JSON
+unfinished escape in a JSON string	sequência de escape incompleta em uma string JSON
+unpaired high surrogate in a JSON string	surrogate alto sem par em uma string JSON
+invalid low surrogate in a JSON string	surrogate baixo inválido em uma string JSON
+unpaired low surrogate in a JSON string	surrogate baixo sem par em uma string JSON
+invalid escape in a JSON string	sequência de escape inválida em uma string JSON
+unfinished JSON string	string JSON incompleta
+unfinished unicode escape in a JSON string	escape unicode incompleto em uma string JSON
+invalid unicode escape in a JSON string	escape unicode inválido em uma string JSON
+invalid JSON number	número JSON inválido
+Wait for the current install to finish.	Aguarde a instalação atual terminar.
 )PTBR";
 
 }  // namespace eck

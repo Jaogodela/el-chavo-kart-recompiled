@@ -106,7 +106,7 @@ Focus decides input and nothing else, but two instances share one GPU. In a race
 frames per second next to a focused one running far above 60, and raising its GPU scheduling class does not help. The game
 thread waits for the render thread's previous frame, so that stall stops the simulation and its race traffic too. So while
 another player is connected, an instance started by `tools/online-instance.ps1` (it sets `ECK_INSTANCE`) holds at most 60
-FPS and logs `[DEBUG_SAULO][ONLINE-PACING]`. A player on their own PC has no `ECK_INSTANCE` and keeps every frame rate.
+FPS and logs `[ONLINE-PACING]`. A player on their own PC has no `ECK_INSTANCE` and keeps every frame rate.
 
 ## Tests
 

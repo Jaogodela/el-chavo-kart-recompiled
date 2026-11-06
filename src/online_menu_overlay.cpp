@@ -54,9 +54,9 @@ menu::ScreenTracker g_screens;  // guarded by g_screens_mutex
 lobby::SetupCapture g_setup;    // guarded by g_screens_mutex
 lobby::Bridge g_lobby;
 
-// DEBUG_SAULO
+
 void LogSetup(const std::string& note) {
-  if (!note.empty()) REXLOG_INFO("[DEBUG_SAULO][ONLINE-SETUP] {}", note);
+  if (!note.empty()) REXLOG_INFO("[ONLINE-SETUP] {}", note);
 }
 
 TextPackage GamePackage() { return PackageForLanguage(REXCVAR_GET(eck_language)); }
@@ -73,7 +73,7 @@ class OnlineMenuOverlay final : public ModalDialog {
   OnlineMenuOverlay(rex::ui::ImGuiDrawer* drawer, menu::Page page, std::optional<online::Invite> invite, bool setup_missing,
                     std::optional<online::RoomRules> session_rules)
       : ModalDialog(drawer), api_(Online()), menu_(api_, GamePackage(), page, std::move(invite), setup_missing, std::move(session_rules)) {
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE] {}", page == menu::Page::kInvite   ? "invite picker opened"
+    REXLOG_INFO("[ONLINE] {}", page == menu::Page::kInvite   ? "invite picker opened"
                                             : page == menu::Page::kLeave ? "leave menu opened"
                                                                          : "invite prompt opened");
   }
@@ -228,17 +228,17 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
   }
 
  private:
-  // DEBUG_SAULO
+
   void LogTransitions(menu::GameScreen screen, const menu::InviteShortcut& shortcut) {
     if (screen != last_screen_) {
-      if (screen == menu::GameScreen::kCharacter) REXLOG_INFO("[DEBUG_SAULO][ONLINE] character_select entered online_play=on");
+      if (screen == menu::GameScreen::kCharacter) REXLOG_INFO("[ONLINE] character_select entered online_play=on");
       last_screen_ = screen;
     }
     if (shortcut.visible && shortcut.remaining != last_remaining_) {
-      REXLOG_INFO("[DEBUG_SAULO][ONLINE] invite shortcut available remaining={}", shortcut.remaining);
+      REXLOG_INFO("[ONLINE] invite shortcut available remaining={}", shortcut.remaining);
     }
     const std::string hidden = screen == menu::GameScreen::kCharacter ? shortcut.hidden_because : "none";
-    if (hidden != last_hidden_ && hidden != "none") REXLOG_INFO("[DEBUG_SAULO][ONLINE] invite shortcut hidden reason={}", hidden);
+    if (hidden != last_hidden_ && hidden != "none") REXLOG_INFO("[ONLINE] invite shortcut hidden reason={}", hidden);
     last_hidden_ = hidden;
     last_remaining_ = shortcut.remaining;
   }
@@ -269,14 +269,14 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
   bool Reopen(const online::Snapshot& state, lobby::AfterRace destination) {
     const lobby::AfterRaceStep step{++after_generation_, destination};
     const bool sent = Online().ReopenRoom(lobby::AfterRaceRules(state.room->rules, step));
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-LIFECYCLE] after_race host destination={} generation={} sent={}", int(destination), step.generation,
+    REXLOG_INFO("[ONLINE-LIFECYCLE] after_race host destination={} generation={} sent={}", int(destination), step.generation,
                 sent);
     return sent;
   }
 
   // The host's own game named where it goes. The room follows it there; with nowhere to go together, LobbyFlow ends the session.
   void HostReturning(const online::Snapshot& state, const std::string& command) {
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-LIFECYCLE] host_return command={}", command);
+    REXLOG_INFO("[ONLINE-LIFECYCLE] host_return command={}", command);
     const std::optional<lobby::AfterRace> destination = lobby::DestinationOfCommand(command);
     if (destination && HasGuests(state) && Reopen(state, *destination)) flow_.NoteContinuing();
   }
@@ -284,9 +284,9 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
   void ReturnToMenu(const online::Snapshot& state, double now) {
     const std::string reason = state.closed_reason.empty() ? "local_leave" : state.closed_reason;
     if (reason == "host_left" || reason == "disconnect" || reason == "cancelled") {
-      REXLOG_INFO("[DEBUG_SAULO][ONLINE-LIFECYCLE] host_left seat=0 action=return_to_menu");
+      REXLOG_INFO("[ONLINE-LIFECYCLE] host_left seat=0 action=return_to_menu");
     }
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-LIFECYCLE] return_to_menu reason={}", reason);
+    REXLOG_INFO("[ONLINE-LIFECYCLE] return_to_menu reason={}", reason);
     notes_.HoldToast(now);
     release_toast_at_ = now + kToastHoldSeconds;
   }
@@ -296,7 +296,7 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     WatchSession(state);
     if (const std::optional<std::string> command = g_lobby.TakeHostReturn()) HostReturning(state, *command);
     const lobby::FlowResult flow = flow_.Update(state, screen, g_menu_seen.load(), g_lobby.TakeBackPress(), host_race_.active());
-    if (!flow.note.empty()) REXLOG_INFO("[DEBUG_SAULO][ONLINE] {}", flow.note);
+    if (!flow.note.empty()) REXLOG_INFO("[ONLINE] {}", flow.note);
     if (flow.leave) Leave(flow.source);
     if (flow.travel.kind != lobby::TravelKind::kNone) {
       if (flow.travel.kind == lobby::TravelKind::kRace) EnterRace(flow.travel.race);
@@ -322,7 +322,7 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     if (!state.room) pacer_.Reset();
     if (!state.room || !own) return;
     if (const std::optional<lobby::PanelView> due = pacer_.Due(now, *own)) {
-      REXLOG_INFO("[DEBUG_SAULO][ONLINE] pick seat={} state={} character={}", state.seat, int(due->state), due->character);
+      REXLOG_INFO("[ONLINE] pick seat={} state={} character={}", state.seat, int(due->state), due->character);
       Online().SendPick(due->state, due->character);
     }
   }
@@ -365,7 +365,7 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     if (const std::optional<lobby::Bridge::HeldRace> held = g_lobby.TakeHeldRace()) BeginRace(*held, state, now);
     const lobby::RaceStep step = host_race_.Update(state, now);
     if (step.publish && Online().PublishRace(lobby::RaceRules(lobby::BaseRules(state.room->rules), published_race_))) {
-      REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race published generation={}", published_race_.generation);
+      REXLOG_INFO("[ONLINE-RACE] race published generation={}", published_race_.generation);
       host_race_.NotePublished();
     }
     if (step.commit) {
@@ -381,13 +381,13 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     const lobby::RaceParse parse =
         url ? lobby::CanonicalOfUrl(*url, held.seats, ++race_generation_) : lobby::RaceParse{std::nullopt, "url"};
     if (!parse.race) {
-      REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race refused field={}", parse.failed);
+      REXLOG_INFO("[ONLINE-RACE] race refused field={}", parse.failed);
       AbortRace("race_payload_invalid");
       return;
     }
     published_race_ = *parse.race;
     race_pad_ = held.physical_pad;
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race canonical generation={} {}", published_race_.generation,
+    REXLOG_INFO("[ONLINE-RACE] race canonical generation={} {}", published_race_.generation,
                 lobby::RaceCommand(published_race_, 0, 0));
     // Restart and Next Race, from a pause or the results: the room has to come back from the last race first.
     if (state.room && state.room->state == online::RoomState::kRacing && !Reopen(state, lobby::AfterRace::kNextRace)) {
@@ -399,7 +399,7 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
 
   // Nobody races alone by accident: the session ends and the host goes back to the character screen it came from.
   void AbortRace(const char* reason) {
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race aborted reason={}", reason);
+    REXLOG_INFO("[ONLINE-RACE] race aborted reason={}", reason);
     g_lobby.DropRace();
     Leave();
     lobby::TravelRequest back;
@@ -426,16 +426,16 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     }
     switch (menu::OnInvitePress(state, setup.has_value())) {
       case menu::InvitePress::kConnecting:
-        REXLOG_INFO("[DEBUG_SAULO][ONLINE] invite picker waiting reason=service_not_ready");
+        REXLOG_INFO("[ONLINE] invite picker waiting reason=service_not_ready");
         notes_.NoteStatus("Connecting to online service", now);
         return;
       case menu::InvitePress::kPickerWithoutSetup:
-        REXLOG_INFO("[DEBUG_SAULO][ONLINE-SETUP] incomplete missing={}", missing);
+        REXLOG_INFO("[ONLINE-SETUP] incomplete missing={}", missing);
         Open(menu::Page::kInvite, std::nullopt, true);
         return;
       case menu::InvitePress::kPicker: break;
     }
-    REXLOG_INFO("[DEBUG_SAULO][ONLINE-INVITE] picker_open room={} seat={}", state.room ? state.room->room : "none", state.seat);
+    REXLOG_INFO("[ONLINE-INVITE] picker_open room={} seat={}", state.room ? state.room->room : "none", state.seat);
     Open(menu::Page::kInvite, std::nullopt, false, setup ? std::optional(lobby::SetupRules(*setup)) : std::nullopt);
   }
 

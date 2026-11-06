@@ -1,4 +1,4 @@
-// DEBUG_SAULO: temporary frame-pacing telemetry. Remove with debug_telemetry_core.h during final review.
+// Frame-pacing telemetry written to the session log.
 
 #include "debug_telemetry.h"
 
@@ -121,7 +121,7 @@ int InternalPercent() {
 std::string ModeMarker(const Mode& mode) {
   const int scale = std::max(1, std::atoi(Cvar("resolution_scale").c_str()));
   const int percent = InternalPercent();
-  std::string line = "[DEBUG_SAULO][FPS-MODE] selected=" + Selected(mode.selected) +
+  std::string line = "[FPS-MODE] selected=" + Selected(mode.selected) +
                      " original_console_rate=" + (mode.selected == kFrameRateOriginal ? "yes" : "no") +
                      " limiter=" + (mode.unlimited ? "off" : "on") + " effective_cap=" + std::to_string(mode.cap);
   if (mode.unlimited) {
@@ -138,7 +138,7 @@ std::string ModeMarker(const Mode& mode) {
 std::string RenderLine() {
   const int scale = std::max(1, std::atoi(Cvar("resolution_scale").c_str()));
   const int percent = InternalPercent();
-  return "[DEBUG_SAULO][RENDER-CONFIG] output=" + std::to_string(kGuestWidth * scale) + "x" +
+  return "[RENDER-CONFIG] output=" + std::to_string(kGuestWidth * scale) + "x" +
          std::to_string(kGuestHeight * scale) + " guest=" + std::to_string(kGuestWidth) + "x" +
          std::to_string(kGuestHeight) + " internal=" +
          std::to_string(InternalRenderWidth(scale, percent)) + "x" +
@@ -155,7 +155,7 @@ void CloseSessionLocked(std::vector<std::string>& out) {
   const Result result = Judge(s, g.session_frames, g.mode, g.session_anomalies);
   const double ratio = TimeRatio(s.game_seconds, s.wall_seconds);
   out.push_back(
-      "[DEBUG_SAULO][FPS-SUMMARY] selected=" + Selected(g.mode.selected) + " duration=" + Fixed(duration, 1) +
+      "[FPS-SUMMARY] selected=" + Selected(g.mode.selected) + " duration=" + Fixed(duration, 1) +
       "s frames=" + std::to_string(s.swaps) + " avg_fps=" + Fixed(s.actual_fps(duration), 2) +
       " gameplay_frames=" + std::to_string(s.valid_frames) + " gameplay_fps=" + Fixed(s.gameplay_fps(), 2) +
       " gameplay_ratio=" + Fixed(ratio, 5) + " gameplay_drift_ms=" +
@@ -170,7 +170,7 @@ void CloseSessionLocked(std::vector<std::string>& out) {
       " performance_result=" + VerdictName(result.performance) +
       (result.performance_reason.empty() ? "" : " reason=" + result.performance_reason));
   out.push_back(
-      "[DEBUG_SAULO][PERF-SUMMARY] selected=" + Selected(g.mode.selected) + " internal=" +
+      "[PERF-SUMMARY] selected=" + Selected(g.mode.selected) + " internal=" +
       std::to_string(InternalPercent()) + "% render=" + Cvar("resolution_scale") + "x gameplay_fps=" + Fixed(s.gameplay_fps(), 2) + " game_cpu_ms=" +
       Fixed(s.world_ms.avg(), 2) + " render_cpu_ms=" +
       Fixed(std::max(0.0, s.engine_tick_ms.avg() - s.world_ms.avg()), 2) + " render_sync_ms=" +
@@ -227,8 +227,8 @@ struct CommandProcessorFigures {
 // The graphics layer publishes microseconds spent in each phase over its last second.
 CommandProcessorFigures ReadCommandProcessor(double frames) {
   CommandProcessorFigures figures;
-  const std::string idle = Cvar("dbg_saulo_cp_idle_us");
-  const std::string fence = Cvar("dbg_saulo_cp_fence_us");
+  const std::string idle = Cvar("gpu_cp_idle_us");
+  const std::string fence = Cvar("gpu_cp_fence_us");
   if (idle.empty() || fence.empty()) {
     return figures;
   }
@@ -236,9 +236,9 @@ CommandProcessorFigures ReadCommandProcessor(double frames) {
   figures.idle_pct = std::atof(idle.c_str()) / 10000.0;
   figures.fence_pct = std::atof(fence.c_str()) / 10000.0;
   if (frames > 0) {
-    figures.draw_ms = std::atof(Cvar("dbg_saulo_cp_draw_us").c_str()) / 1000.0 / frames;
-    figures.copy_ms = std::atof(Cvar("dbg_saulo_cp_copy_us").c_str()) / 1000.0 / frames;
-    figures.swap_ms = std::atof(Cvar("dbg_saulo_cp_swap_us").c_str()) / 1000.0 / frames;
+    figures.draw_ms = std::atof(Cvar("gpu_cp_draw_us").c_str()) / 1000.0 / frames;
+    figures.copy_ms = std::atof(Cvar("gpu_cp_copy_us").c_str()) / 1000.0 / frames;
+    figures.swap_ms = std::atof(Cvar("gpu_cp_swap_us").c_str()) / 1000.0 / frames;
   }
   return figures;
 }
@@ -275,9 +275,8 @@ void Report(Clock::time_point now) {
     ++g.long_reports;
   }
 
-  const std::string tag = "[DEBUG_SAULO]";
   const double fps = w.actual_fps(elapsed);
-  lines.push_back(tag + "[FPS] selected=" + Selected(mode.selected) + " cap=" + std::to_string(mode.cap) +
+  lines.push_back("[FPS] selected=" + Selected(mode.selected) + " cap=" + std::to_string(mode.cap) +
                   " actual=" + Fixed(fps, 1) + " loop=" + std::to_string(w.loop_ticks) +
                   " engine=" + std::to_string(w.engine_ticks) + " world=" + std::to_string(w.world_ticks) +
                   " flips=" + std::to_string(w.flips) + " swaps=" + std::to_string(w.swaps) +
@@ -286,7 +285,7 @@ void Report(Clock::time_point now) {
                   std::to_string(w.groups[0]) + "/" + std::to_string(w.groups[1]) + "/" +
                   std::to_string(w.groups[2]) + "/" + std::to_string(w.groups[3]) + "/" +
                   std::to_string(w.groups[4]) + " gameplay_frames=" + std::to_string(w.valid_frames));
-  lines.push_back(tag + "[DELTA] delta_ms avg=" + Fixed(w.delta_ms.avg(), 2) + " min=" + Fixed(w.delta_ms.min(), 2) +
+  lines.push_back("[DELTA] delta_ms avg=" + Fixed(w.delta_ms.avg(), 2) + " min=" + Fixed(w.delta_ms.min(), 2) +
                   " max=" + Fixed(w.delta_ms.max(), 2) + " engine_avg=" + Fixed(w.engine_delta_ms.avg(), 2) +
                   " | frame_ms avg=" + Fixed(w.frame_ms.stat().avg(), 2) + " p50=" +
                   Fixed(w.frame_ms.Percentile(0.5), 2) + " p95=" + Fixed(w.frame_ms.Percentile(0.95), 2) +
@@ -296,7 +295,7 @@ void Report(Clock::time_point now) {
                   " >33.3ms=" + std::to_string(w.deltas.over_33ms) + " >50ms=" +
                   std::to_string(w.deltas.over_50ms) + " >100ms=" + std::to_string(w.deltas.over_100ms) +
                   " hitches=" + std::to_string(w.stalls) + " loading_stalls=" + std::to_string(w.loading_stalls));
-  lines.push_back(tag + "[LIMITER] target=" + Selected(mode.selected) + " target_ms=" + Fixed(mode.target_ms(), 3) +
+  lines.push_back("[LIMITER] target=" + Selected(mode.selected) + " target_ms=" + Fixed(mode.target_ms(), 3) +
                   " wait_requested_avg=" + Fixed(w.limiter_requested_ms.avg(), 2) + " wait_actual_avg=" +
                   Fixed(w.limiter_actual_ms.avg(), 2) + " overshoot_max_ms=" + Fixed(w.limiter_overshoot_max_ms, 2) +
                   " undershoot_max_ms=" + Fixed(w.limiter_undershoot_max_ms, 2) + " late=" +
@@ -319,7 +318,7 @@ void Report(Clock::time_point now) {
     const double render_cpu = std::max(0.0, in.engine_ms - in.world_ms);
     const double unaccounted = std::max(0.0, in.frame_ms - in.engine_ms - in.sync_ms);
     const double fence_ms_per_frame = cp.available && fps > 0 ? cp.fence_pct * 10.0 / fps : 0.0;
-    lines.push_back(tag + "[PERF] fps=" + Fixed(fps, 0) + " target=" + (mode.unlimited ? "unlimited" : std::to_string(mode.cap)) +
+    lines.push_back("[PERF] fps=" + Fixed(fps, 0) + " target=" + (mode.unlimited ? "unlimited" : std::to_string(mode.cap)) +
                     " internal=" + std::to_string(InternalPercent()) + "% cpu_game_ms=" + Fixed(in.world_ms, 2) +
                     " cpu_render_ms=" + Fixed(render_cpu, 2) + " render_sync_ms=" + Fixed(in.sync_ms, 2) +
                     " gpu_or_submit_ms=" + (cp.available ? Fixed(fence_ms_per_frame, 2) : std::string("n/a")) +
@@ -340,7 +339,7 @@ void Report(Clock::time_point now) {
     g.session_unaccounted_ms.Add(unaccounted);
   }
   const double drift_ms = (w.game_seconds - w.wall_seconds) * 1000.0;
-  std::string timing = tag + "[TIMING] wall=" + Fixed(w.wall_seconds, 3) + "s game=" + Fixed(w.game_seconds, 3) +
+  std::string timing = "[TIMING] wall=" + Fixed(w.wall_seconds, 3) + "s game=" + Fixed(w.game_seconds, 3) +
                        "s drift=" + Fixed(drift_ms, 1) + "ms ratio=" +
                        Fixed(TimeRatio(w.game_seconds, w.wall_seconds), 5) + " paused_ticks=" +
                        std::to_string(w.paused_ticks);
@@ -366,7 +365,7 @@ void Report(Clock::time_point now) {
   }
   lines.push_back(timing);
   for (const std::string& anomaly : anomalies) {
-    lines.push_back(tag + "[ANOMALY] " + anomaly);
+    lines.push_back("[ANOMALY] " + anomaly);
   }
   for (const std::string& line : lines) {
     Log(line);
@@ -436,7 +435,7 @@ void OnWorldTick(bool timed, double before, double after, double world_ms) {
   }
   if (stall_ms > 0) {
     const CommandProcessorFigures cp = ReadCommandProcessor(0);
-    lines.push_back(std::string("[DEBUG_SAULO][STALL] kind=") + StallKind(cp.available, cp.fence_pct) + " wall_ms=" +
+    lines.push_back(std::string("[STALL] kind=") + StallKind(cp.available, cp.fence_pct) + " wall_ms=" +
                     Fixed(stall_ms, 0) + " cp_fence_pct=" + (cp.available ? Fixed(cp.fence_pct, 1) : std::string("n/a")) +
                     " focus=" + (::LocalInputAccepted() ? "active" : "inactive") +
                     " excluded_from_gameplay_timing=yes selected_fps=" + selected);
@@ -491,7 +490,7 @@ void OnFlip(uint32_t requested_interval, uint32_t patched_interval) {
     ++g.window.flips;
     if (requested_interval != g.last_requested_interval) {
       g.last_requested_interval = requested_interval;
-      line = std::string("[DEBUG_SAULO][PRESENT] requested_interval=") + IntervalName(requested_interval) +
+      line = std::string("[PRESENT] requested_interval=") + IntervalName(requested_interval) +
              " patched_interval=" + IntervalName(patched_interval) + " selected_fps=" +
              Selected(ConfiguredFrameRate());
     }

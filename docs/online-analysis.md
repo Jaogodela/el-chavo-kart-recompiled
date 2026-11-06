@@ -344,8 +344,8 @@ applies.
 
 ## 8. Unknowns and the runtime evidence that resolves each
 
-DEBUG_SAULO telemetry should be added behind the existing `[DEBUG_SAULO]` tag convention (see
-`src/debug_telemetry.cpp`) and removed with it. "Hook" below means a logging-only `REX_HOOK_RAW` on the named guest
+Diagnostic logging should follow the existing bracketed tag convention (see
+`src/debug_telemetry.cpp`). "Hook" below means a logging-only `REX_HOOK_RAW` on the named guest
 function that calls the original.
 
 | # | Unknown | Evidence needed (log) | Where |
@@ -356,7 +356,7 @@ function that calls the original.
 | U4 | Whether `XNetRegisterKey` virtual `0x82A06310` is used for a LAN game and what `sessionID`/`key` it gets | entry/exit log of `0x82A06270`, `0x82A06310`, `0x82A063A8` and the object at `0x83CE3534` | hook those three |
 | U5 | What the Live socket class does with `bUseVDP=true`: does it send the 2-byte VDP header itself, or rely on the XNet VDP layer? | first 16 bytes of every `sendto` payload and its size, and `recvfrom` | log in `0x82979968`, `0x82979A10` (or `NetDll_sendto/recvfrom` in the SDK) |
 | U6 | Whether `IpNetDriverLive` works over plain Winsock after the stubs are replaced (the stock packet handshake) | `CreateNamedNetDriver` args, the `NetDriver`'s `InitConnect/InitListen` results, first packets | hook `0x8258E2F8`, then `0x82A1E178` bind, `0x82A1E5E8` create-socket results |
-| U7 | The reachable trigger to exercise U1..U6 (nothing in script calls them) | a one-shot debug hook that invokes the exec from a menu item or hotkey; or a console command `open <map>?listen` (via the existing `UEngine::execLaunchURL` `0x82587DF8` or `ConsoleCommand`) | add a temporary DEBUG_SAULO hotkey that runs `LaunchURL`/`ConsoleCommand` and logs the result |
+| U7 | The reachable trigger to exercise U1..U6 (nothing in script calls them) | a one-shot debug hook that invokes the exec from a menu item or hotkey; or a console command `open <map>?listen` (via the existing `UEngine::execLaunchURL` `0x82587DF8` or `ConsoleCommand`) | add a temporary debug hotkey that runs `LaunchURL`/`ConsoleCommand` and logs the result |
 | U8 | Do `KartPawn` / `KartPC_*` / `KartGame_*` replicate state (Net flags on properties, `RemoteRole`) | per-class `ClassReps` / `bNetTemporary` / `RemoteRole` of spawned pawns when the world runs as listen server | read after U7 by logging `AActor::GetNetMode` and `RemoteRole` of `KartPawn` instances |
 | U9 | Maximum local humans in Exhibition (1 to 4?) and how the 4th controller is created | the `NumHumanKarts` value in the `open` URL, the number of `LocalPlayer` objects, `CreatePlayer` ControllerIds | log the console string passed by `KartProgressManager_Base.LoadRace` (hook the `ConsoleCommand` exec in `sub_82574920`'s neighbours, `0x82589470` APlayerController ConsoleCommand and `0x8257B4A0` GameViewportClient ConsoleCommand) |
 | U10 | Names of the arguments of the `XSession*` wrappers beyond 0x000B0010 | register dump at each wrapper entry during one hosted match | the wrappers in 5.3 |
@@ -416,7 +416,7 @@ What exists:
 - `online_game_guest.h`: the addresses of sections 4 to 5 with a four-word code fingerprint each (26 functions, bytes read from
   `default.image.bin`). Each hook group checks its table once against guest memory; on a mismatch every hook of the group calls
   the original and does nothing else.
-- `online_game_hook.cpp`, always on, pass-through plus a `[DEBUG_SAULO][ONLINE-GAME]` line per state transition (a key logs
+- `online_game_hook.cpp`, always on, pass-through plus a `[ONLINE-GAME]` line per state transition (a key logs
   when its caller/result changed, at most 4 per second per key, 400 lines in all; only caller, argument words and result, never
   tokens or addresses): XSession wrappers (U1/U2/U10), `XNetGetTitleXnAddr`, `XNetXnAddrToInAddr`, `XNetQosListen`,
   `UOnlineSubsystemLive` Create/Find/Join/Start/End/ShowInviteUI, `CreateNamedNetDriver`, `ClientTravel`.
@@ -509,13 +509,13 @@ change (`OnLoginChangeEvent`). A race that stays out of the Live virtuals (see t
 
 ### 11.3 Log formats
 
-- `[DEBUG_SAULO][ONLINE-XBOX] api=<name> t_ms=<ms since start> phase=conn:<n>/room:<n> seat=<n> args=<...> result=0x<..> calls=<n>` for the
+- `[ONLINE-XBOX] api=<name> t_ms=<ms since start> phase=conn:<n>/room:<n> seat=<n> args=<...> result=0x<..> calls=<n>` for the
   session, XNet, Live, engine, sign-in and socket hooks (transition-only; 4 lines/s/key and 400 lines for calls, 80 lines for socket traffic).
-- `[DEBUG_SAULO][ONLINE-XBOX] ... ue3_net_summary reason=... socket=N sendto=N recvfrom=N CreateNamedNetDriver=N ClientTravel=N
+- `[ONLINE-XBOX] ... ue3_net_summary reason=... socket=N sendto=N recvfrom=N CreateNamedNetDriver=N ClientTravel=N
   CreateOnlineGame=N JoinOnlineGame=N XSessionCreate=N XSessionJoinRemote=N verdict=none_active|active:<list>`, printed by
   `OnOnlineRaceStartRequested`, `OnOnlineRaceStartBlocked`, and when a race URL passes while a room seat is held. `none_active` at a race
   start is evidence that the stock UE3 net stack is idle.
-- `[DEBUG_SAULO][ONLINE-RACE] url=...`, `url_origin ...`, `url.<field>=...`, `url.problem ...`, `seed=0x.. srand_caller=0x..`: always on,
+- `[ONLINE-RACE] url=...`, `url_origin ...`, `url.<field>=...`, `url.problem ...`, `seed=0x.. srand_caller=0x..`: always on,
   once per race start.
 - With `ECK_ONLINE_DEBUG=1` (poll at 2 Hz, changes only except `kart`): `players=N expected_humans=M`;
   `slot=<i> user=<ControllerId> human=yes|no controller=0x.. kart=0x.. character=<id> racing_ai=yes|no role=local`;
@@ -600,5 +600,5 @@ state 4 can be read.
 Runtime logs later confirmed the `AActor` block and corrected the `AKartPawn` one: an `FQuat` is aligned to 16 bytes, which moves
 everything after `PreviousMotorSpeed`. `KartSpeed` equals the velocity's length and `racingTime` (`0x720`) counts the race, so the
 offsets in section 11.4 past `KartSpeed` are the old ones; `online_probe_layout.h` has the real ones. The character packages hide their name tables,
-so a package's own `CharacterType` default was not read. `race_state=` and `layout_check` under `[DEBUG_SAULO][ANALYTICS]` settle both on the first
+so a package's own `CharacterType` default was not read. `race_state=` and `layout_check` under `[ANALYTICS]` settle both on the first
 real race: `match=yes` ties the pawn, `CharInfo` and `CharacterType` offsets to the URL.

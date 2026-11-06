@@ -28,7 +28,7 @@ struct PanelFields {
   uint32_t character = 0;
 };
 
-// DEBUG_SAULO
+
 struct ScanCandidate {
   uint32_t pad_at = 0;
   uint32_t game_at = 0;
@@ -47,9 +47,9 @@ struct PanelScan {
   uint32_t shift = 0;    // of the real KartScreen fields from the layout header
   bool readable = false;
   const char* failure = "none";
-  std::vector<uint32_t> pad_hits;   // DEBUG_SAULO: where panel 1 holds 1
-  std::vector<uint32_t> game_hits;  // DEBUG_SAULO: where panel 0 points at the game
-  ScanCandidate candidate;          // DEBUG_SAULO: the last pad field tried
+  std::vector<uint32_t> pad_hits;   // where panel 1 holds 1
+  std::vector<uint32_t> game_hits;  // where panel 0 points at the game
+  ScanCandidate candidate;          // the last pad field tried
 };
 
 template <typename Memory>
@@ -117,7 +117,7 @@ void NoteScanHits(const Memory& memory, const menu::PanelObjects& objects, uint3
   }
 }
 
-// DEBUG_SAULO: what panel 0 holds at a candidate, with the first check it did not pass.
+// What panel 0 holds at a candidate, with the first check it did not pass.
 template <typename Memory>
 ScanCandidate DescribeCandidate(const Memory& memory, const menu::PanelObjects& objects, uint32_t at, const PanelFields& fields,
                                 bool parent_ok, bool panels_ok) {

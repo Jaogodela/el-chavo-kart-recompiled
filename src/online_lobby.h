@@ -441,7 +441,7 @@ class LobbyPads {
   bool own_opened_ = false;
 };
 
-// DEBUG_SAULO
+
 inline std::string CanonicalPanelsLine(int local_seat) {
   std::string line = "canonical_panels";
   for (int seat = 0; seat < kPanels; ++seat) {
@@ -450,7 +450,7 @@ inline std::string CanonicalPanelsLine(int local_seat) {
   return line + " local_seat=" + std::to_string(local_seat);
 }
 
-// DEBUG_SAULO: one panel as this PC holds it.
+// One panel as this PC holds it.
 inline std::string PanelLine(const Plan& plan, const Panels& panels, int panel, int physical_pad) {
   const int seat = kSeatOfPanel[size_t(panel)];
   const std::string name = "panel" + std::to_string(panel);

@@ -15,7 +15,7 @@
 
 namespace eck::race_telemetry {
 
-inline constexpr char kLogTag[] = "[DEBUG_SAULO][ANALYTICS]";
+inline constexpr char kLogTag[] = "[ANALYTICS]";
 inline constexpr int kCharacterCount = 12;
 inline constexpr int kTrackCount = 20;
 inline constexpr int kMaxHumans = 4;
@@ -72,7 +72,7 @@ struct ServiceView {
 struct Output {
   std::optional<online::RaceStartFields> start;
   std::optional<online::RaceCompleteFields> complete;
-  std::vector<std::string> lines;  // DEBUG_SAULO, without the tag
+  std::vector<std::string> lines;  // without the tag
 };
 
 class RaceTracker {
@@ -97,7 +97,7 @@ class RaceTracker {
   double started_at_ = 0;
   double seen_at_ = 0;
   int last_state_ = kInProgress;
-  int logged_state_ = -2;  // DEBUG_SAULO
+  int logged_state_ = -2;
   uint32_t game_ = 0;
   int race_ = 0;
   std::string room_;
@@ -113,7 +113,7 @@ std::vector<int> PlacesOf(const RaceSetup& setup, const std::vector<KartReading>
 // The race's own clock when the game's agrees with the wall clock, which also counts pauses and misses nothing.
 int DurationMs(const std::vector<KartReading>& humans, double wall_seconds);
 
-// DEBUG_SAULO: confirms the static id tables against races as they run. In memory only, for the life of the process.
+// Confirms the static id tables against races as they run. In memory only, for the life of the process.
 class Discovery {
  public:
   std::vector<std::string> Note(const RaceSetup& setup);

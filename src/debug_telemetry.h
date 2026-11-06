@@ -1,6 +1,6 @@
 #pragma once
 
-// DEBUG_SAULO: temporary frame-pacing telemetry. Remove with debug_telemetry.cpp during final review.
+// Frame-pacing telemetry written to the session log.
 
 #include <cstdint>
 

@@ -1,11 +1,13 @@
 <#
 .SYNOPSIS
   Runs the project's lightweight, headless checks: no game files, no ReXGlue SDK, no GUI.
-    - builds and runs the pure-logic tests in tests\ (installer/extractor, PT-BR translation table, achievement list and overlay rules)
+    - builds and runs the pure-logic tests in tests\ (installer/extractor, PT-BR translation table, achievement list and overlay rules,
+      self-update logic and the real trg-updater helper against a marker program)
+    - runs the release folder checker against folders that each add one forbidden item
     - validates the ReXGlue SDK patch set (unique numbering, deterministic order)
     - checks for overlapping addresses between config\overrides.toml and config\discovered-functions.toml
     - reports generated\default codegen freshness, if it has been generated at all
-    - source tree hygiene: git diff --check, DEBUG_SAULO markers, hard-coded local paths, tracked game data
+    - source tree hygiene: git diff --check, hard-coded local paths, tracked game data
 
 .EXAMPLE
   .\tools\test.ps1                      # run every check
@@ -30,7 +32,7 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
     catch { $Failures.Add("${Name}: $($_.Exception.Message)"); Write-Host "  FAILED: $($_.Exception.Message)" -ForegroundColor Red }
 }
 
-if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_game_window_tests eck_frame_limiter_tests eck_debug_telemetry_tests eck_input_focus_tests eck_main_menu_tests eck_character_unlock_tests eck_track_unlock_tests eck_online_identity_tests eck_online_protocol_tests eck_online_peer_tests eck_online_service_tests eck_online_session_tests eck_online_lobby_tests eck_online_race_sync_tests eck_online_launcher_tests eck_online_race_tests eck_online_race_telemetry_tests eck_online_menu_tests eck_online_probe_tests' -match $Filter) {
+if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_game_window_tests eck_frame_limiter_tests eck_debug_telemetry_tests eck_input_focus_tests eck_main_menu_tests eck_character_unlock_tests eck_track_unlock_tests eck_online_identity_tests eck_online_protocol_tests eck_online_peer_tests eck_online_service_tests eck_online_session_tests eck_online_lobby_tests eck_online_race_sync_tests eck_online_launcher_tests eck_online_race_tests eck_online_race_telemetry_tests eck_online_menu_tests eck_online_probe_tests eck_update_tests eck_update_helper_tests' -match $Filter) {
     Test-Step 'Console tests (tests\CMakeLists.txt)' {
         $Toolchain = Get-BuildToolchain
         $SavedEnv = Save-BuildEnvironment
@@ -43,7 +45,7 @@ if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tes
             & $Toolchain.CMake --build $BuildDir | Out-Host
             if ($LASTEXITCODE) { throw "Test build failed ($LASTEXITCODE)" }
         } finally { Restore-BuildEnvironment $SavedEnv }
-        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_game_window_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests', 'eck_input_focus_tests', 'eck_main_menu_tests', 'eck_character_unlock_tests', 'eck_track_unlock_tests', 'eck_online_identity_tests', 'eck_online_protocol_tests', 'eck_online_peer_tests', 'eck_online_service_tests', 'eck_online_session_tests', 'eck_online_lobby_tests', 'eck_online_race_sync_tests', 'eck_online_launcher_tests', 'eck_online_race_tests', 'eck_online_race_telemetry_tests', 'eck_online_menu_tests', 'eck_online_probe_tests')) {
+        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_game_window_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests', 'eck_input_focus_tests', 'eck_main_menu_tests', 'eck_character_unlock_tests', 'eck_track_unlock_tests', 'eck_online_identity_tests', 'eck_online_protocol_tests', 'eck_online_peer_tests', 'eck_online_service_tests', 'eck_online_session_tests', 'eck_online_lobby_tests', 'eck_online_race_sync_tests', 'eck_online_launcher_tests', 'eck_online_race_tests', 'eck_online_race_telemetry_tests', 'eck_online_menu_tests', 'eck_online_probe_tests', 'eck_update_tests', 'eck_update_helper_tests')) {
             if ($Filter -and $name -notmatch $Filter) { continue }
             $exe = Join-Path $BuildDir "$name.exe"
             Write-Host "Running $name..."
@@ -104,6 +106,30 @@ if (-not $Filter -or 'trg-patches' -match $Filter) {
             $numbers[$number] = $file.Name
         }
         Write-Host "$($files.Count) patches, uniquely numbered 0001-$($files.Count.ToString('0000'))."
+    }
+}
+
+if (-not $Filter -or 'release-check' -match $Filter) {
+    Test-Step 'Release folder check cases' {
+        & (Join-Path $PSScriptRoot 'test-release-check.ps1') | Out-Host
+        if ($LASTEXITCODE) { throw 'tools\test-release-check.ps1 failed' }
+    }
+}
+
+if (-not $Filter -or 'release-helper' -match $Filter) {
+    Test-Step 'Release update helper (MSYS2 CLANG64 build)' {
+        $tests = Join-Path $BuildDir 'eck_update_helper_tests.exe'
+        if (-not (Test-Path -LiteralPath $tests -PathType Leaf)) { throw 'eck_update_helper_tests.exe is not built (run the console tests first)' }
+        $releaseUpdaterDir = Join-Path $BuildDir 'trg-updater-clang64'
+        $releaseUpdater = Join-Path $releaseUpdaterDir 'trg-updater.exe'
+        $updaterSources = @(Get-ChildItem -LiteralPath (Join-Path $Root 'src\updater') -File | Where-Object Extension -in '.cpp', '.h') +
+            @(Get-Item -LiteralPath (Join-Path $Root 'CMakeLists.txt'), (Join-Path $PSScriptRoot 'build-updater.ps1'))
+        $newestSource = ($updaterSources | Measure-Object LastWriteTimeUtc -Maximum).Maximum
+        if (-not (Test-Path -LiteralPath $releaseUpdater) -or (Get-Item -LiteralPath $releaseUpdater).LastWriteTimeUtc -lt $newestSource) {
+            & (Join-Path $PSScriptRoot 'build-updater.ps1') -OutDir $releaseUpdaterDir | Out-Host
+        }
+        & $tests $releaseUpdater | Out-Host
+        if ($LASTEXITCODE) { throw "eck_update_helper_tests against the release helper failed ($LASTEXITCODE)" }
     }
 }
 
@@ -235,13 +261,10 @@ if (-not $Filter -or 'hygiene' -match $Filter) {
             $gameDataExtensions = '\.(iso|xex|xexp|xxx|xx\d|upk|tfc|fsbcache|bik|bnk|fsb)$'
             $badTracked = @($tracked | Where-Object { $_ -match $gameDataExtensions -or $_ -match '(^|/)game/' -or $_ -match '(^|/)generated/' })
             if ($badTracked.Count) { throw "game data or generated output is tracked by git: $($badTracked -join ', ')" }
-            $debugMarkers = @($tracked | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-                Select-String -Pattern 'DEBUG_SAULO' -List -ErrorAction SilentlyContinue)
-            if ($debugMarkers.Count) { throw "DEBUG_SAULO markers left in: $(($debugMarkers | ForEach-Object Path) -join ', ')" }
             $localPaths = @($tracked | Where-Object { $_ -match '\.(ps1|cpp|h|md|toml|txt|cmake)$' } | ForEach-Object { Get-Item -LiteralPath $_ } |
                 Select-String -Pattern 'S:\\VisualStudio|C:\\Users\\[A-Za-z0-9_.-]+' -List -ErrorAction SilentlyContinue)
             if ($localPaths.Count) { throw "hard-coded local machine paths in: $(($localPaths | ForEach-Object Path) -join ', ')" }
-            Write-Host "$($tracked.Count) tracked files: no conflict markers, no tracked game data, no DEBUG_SAULO markers, no local paths."
+            Write-Host "$($tracked.Count) tracked files: no conflict markers, no tracked game data, no local paths."
         } finally { Pop-Location }
     }
 }

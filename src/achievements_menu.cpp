@@ -38,7 +38,7 @@ REX_HOOK_RAW(sub_830D8E58) {
     __imp__sub_830D8E58(ctx, base);
     return;
   }
-  REXLOG_INFO("[DEBUG_SAULO][Achievement] game menu requested the achievements UI");
+  REXLOG_INFO("[Achievement] game menu requested the achievements UI");
   open();
   ctx.r3.u64 = eck::kErrorSuccess;
 }

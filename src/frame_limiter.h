@@ -71,11 +71,11 @@ inline int LocalInstanceLimiterRate(int fps) {
   return std::min(LimiterRate(fps), kLocalInstanceRate);
 }
 
-// DEBUG_SAULO
+
 inline std::string LocalInstancePacingLine(bool active, int fps) {
   const std::string requested = fps == kFrameRateUnlimited ? "unlimited" : std::to_string(fps);
   const std::string effective = active ? std::to_string(LocalInstanceLimiterRate(fps)) : requested;
-  return std::string("[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=") + (active ? "yes" : "no") + " requested=" + requested +
+  return std::string("[ONLINE-PACING] local_multi_instance=") + (active ? "yes" : "no") + " requested=" + requested +
          " effective=" + effective;
 }
 

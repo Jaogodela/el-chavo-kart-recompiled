@@ -384,7 +384,7 @@ struct Traffic {
   uint64_t rx_bytes = 0;
   uint64_t dropped_old = 0;
   uint64_t rejected = 0;
-  uint64_t own_snaps = 0;  // DEBUG_SAULO
+  uint64_t own_snaps = 0;
 };
 
 // The established Direct or Relay path of each seat. Nothing else carries a kart.
@@ -425,7 +425,7 @@ class RaceSync {
   std::optional<int> RttMs(int seat, double now) const {
     return size_t(seat) < rtt_.size() ? rtt_[size_t(seat)].Ms(now) : std::nullopt;
   }
-  // DEBUG_SAULO
+
   uint32_t last_input_seq(int seat) const { return size_t(seat) < inputs_.size() ? inputs_[size_t(seat)].gate.last() : 0; }
   uint32_t last_snapshot_seq() const { return snapshots_.last(); }
   double LastHeardAge(int seat, double now) const {
@@ -651,7 +651,7 @@ class RaceSync {
     KartWrite& write = out.writes[size_t(out.write_count)];
     write.slot = own;
     if (snap) {
-      if (in.race_state == kRaceInProgress) ++traffic_.own_snaps;  // DEBUG_SAULO
+      if (in.race_state == kRaceInProgress) ++traffic_.own_snaps;
       write.state = own_host_;
       const float latency = float(rtt_[0].Ms(in.now).value_or(0)) / 2000.0f;
       for (int i = 0; i < 3; ++i) write.state.position[i] += write.state.velocity[i] * latency;
