@@ -693,6 +693,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     ui.Toggle("Unlock secret characters",
               "Every character can be selected while this is on. Your save and achievements do not change.",
               "eck_unlock_secret_characters", false, "Off", "On");
+    ui.Toggle("Unlock race tracks",
+              "Every race track can be selected in a free race while this is on. Your save and achievements do not change.",
+              "eck_unlock_race_tracks", false, "Off", "On");
     std::vector<trg::Option> frame_rates;
     for (auto& [value, label] : FrameRateChoices()) {
       frame_rates.push_back({std::move(value), std::move(label)});

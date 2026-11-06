@@ -126,6 +126,11 @@ add_executable(eck_character_unlock_tests character_unlock_tests.cpp "${ECK_SRC_
 target_link_libraries(eck_character_unlock_tests PRIVATE eck_online_lib)
 target_compile_definitions(eck_character_unlock_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
 
+add_executable(eck_track_unlock_tests track_unlock_tests.cpp "${ECK_SRC_DIR}/online_race.cpp"
+               "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race_telemetry.cpp")
+target_link_libraries(eck_track_unlock_tests PRIVATE eck_online_lib)
+target_compile_definitions(eck_track_unlock_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
+
 add_executable(eck_online_race_sync_tests online_race_sync_tests.cpp "${ECK_SRC_DIR}/online_race.cpp")
 target_link_libraries(eck_online_race_sync_tests PRIVATE eck_online_lib)
 target_compile_definitions(eck_online_race_sync_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")

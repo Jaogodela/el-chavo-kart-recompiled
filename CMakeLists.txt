@@ -186,7 +186,6 @@ set(ECK_SOURCES
     src/achievements_menu.cpp
     src/achievements_overlay.cpp
     src/active_log.cpp
-    src/character_unlock_hook.cpp
     src/crash_report.cpp
     src/debug_telemetry.cpp
     src/diagnostics.cpp
@@ -229,6 +228,7 @@ set(ECK_SOURCES
     src/sha256.cpp
     src/system_info.cpp
     src/ui_text.cpp
+    src/unlock_hook.cpp
     src/user_data.cpp
     src/window_host.cpp
     src/xiso.cpp

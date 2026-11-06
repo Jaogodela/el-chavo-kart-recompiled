@@ -45,6 +45,8 @@ REXCVAR_DEFINE_STRING(eck_language, "pt-BR", "El Chavo Kart",
 REXCVAR_DEFINE_BOOL(eck_skip_intro, false, "El Chavo Kart", "Skip the startup logos and intro movies");
 REXCVAR_DEFINE_BOOL(eck_unlock_secret_characters, false, "El Chavo Kart",
                     "Let every character be selected while on; the save is not changed");
+REXCVAR_DEFINE_BOOL(eck_unlock_race_tracks, false, "El Chavo Kart",
+                    "Let every race track be selected in a free race while on; the save is not changed");
 REXCVAR_DEFINE_BOOL(eck_show_fps, true, "El Chavo Kart", "Show the frame rate in the window title");
 REXCVAR_DEFINE_BOOL(eck_show_render_resolution, false, "El Chavo Kart",
                     "Show the render resolution in the window title");
@@ -101,6 +103,7 @@ std::vector<std::string> GameSettingKeys() {
       "eck_frame_rate",
       "eck_skip_intro",
       "eck_unlock_secret_characters",
+      "eck_unlock_race_tracks",
       "eck_show_fps",
       "eck_show_render_resolution",
       "eck_show_frame_counter",
@@ -508,6 +511,7 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   diagnostics.launcher_gameplay.language = language.label;
   diagnostics.launcher_gameplay.skip_intro = OnOff(settings.GetBool("eck_skip_intro", false));
   diagnostics.launcher_gameplay.unlock_secret_characters = OnOff(settings.GetBool("eck_unlock_secret_characters", false));
+  diagnostics.launcher_gameplay.unlock_race_tracks = OnOff(settings.GetBool("eck_unlock_race_tracks", false));
   diagnostics.launcher_gameplay.frame_rate = FrameRateLabel(frame_rate);
   diagnostics.launcher_gameplay.frame_rate_in_title = OnOff(settings.GetBool("eck_show_fps", true));
   diagnostics.launcher_gameplay.render_resolution_in_title =

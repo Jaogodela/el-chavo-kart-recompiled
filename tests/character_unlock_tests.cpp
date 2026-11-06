@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "character_unlock.h"
+#include "guest_memory_model.h"
 #include "online_character_select.h"
 #include "online_lobby.h"
 #include "online_race_start.h"
@@ -52,45 +53,12 @@ std::string SavedCups(const std::vector<int>& unlocked) {
 }
 bool AllCharactersAchievement(const std::vector<int>& unlocked) { return unlocked.size() == 12; }
 
-class Bytes {
- public:
-  void Put(uint32_t address, uint32_t value) {
-    for (int i = 0; i < 4; ++i) bytes_[address + uint32_t(i)] = uint8_t(value >> (24 - 8 * i));
-  }
-  void PutByte(uint32_t address, uint8_t value) { bytes_[address] = value; }
-  void PutText(uint32_t address, const std::string& text) {
-    for (size_t i = 0; i <= text.size(); ++i) bytes_[address + uint32_t(i)] = i < text.size() ? uint8_t(text[i]) : 0;
-  }
-  bool Readable(uint32_t address, uint32_t length) const {
-    for (uint32_t i = 0; i < length; ++i) {
-      if (bytes_.count(address + i) == 0) return false;
-    }
-    return true;
-  }
-  uint32_t U8(uint32_t address) const { return bytes_.at(address); }
-  uint32_t U32(uint32_t address) const {
-    uint32_t value = 0;
-    for (uint32_t i = 0; i < 4; ++i) value = (value << 8) | bytes_.at(address + i);
-    return value;
-  }
-
- private:
-  std::map<uint32_t, uint8_t> bytes_;
-};
-
-constexpr uint32_t kNames = 0x40000000;
-
-void PutName(Bytes& memory, uint32_t object, uint32_t index, const std::string& name) {
-  const uint32_t entry = 0x41000000 + index * 0x100;
-  memory.Put(kNames + index * 4, entry);
-  memory.Put(entry + layout::kNameFlags, 0);
-  memory.PutText(entry + layout::kNameText, name);
-  memory.Put(object + layout::kObjectName, index);
-}
+using guest_model::Bytes;
+using guest_model::PutName;
 
 Bytes GameObjects() {
   Bytes memory;
-  memory.Put(layout::kGNames, kNames);
+  memory.Put(layout::kGNames, guest_model::kNames);
   PutName(memory, 0x42000000, 1, "isCharacterLocked");
   memory.Put(0x42000000 + layout::kObjectOuter, 0x42001000);
   PutName(memory, 0x42001000, 2, "KartScreen_PlayerSelectManager");
@@ -165,12 +133,12 @@ void GuestReads() {
   memory.Put(kLocals + 0x4A8, 9);
   memory.Put(kPanel + 0x4A8, 10);
   memory.PutByte(kCode, layout::kTokenLocalVariable);
-  Check(CharacterArgument(memory, kFrame) == 9, "the character of a local");
+  Check(IntArgument(memory, kFrame) == 9, "the character of a local");
   memory.PutByte(kCode, layout::kTokenInstanceVariable);
-  Check(CharacterArgument(memory, kFrame) == 10, "the character of a field");
+  Check(IntArgument(memory, kFrame) == 10, "the character of a field");
   memory.PutByte(kCode, 0x1D);
-  Check(!CharacterArgument(memory, kFrame), "any other argument is not guessed at");
-  Check(LockedForPanel(true, CharacterArgument(memory, kFrame).value_or(-1), true, false), "and keeps the game's answer");
+  Check(!IntArgument(memory, kFrame), "any other argument is not guessed at");
+  Check(LockedForPanel(true, IntArgument(memory, kFrame).value_or(-1), true, false), "and keeps the game's answer");
 }
 
 void Diagnostics() {
@@ -196,7 +164,7 @@ void Settings() {
   const std::string table = ReadFile(root + "/src/pt_br_ui_text.cpp");
   Check(Count(table, "Unlock secret characters\tDesbloquear personagens secretos") == 1, "pt-BR label");
 
-  const std::string hook = ReadFile(root + "/src/character_unlock_hook.cpp");
+  const std::string hook = ReadFile(root + "/src/unlock_hook.cpp");
   for (const char* forbidden : {"PlayerData", "UnlockedCharacters", "SavePlayerProfile", "ProfileSettings", "UnlockAchievement", "AddUnlockedCharacter",
                                 "fopen", "ofstream", "SaveNow"}) {
     Check(Count(hook, forbidden) == 0, std::string("the hook has nothing to do with ") + forbidden);

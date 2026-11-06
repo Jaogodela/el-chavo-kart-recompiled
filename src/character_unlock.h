@@ -1,6 +1,7 @@
 #pragma once
 
-// The roster and the decision behind the Unlock secret characters option. Only the answer of
+// The roster and the decision behind the Unlock secret characters option, and the script functions the CallFunction hook
+// watches for it and for Unlock race tracks (track_unlock.h). Only the answer of
 // KartScreen_PlayerSelectManager.isCharacterLocked changes, one call at a time: KartScoreDao.UnlockedCharacters is what the
 // save and achievement 34 read, so it must stay untouched. Pure.
 
@@ -74,7 +75,7 @@ inline constexpr uint32_t kScriptPointerLowWord = 4;  // script pointers take 8 
 inline constexpr uint16_t kScriptReturnNothing = 0x040B;
 }  // namespace layout
 
-enum class Watched { kNone, kLockCheck, kPreviewLock };
+enum class Watched { kNone, kLockCheck, kPreviewLock, kTrackLockCheck, kTrackItemLock };
 
 struct WatchedFunction {
   Watched watched;
@@ -83,9 +84,11 @@ struct WatchedFunction {
   uint32_t script_size;
 };
 
-inline constexpr std::array<WatchedFunction, 2> kWatched = {{
+inline constexpr std::array<WatchedFunction, 4> kWatched = {{
     {Watched::kLockCheck, "isCharacterLocked", "KartScreen_PlayerSelectManager", 117},
     {Watched::kPreviewLock, "SetLockVisible", "KartSceneCapture2DActor", 279},
+    {Watched::kTrackLockCheck, "IsTrackLocked", "KartScreen_TrackSelectMenu", 97},
+    {Watched::kTrackItemLock, "LockItem", "KartScreen_TrackSelectMenu", 23},
 }};
 
 constexpr bool MayBeWatched(uint32_t script_size) {
@@ -126,9 +129,9 @@ Watched Identify(const Memory& memory, uint32_t function, uint32_t script_size) 
   return Watched::kNone;
 }
 
-// The character a lock check was asked about, read before CallFunction consumes it. The game passes a local or a field.
+// The int a lock function was called with, read before CallFunction consumes it. The game passes a local or a field.
 template <typename Memory>
-std::optional<int> CharacterArgument(const Memory& memory, uint32_t frame) {
+std::optional<int> IntArgument(const Memory& memory, uint32_t frame) {
   if (!memory.Readable(frame, layout::kFrameLocals + 4)) return std::nullopt;
   const uint32_t code = memory.U32(frame + layout::kFrameCode);
   if (!memory.Readable(code, 1 + layout::kScriptPointerLowWord + 4)) return std::nullopt;

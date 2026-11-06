@@ -93,7 +93,7 @@ The launcher opens before the game. Hold **Shift** while starting to show it whe
 - **Play**: game file status and the disc image installer.
 - **Display**: Windowed or Borderless Fullscreen, window size, monitor and VSync.
 - **Graphics**: graphics card, render resolution, anti-aliasing, multisampling and texture filtering.
-- **Gameplay**: language, unlock secret characters, frame rate in the window title and player names.
+- **Gameplay**: language, unlock secret characters, unlock race tracks, frame rate in the window title and player names.
 - **Achievements**: the game's achievements and which ones you have unlocked.
 - **Controls**: keyboard on or off, and every keyboard key.
 - **About**: the game, save and log folders, the settings file, detailed logging and version information.
