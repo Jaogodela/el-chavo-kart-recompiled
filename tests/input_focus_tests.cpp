@@ -222,6 +222,31 @@ void TestNetworkIsNotGated() {
   }
 }
 
+// Focus decides who reads the pads and has no say in how the game runs.
+void TestFocusMovingBetweenInstances() {
+  InputFocus focus_a, focus_b;
+  focus_a.Update(true);
+  const std::vector<Pad> pads = {Holding(kButtonA, 1.0f)};
+  for (int i = 0; i < 20; ++i) {
+    const bool a_focused = i % 2 == 1;
+    focus_a.Update(a_focused);
+    focus_b.Update(!a_focused);
+    Check(Neutral(Read(focus_a, pads)) != Neutral(Read(focus_b, pads)), "one process reads the held pad, never both or neither");
+    Check(GameReadsInput(focus_a.accepted(), false) == a_focused, "the unfocused process stays suppressed");
+  }
+}
+
+void TestPacingIgnoresFocus() {
+  Check(Contains(Source("online_runtime.cpp"), "UpdateLocalInstancePacing();"), "the online pump keeps the pacing in step");
+  Check(Contains(Source("online_runtime.cpp"), "std::getenv(\"ECK_INSTANCE\")"), "only the test launcher's instances are paced");
+  Check(Contains(Source("../tools/online-instance.ps1"), "$env:ECK_INSTANCE = $label"), "and that launcher does name them");
+  for (const char* file : {"frame_limiter.cpp", "frame_limiter.h", "online_race_sync.h", "online_race_sync_guest.cpp", "online_race_start.h"}) {
+    const std::string text = Source(file);
+    Check(!text.empty(), std::string("read ") + file);
+    Check(!Contains(text, "LocalInputAccepted") && !Contains(text, "input_focus.h"), std::string(file) + ": pacing and the race never see focus");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -238,5 +263,7 @@ int main() {
   TestDebugLines();
   TestWiring();
   TestNetworkIsNotGated();
+  TestFocusMovingBetweenInstances();
+  TestPacingIgnoresFocus();
   return online_test::Finish();
 }

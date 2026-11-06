@@ -138,12 +138,24 @@ int DurationMs(const std::vector<KartReading>& humans, double wall_seconds) {
   return int(std::clamp(seconds * 1000.0, double(kMinDurationMs), double(kMaxDurationMs)));
 }
 
-void RaceTracker::Arm(RaceSetup setup) {
+std::vector<std::string> RaceTracker::Stop(std::string_view reason) {
+  std::vector<std::string> lines;
+  if (phase_ == Phase::kRacing) {
+    lines.push_back("race left before the end race=" + std::to_string(race_) + " last_state=" + std::to_string(last_state_) +
+                    " seconds=" + std::to_string(int(seen_at_ - started_at_)) + " reason=" + std::string(reason));
+  }
+  Reset();
+  return lines;
+}
+
+std::vector<std::string> RaceTracker::Arm(RaceSetup setup) {
+  std::vector<std::string> lines = Stop("new_race");
   setup_ = std::move(setup);
   phase_ = Phase::kArmed;
   armed_at_ = -1;
   game_ = 0;
   logged_state_ = -2;
+  return lines;
 }
 
 void RaceTracker::Drop(std::string_view reason, Output& out) {
@@ -171,6 +183,8 @@ void RaceTracker::Begin(const ServiceView& service, double now, Output& out) {
                       " players=" + std::to_string(start.players) + " online=" + Yes(!room_.empty()));
   out.start = std::move(start);
   started_at_ = now;
+  seen_at_ = now;
+  last_state_ = kInProgress;
   phase_ = Phase::kRacing;
 }
 
@@ -219,10 +233,12 @@ Output RaceTracker::Step(const GameView& game, const ServiceView& service, doubl
     // Leaving a race says nothing: the service counts it abandoned on its own.
     case Phase::kRacing:
       if (game.game != game_ || !game.race_state) {
-        out.lines.push_back("race left before the end race=" + std::to_string(race_));
-        Reset();
+        for (std::string& line : Stop("world_gone")) out.lines.push_back(std::move(line));
       } else if (state == kFinished) {
         Finish(game, service, now, out);
+      } else {
+        last_state_ = state;
+        seen_at_ = now;
       }
       break;
   }

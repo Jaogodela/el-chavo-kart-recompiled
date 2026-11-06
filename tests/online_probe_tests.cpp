@@ -262,7 +262,7 @@ void FingerprintMismatchFallsBack() {
     CHECK(guest::FirstMismatch(table, nullptr, 0, base) != nullptr);
     CHECK(guest::FirstMismatch(table, memory.data(), 0x100, base) != nullptr);  // outside the buffer
   }
-  CHECK(guest::kSocketFingerprints.size() == 3 && guest::kRaceFingerprints.size() == 2);
+  CHECK(guest::kSocketFingerprints.size() == 3 && guest::kRaceFingerprints.size() == 7);
   CHECK(guest::kActorConsoleCommand == 0x826A1F30 && guest::kCrtSrand == 0x830B53B0);
   CHECK(guest::kNetSocket == 0x82B74930 && guest::kNetSendTo == 0x82B74AA0 && guest::kNetRecvFrom == 0x82B74A68);
 }

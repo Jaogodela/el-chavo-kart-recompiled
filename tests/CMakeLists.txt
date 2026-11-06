@@ -113,11 +113,22 @@ add_executable(eck_online_race_telemetry_tests online_race_telemetry_tests.cpp "
 target_link_libraries(eck_online_race_telemetry_tests PRIVATE eck_online_lib)
 target_include_directories(eck_online_race_telemetry_tests PRIVATE "${ECK_SRC_DIR}")
 
-# The Online menu model and the Start Race seam against a scripted service.
-add_executable(eck_online_menu_tests online_menu_tests.cpp "${ECK_SRC_DIR}/online_race.cpp")
-target_link_libraries(eck_online_menu_tests PRIVATE eck_online_lib)
+# The character screen as the lobby, the race start and the open-file hook, headless.
+add_executable(eck_online_lobby_tests online_lobby_tests.cpp "${ECK_SRC_DIR}/online_race.cpp"
+               "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race_telemetry.cpp")
+target_link_libraries(eck_online_lobby_tests PRIVATE eck_online_lib)
 
-foreach(_online_test identity protocol peer service launcher)
+add_executable(eck_online_race_sync_tests online_race_sync_tests.cpp "${ECK_SRC_DIR}/online_race.cpp")
+target_link_libraries(eck_online_race_sync_tests PRIVATE eck_online_lib)
+target_compile_definitions(eck_online_race_sync_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+add_executable(eck_online_menu_tests online_menu_tests.cpp)
+target_link_libraries(eck_online_menu_tests PRIVATE eck_online_lib)
+target_compile_definitions(eck_online_menu_tests PRIVATE ECK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+foreach(_online_test identity protocol peer service session launcher)
     add_executable(eck_online_${_online_test}_tests online_${_online_test}_tests.cpp)
     target_link_libraries(eck_online_${_online_test}_tests PRIVATE eck_online_lib)
 endforeach()
+target_sources(eck_online_session_tests PRIVATE "${ECK_SRC_DIR}/online_race_url.cpp" "${ECK_SRC_DIR}/online_race_telemetry.cpp"
+               "${ECK_SRC_DIR}/online_race.cpp")

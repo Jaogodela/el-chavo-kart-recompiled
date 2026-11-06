@@ -34,6 +34,8 @@ struct Request {
 using RoomRules = std::vector<std::pair<std::string, int>>;
 
 enum class SeatState { kEmpty, kConnected, kReconnecting };
+enum class PickState { kNone, kSelecting, kConfirmed };  // same values as the game's EKartPlayerSelectIndividualState
+inline constexpr int kCharacters = 12;
 enum class RoomState { kOpen, kStarting, kRacing, kClosed };
 enum class PathKind { kUnknown, kDirect, kRelay };
 
@@ -46,6 +48,8 @@ struct Seat {
   std::string platform;
   std::string version;
   PathKind transport = PathKind::kUnknown;  // the host's reported path to this seat
+  PickState pick = PickState::kNone;
+  int character = 0;
 };
 
 struct RoomView {
@@ -61,19 +65,6 @@ struct RoomView {
   std::vector<Seat> seats;  // exactly `capacity` entries, index = seat
   int64_t created = 0;
   int64_t updated = 0;
-};
-
-// A joinable room as room.search returns it. The room id and addresses stay hidden behind `handle`.
-struct RoomAd {
-  std::string handle;
-  std::string host;
-  std::string host_name;
-  int players = 0;
-  int capacity = kMinSeats;
-  RoomRules rules;
-  std::string platform;
-  std::string version;
-  bool full() const { return players >= capacity; }
 };
 
 struct Invite {
@@ -102,6 +93,7 @@ struct ServiceCapabilities {
   bool four_player_rooms = false;
   bool seat_routing = false;
   bool race_telemetry = false;
+  bool room_reopen = false;
 };
 
 // One race, as the service counts it. `room` is empty for a race of this PC alone.
@@ -170,11 +162,10 @@ struct ServerMessage {
   std::optional<std::vector<Request>> incoming;
   std::optional<std::vector<Request>> outgoing;
   std::string state;  // friends.add: "pending" or "friends"
-  std::optional<std::vector<RoomAd>> rooms;  // room.search
-  std::optional<RoomView> room;              // room.host, room.join, room.update, room.start, match.resume
-  int seat = -1;                             // own seat, with `room`
-  uint32_t relay_token = 0;                  // nonzero when the room has a relay for this client
-  std::string invite_id;                     // invite.send
+  std::optional<RoomView> room;  // room.host, invite.accept, room.start, match.resume
+  int seat = -1;                 // own seat, with `room`
+  uint32_t relay_token = 0;      // nonzero when the room has a relay for this client
+  std::string invite_id;         // invite.send
   int64_t invite_expires = 0;
   std::string resume;  // hello: the room id of a seat still held
   std::optional<ServiceCapabilities> capabilities;
@@ -215,13 +206,10 @@ std::string EncodeFriendsAccept(int seq, const std::string& player);
 std::string EncodeFriendsDecline(int seq, const std::string& player);
 std::string EncodeFriendsRemove(int seq, const std::string& player);
 std::string EncodeRoomHost(int seq, int capacity, const RoomRules& rules);
-// A negative `capacity` leaves it out; `rules` null leaves the rules alone.
-std::string EncodeRoomUpdate(int seq, const std::string& room, int capacity, const RoomRules* rules);
-std::string EncodeRoomCancel(int seq, const std::string& room);
+std::string EncodeRoomUpdate(int seq, const std::string& room, const RoomRules& rules);
 std::string EncodeRoomLeave(int seq, const std::string& room);
-std::string EncodeRoomSearch(int seq);
-std::string EncodeRoomJoin(int seq, const std::string& handle);
 std::string EncodeRoomStart(int seq, const std::string& room);
+std::string EncodeRoomReopen(int seq, const std::string& room, const RoomRules& rules);
 std::string EncodeInviteSend(int seq, const std::string& player);
 std::string EncodeInviteAccept(int seq, const std::string& invite);
 std::string EncodeInviteDecline(int seq, const std::string& invite);
@@ -236,6 +224,7 @@ struct EndpointFields {
 };
 std::string EncodeMatchEndpoint(int seq, const std::string& room, const EndpointFields& endpoint);
 std::string EncodeMatchReady(int seq, const std::string& room, bool ready);
+std::string EncodeMatchPick(int seq, const std::string& room, PickState pick, int character);
 std::string EncodeMatchLeave(int seq, const std::string& room);
 // Host only: its path to one peer seat.
 std::string EncodeMatchTransport(int seq, const std::string& room, int seat, PathKind transport);

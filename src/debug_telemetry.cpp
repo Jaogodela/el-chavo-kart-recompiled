@@ -20,7 +20,9 @@
 #include "frame_limiter.h"
 #include "guest_memory.h"
 #include "internal_render_scale.h"
+#include "online_game_hook.h"
 #include "settings.h"
+#include "window_host.h"
 
 namespace eck::debug {
 namespace {
@@ -395,6 +397,8 @@ uint32_t WorldInfo(const uint8_t* base) {
 
 void OnWorldTick(bool timed, double before, double after, double world_ms) {
   std::vector<std::string> lines;
+  double stall_ms = 0;
+  std::string selected;
   {
     std::lock_guard lock(g.mutex);
     const auto now = Clock::now();
@@ -411,8 +415,8 @@ void OnWorldTick(bool timed, double before, double after, double world_ms) {
         ++g.window.loading_stalls;
         g.window.loading_stall_ms += wall * 1000.0;
         g.warm_count = 0;
-        lines.push_back("[DEBUG_SAULO][STALL] kind=loading_or_streaming wall_ms=" + Fixed(wall * 1000.0, 0) +
-                        " excluded_from_gameplay_timing=yes selected_fps=" + Selected(g.mode.selected));
+        stall_ms = wall * 1000.0;
+        selected = Selected(g.mode.selected);
       } else {
         ++g.warm_count;
         const bool advancing = timed && after - before > 0.0;
@@ -429,6 +433,13 @@ void OnWorldTick(bool timed, double before, double after, double world_ms) {
     }
     g.last_world = now;
     g.have_world = true;
+  }
+  if (stall_ms > 0) {
+    const CommandProcessorFigures cp = ReadCommandProcessor(0);
+    lines.push_back(std::string("[DEBUG_SAULO][STALL] kind=") + StallKind(cp.available, cp.fence_pct) + " wall_ms=" +
+                    Fixed(stall_ms, 0) + " cp_fence_pct=" + (cp.available ? Fixed(cp.fence_pct, 1) : std::string("n/a")) +
+                    " focus=" + (::LocalInputAccepted() ? "active" : "inactive") +
+                    " excluded_from_gameplay_timing=yes selected_fps=" + selected);
   }
   for (const std::string& line : lines) {
     Log(line);
@@ -556,12 +567,15 @@ REX_HOOK_RAW(sub_825A4D98) {
   const eck::debug::Timer timer;
   __imp__sub_825A4D98(ctx, base);
   const double ms = timer.ms();
-  std::lock_guard lock(eck::debug::g.mutex);
-  ++eck::debug::g.window.engine_ticks;
-  eck::debug::g.window.engine_delta_ms.Add(dt * 1000.0);
-  if (eck::debug::Warm()) {
-    eck::debug::g.window.engine_tick_ms.Add(ms);
+  {
+    std::lock_guard lock(eck::debug::g.mutex);
+    ++eck::debug::g.window.engine_ticks;
+    eck::debug::g.window.engine_delta_ms.Add(dt * 1000.0);
+    if (eck::debug::Warm()) {
+      eck::debug::g.window.engine_tick_ms.Add(ms);
+    }
   }
+  eck::OnlineEngineTick(ctx, base);
 }
 
 REX_EXTERN(__imp__sub_825E91E0);

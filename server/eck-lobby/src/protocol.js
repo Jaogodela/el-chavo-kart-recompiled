@@ -5,7 +5,7 @@ export const SERVICE = 'eck-lobby';
 export const PROTOCOL_VERSION = 1;
 export const GAME_ID = 'el-chavo-kart-pc';
 export const SUPPORTED_IMAGES = ['eck-usa-1db4e96b'];
-export const WORKER_BUILD = '2026-11-04-production3';
+export const WORKER_BUILD = '2026-11-05-production6';
 
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4;
@@ -77,8 +77,10 @@ export const CAPABILITIES = {
   min_players: MIN_PLAYERS,
   max_players: MAX_PLAYERS,
   four_player_rooms: true,
+  room_reopen: true,
   seat_routing: true,
   race_telemetry: true,
+  character_picks: true,
 };
 
 export const healthReport = () => ({ service: SERVICE, game: GAME_ID, protocol: PROTOCOL_VERSION, status: 'ok',
@@ -309,6 +311,17 @@ export function parseRaceStart(message) {
   if (message.players !== undefined && !isInt(message.players, 1, MAX_PLAYERS)) fail('bad_request', 'players expected');
   return { race: message.race, competition: message.competition, players: message.players ?? null,
     characters: parseCharacters(message.characters), track: parseTrack(message.track) };
+}
+
+export const PICK = { none: 0, selecting: 1, confirmed: 2 };
+
+// The sender's own seat is the only one a pick can touch, so a `seat` naming any other is refused rather than ignored.
+export function parsePick(message, ownSeat) {
+  if (message.seat !== undefined && message.seat !== ownSeat) fail('not_your_seat', 'seat is not yours');
+  if (!isInt(message.pick, PICK.none, PICK.confirmed)) fail('bad_request', 'pick expected');
+  if (message.pick === PICK.none) return { pick: PICK.none, character: 0 };
+  if (!VALID_CHARACTERS.has(message.character)) fail('bad_request', 'character expected');
+  return { pick: message.pick, character: message.character };
 }
 
 // `places` is each human's RaceFinishPosition, in the order of the race.start characters.

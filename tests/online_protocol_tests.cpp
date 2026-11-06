@@ -59,18 +59,16 @@ void TestEncoders() {
   Check(op(online::EncodeRoomHost(2, 4, {{"mode", 1}, {"laps", 3}})) == "room.host", "room.host");
   Check(online::EncodeRoomHost(2, 4, {{"mode", 1}, {"laps", 3}}).find("\"capacity\":4") != std::string::npos, "capacity");
   Check(online::EncodeRoomHost(2, 4, {{"mode", 1}}).find("\"rules\":{\"mode\":1}") != std::string::npos, "rules");
-  const online::RoomRules rules{{"track", 5}};
-  const std::string update = online::EncodeRoomUpdate(3, "room", 3, &rules);
-  Check(op(update) == "room.update" && update.find("\"capacity\":3") != std::string::npos, "room.update");
-  Check(online::EncodeRoomUpdate(3, "room", -1, nullptr).find("capacity") == std::string::npos, "room.update leaves out capacity");
-  Check(op(online::EncodeRoomJoin(4, "abcd1234")) == "room.join", "room.join");
   Check(op(online::EncodeRoomStart(5, "room")) == "room.start", "room.start");
   Check(op(online::EncodeRoomLeave(5, "room")) == "room.leave", "room.leave");
-  Check(op(online::EncodeRoomCancel(5, "room")) == "room.cancel", "room.cancel");
   Check(op(online::EncodeInviteAccept(6, "inv")) == "invite.accept", "invite.accept");
   Check(op(online::EncodeMatchResume(7, "room")) == "match.resume", "match.resume");
   const std::string ready = online::EncodeMatchReady(8, "room", true);
   Check(op(ready) == "match.ready" && ready.find("\"ready\":true") != std::string::npos, "match.ready");
+  const std::string pick = online::EncodeMatchPick(8, "room", online::PickState::kConfirmed, 7);
+  Check(op(pick) == "match.pick" && pick.find("\"pick\":2") != std::string::npos && pick.find("\"character\":7") != std::string::npos &&
+            pick.find("\"seat\"") == std::string::npos,
+        "match.pick carries the choice and never a seat");
   const std::string transport = online::EncodeMatchTransport(9, "room", 2, online::PathKind::kRelay);
   Check(transport.find("\"seat\":2") != std::string::npos && transport.find("\"transport\":\"relay\"") != std::string::npos,
         "match.transport names the seat");
@@ -114,6 +112,19 @@ void TestDecoders() {
             room.seats[1].transport == online::PathKind::kRelay,
         "seat state, ready and transport");
   Check(room.seats[2].state == online::SeatState::kEmpty && room.seats[3].player.empty(), "empty seats");
+  Check(room.seats[0].pick == online::PickState::kNone, "a Worker without picks reads as no pick");
+  const auto pick_of = [](const std::string& fields) {
+    const std::string seat = R"({"seat":0,"player":"A","name":"A","state":"connected","ready":false,"platform":"","version":"","transport":"")" +
+                             fields + "}";
+    const std::string text = R"({"re":3,"code":"ok","room":)" + Room("open", seat + "," + Empty(1), 2) + "}";
+    const auto decoded = online::DecodeServerMessage(text);
+    return decoded && decoded->room ? decoded->room->seats[0] : online::Seat{};
+  };
+  const online::Seat picked = pick_of(R"(,"pick":2,"character":11)");
+  Check(picked.pick == online::PickState::kConfirmed && picked.character == 11, "a seat's pick");
+  Check(pick_of(R"(,"pick":2,"character":12)").pick == online::PickState::kNone, "an invalid character is dropped");
+  Check(pick_of(R"(,"pick":3,"character":1)").pick == online::PickState::kNone, "an invalid state is dropped");
+  Check(pick_of(R"(,"pick":1,"character":-1)").pick == online::PickState::kNone, "a negative character is dropped");
   Check(room.rules.size() == 3 && room.image == "eck-usa-1db4e96b" && room.build == 1, "rules, image and build");
 
   const std::string three = std::string(kHost) + "," + Empty(1) + "," + Empty(2);
@@ -145,10 +156,6 @@ void TestDecoders() {
         "match.transport from the host");
   const auto relay_closed = online::DecodeServerMessage(R"({"ev":"relay.closed","room":"r","reason":"rate_limit"})");
   Check(relay_closed && relay_closed->kind == Kind::kRelayClosed, "relay.closed");
-
-  const auto search = online::DecodeServerMessage(
-      R"({"re":4,"code":"ok","rooms":[{"handle":"abcd1234","host":"ABCD-2345","host_name":"Saulo","players":4,"capacity":4,"rules":{"mode":1},"platform":"Windows","version":"0.1.0"}]})");
-  Check(search && search->rooms && search->rooms->size() == 1 && (*search->rooms)[0].full(), "room.search lists a full room");
 
   const auto invite = online::DecodeServerMessage(
       R"({"ev":"invite.received","invite":{"id":"i1","host":"ABCD-2345","host_name":"Saulo","players":1,"capacity":3,"rules":{},"image":"x","build":1,"platform":"Windows","version":"0.1.0","expires":99}})");
@@ -219,9 +226,9 @@ void TestFriendView() {
   Check(online::DescribeFriend(state, other).incompatible, "incompatible friend is flagged");
 
   const std::vector<online::InviteChoice> choices = online::InviteChoices({host, away, other, idle});
-  Check(choices.size() == 4 && choices[0].player == "WXYZ-9876" && choices[0].selectable, "only the idle friend is first and selectable");
+  Check(choices.size() == 4 && choices[0].selectable && choices[1].selectable, "free friends come first and are selectable");
   for (const online::InviteChoice& c : choices) {
-    if (c.player == "ABCD-2345") Check(!c.selectable && c.status == "Hosting", "a hosting friend cannot be invited");
+    if (c.player == "ABCD-2345") Check(c.selectable, "a friend alone in their own session can be invited");
     if (c.player == "HJKL-2345") Check(!c.selectable && c.status == "Version mismatch", "a mismatched friend cannot be invited");
     if (c.player == "MNPQ-2345") Check(!c.selectable && c.status == "Offline", "an offline friend cannot be invited");
   }
@@ -233,10 +240,10 @@ void TestFriendView() {
   peer.connected = true;
   peer.path = online::PeerPath::kRelay;
   peer.rtt_ms = 51;
-  Check(online::SeatLine(seat, &peer) == "Ana (Relay) 51 ms", "seat line with path and ping");
+  Check(online::SeatLine(seat, &peer) == "Ana (Connected) 51 ms", "seat line with ping, and no word of the path");
   peer.path = online::PeerPath::kDirect;
   peer.rtt_ms.reset();
-  Check(online::SeatLine(seat, &peer) == "Ana (Direct)", "seat line without ping");
+  Check(online::SeatLine(seat, &peer) == "Ana (Connected)", "seat line without ping");
   seat.state = online::SeatState::kReconnecting;
   Check(online::SeatLine(seat, &peer) == "Ana (Connection lost)", "reconnecting seat");
   seat.state = online::SeatState::kEmpty;

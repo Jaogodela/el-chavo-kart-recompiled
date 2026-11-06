@@ -555,7 +555,7 @@ num 0x4B8 (`UGameViewportClient::GetPlayerOwner`), `GEngine` global `0x83CE2624`
 `APlayerController.Player` 0x354; `ULocalPlayer.Actor` 0x40, `ControllerId` 0x64; `AWorldInfo.Game` 0x430, `PawnList` 0x450; `AKartPawn` (size
 0x95C): `KartSteering` 0x544, `KartSpeed` 0x564, `KartMovementQuat` 0x56C, `DriftDirection` 0x5DC, `BoostBar` 0x644, `CurrentBoosterLevel` 0x654,
 `CurrentPathNode` 0x674, `DistanceInRace` 0x6E0, `RacePosition` 0x6E8, `RaceFinishPosition` 0x6F0, `CompletedLaps` 0x6F4, `racingTime` 0x6F8,
-`KartAccelInput` 0x720, `KartBrakeInput` 0x728, `KartTurnAxisInput` 0x72C, `CharInfo` 0x834, `idPawn` 0x838; `KartGame_MainGame.RaceState` 0x3D4.
+`KartAccelInput` 0x720, `KartBrakeInput` 0x728, `KartTurnAxisInput` 0x72C, `CharInfo` 0x834, `idPawn` 0x838; `KartGame_MainGame.RaceState` 0x3E0 (a script delegate is 12 bytes, a `TMap` 60).
 Authoritative (simulation state): position, rotation, velocity, `KartSpeed`, `KartMovementQuat`, drift and boost state, `CurrentPathNode`,
 `CompletedLaps`. Derived each tick: `DistanceInRace`, `RacePosition`, `FloorAlignedRotation`, `SmoothedVehicleMeshRotation`, animation and camera
 quaternions. Inputs are rewritten every tick by `PlayerMove`.
@@ -597,6 +597,8 @@ finished, and gives unfinished karts their `RacePosition`. Coins, Endurance and 
 Flag gives every kart 1 or 2 by team. Each of those runs before `KartGame_MainGame.EndRace` sets `RaceState` to 4, so places are final by the time
 state 4 can be read.
 
-Not proven: every offset in `online_probe_layout.h` is still derived, and no log has confirmed one. The character packages hide their name tables,
+Runtime logs later confirmed the `AActor` block and corrected the `AKartPawn` one: an `FQuat` is aligned to 16 bytes, which moves
+everything after `PreviousMotorSpeed`. `KartSpeed` equals the velocity's length and `racingTime` (`0x720`) counts the race, so the
+offsets in section 11.4 past `KartSpeed` are the old ones; `online_probe_layout.h` has the real ones. The character packages hide their name tables,
 so a package's own `CharacterType` default was not read. `race_state=` and `layout_check` under `[DEBUG_SAULO][ANALYTICS]` settle both on the first
 real race: `match=yes` ties the pawn, `CharInfo` and `CharacterType` offsets to the URL.

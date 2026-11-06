@@ -1,18 +1,17 @@
 # Online play
 
-Rooms of 2 to 4 players over the internet. Players meet through a small online service (`server/eck-lobby`); the race
-itself runs directly between the PCs over UDP, and only a player pair that cannot reach each other is relayed through the
-service. The wire format is [`server/eck-lobby/PROTOCOL.md`](../server/eck-lobby/PROTOCOL.md) (protocol version 1, game id
+A host and up to 3 invited friends over the internet. Players meet through a small online service (`server/eck-lobby`);
+the race itself runs directly between the host and each friend over UDP, and only a friend the host cannot reach is relayed
+through the service. The wire format is [`server/eck-lobby/PROTOCOL.md`](../server/eck-lobby/PROTOCOL.md) (protocol version 1, game id
 `el-chavo-kart-pc`).
 
 ## Status
 
-Implemented and unit-tested here: the client stack in `src/online` (identity, protocol, service connection, friends,
-rooms, invites, per-seat UDP path setup, relay frames, reconnect with seat resume), the launcher **Online** page and the
-connection test. Not done yet: the game-side hooks that put rooms into the game's own menus (Create Room, Find Room,
-Invite Friends, Start Race, Leave Room) and carry the race traffic over the gameplay socket. Until those land, the
-launcher can sign in, manage friends and run the connection test, but a race cannot be started online. No public service is
-deployed: there is no default service address.
+Implemented and tested headlessly: the client stack in `src/online`, the launcher **Online** page, the connection test and
+the invite-only flow of `docs/online-ui.md`, end to end with 2, 3 and 4 players. A guest travels to the host's character screen, each seat
+picks on a real panel, every seat loads the host's race and owns its own kart, and the host simulates the race for everybody
+(see "Racing" in `docs/online-ui.md`; not yet tried on real PCs). Not done yet: carrying the rest of the race's state over the
+gameplay socket.
 
 ## Playing (launcher)
 
@@ -55,11 +54,12 @@ the same user folder cannot share the identity: it plays under a temporary one w
 
 ## Architecture
 
-- `online_service`: one WebSocket to the service. Signs in, keeps friends and presence, hosts, searches, joins, leaves and
-  starts rooms, sends and answers invites, publishes this client's endpoint, reports ready and transport, and after a lost
-  connection signs in again and resumes the held seat (the service holds it for 30 s).
-- Seats are assigned by the service: the host is seat 0, a join takes the lowest free seat, and the seat number is the
-  in-game player slot. The client never picks one.
+- `online_service`: one WebSocket to the service. Signs in, keeps friends and presence, owns the hidden session (on the wire
+  a `room`; players never see that word), sends and answers invites, publishes this client's endpoint, reports ready and
+  transport, and after a lost connection signs in again and resumes the held seat (the service holds it for 30 s). A seat
+  that depends on the service, because it is relayed or still connecting, ends with that hold; a direct one does not.
+- Seats are assigned by the service in the order invites are accepted: the host is seat 0, a join takes the lowest free
+  seat, and the seat number is the in-game player slot. The client never picks one.
 - `game_socket`: one UDP socket for the whole process, bound early (the first free port of 7101 to 7110, chosen so it
   does not collide with other recompiled titles that use 7001 and 7002) and reused by STUN, hole punching and the race, so
   the NAT mapping the peers were told about stays valid. A relayed seat is addressed as a loopback endpoint that carries
@@ -69,18 +69,19 @@ the same user folder cannot share the identity: it plays under a temporary one w
   acknowledgement selects an address for a seat.
 - `peer_table`: the per-seat path choice, pure and unit-tested. The host decides its path to each peer: direct as soon as a
   punch is acknowledged, otherwise the relay once the probe window (2.5 s, at least 1.5 s of punching) is over and both
-  ends offer the relay; it reports the choice with `match.transport` and the peer follows. Two non-host seats decide
-  between themselves. Without a relay a seat that cannot be reached fails. A room has 15 s to establish every path once the
-  host presses Start Race.
+  ends offer the relay; it reports the choice with `match.transport` and the peer follows. The topology is a star: a guest
+  only has a path to the host, and each seat is decided alone, so direct and relayed seats mix. Each seat has 15 s from
+  appearing to get a path; a guest that runs out leaves the session at once, so it can take another invite.
+- Once every path is up a client reports `match.ready`, again after the host starts, which is what takes the session from
+  `starting` to `racing`.
 - Relay: binary frames of a 16-byte header (`E`, `K`, version, type, room token, sequence, destination seat, source seat,
   length) and up to 1472 payload bytes, routed by destination seat; the service stamps the real source seat.
 - Logs carry no private token and no full addresses (only the first octet and the port).
 
 Public API for the game side: `Online()` (`src/online_runtime.h`) is the process-wide `eck::online::OnlineService`;
 `GameSocket()` is the shared socket; `PumpOnlineService()` runs once per presented frame while the game runs.
-`OnlineService` offers `CreateRoom`, `UpdateRoom`, `SearchRooms`, `JoinRoom`, `StartRace`, `SetReady`, `LeaveRoom`,
-`CancelRoom`, `SendInvite`, `AcceptInvite`, `DeclineInvite`, `snapshot()`, `GamePeers()`, `SeatOfEndpoint()` and
-`SetPeerRtt()`.
+`OnlineService` offers `HostSession`, `LeaveSession`, `StartRace`, `SendInvite`, `AcceptInvite`, `DeclineInvite`,
+`snapshot()`, `GamePeers()`, `SeatOfEndpoint()` and `SetPeerRtt()`.
 
 ## Several instances on one PC
 
@@ -100,6 +101,12 @@ instance's own Online page. Every instance makes its own friend code, so add the
 
 Only the window with keyboard focus reads the keyboard, the mouse and the controllers, all of them, so click an
 instance to play it. The others stay connected and keep running with a neutral controller.
+
+Focus decides input and nothing else, but two instances share one GPU. In a race, an unfocused instance falls to a few
+frames per second next to a focused one running far above 60, and raising its GPU scheduling class does not help. The game
+thread waits for the render thread's previous frame, so that stall stops the simulation and its race traffic too. So while
+another player is connected, an instance started by `tools/online-instance.ps1` (it sets `ECK_INSTANCE`) holds at most 60
+FPS and logs `[DEBUG_SAULO][ONLINE-PACING]`. A player on their own PC has no `ECK_INSTANCE` and keeps every frame rate.
 
 ## Tests
 

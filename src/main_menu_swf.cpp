@@ -469,13 +469,6 @@ ActionWriter OnGamepadABody() {
   EmitTextRequest(w, kExitCommand);
   const std::size_t done = w.Branch(op::kJump);
   w.Resolve(other);
-  // Free Race / Multiplayer: tell the host first, then always run the original so the Local flow is untouched.
-  w.Push({Reg(2), Str(kExhibitionCommand)});
-  w.Op(op::kEquals2);
-  w.Op(op::kNot);
-  const std::size_t not_exhibition = w.Branch(op::kIf);
-  EmitTextRequest(w, kOnlineEnterCommand);
-  w.Resolve(not_exhibition);
   CallThis(w, "ECK_BaseOnGamepadA");
   w.Resolve(done);
   return w;

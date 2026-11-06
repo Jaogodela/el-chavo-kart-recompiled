@@ -179,6 +179,14 @@ void TestStable120TimingPassesWithSlowerInterval() {
   CHECK(result.performance != Verdict::kPass);
 }
 
+void TestStallKinds() {
+  std::printf("stall kinds\n");
+  CHECK(std::string(StallKind(true, 71.9)) == "gpu_fence_wait");
+  CHECK(std::string(StallKind(true, kGpuFencePct)) == "gpu_fence_wait");
+  CHECK(std::string(StallKind(true, 0.2)) == "loading_or_streaming");
+  CHECK(std::string(StallKind(false, 99.0)) == "loading_or_streaming");
+}
+
 void TestLoadingStallDoesNotFailTiming() {
   std::printf("loading stalls\n");
   const Mode mode = ModeFor(60);
@@ -335,6 +343,7 @@ int main() {
   TestUnlimitedCeilingJitter();
   TestFixedTargetPerformanceWarn();
   TestStable120TimingPassesWithSlowerInterval();
+  TestStallKinds();
   TestLoadingStallDoesNotFailTiming();
   TestWarmupGate();
   TestRealTimingFailures();

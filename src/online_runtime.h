@@ -22,6 +22,10 @@ void PumpOnlineService();
 
 double OnlineNowSeconds();
 
+// A last word to the service on the way out, when a session is running: true when it was told. The service works it out from
+// the closed socket anyway, 30 s later.
+bool LeaveOnlineForExit();
+
 // The gameplay UDP socket, bound as soon as Online play is on and the game runs, so Windows Firewall can prompt right
 // away. It then stays bound for the whole process: every room learns its public endpoint from it and plays over it.
 // False while the bind fails (retried every few seconds).

@@ -48,7 +48,7 @@ The client keeps a private 64-char lowercase hex `token`. Both values below are 
 
 Reply: `{"re":1,"code":"ok","player":"ABCD-2345","name":"Saulo","friend_code":"ABCD-2345","time":<ms>,
 "capabilities":{"protocol_version":1,"worker_build":"...","public_endpoints":true,"relay_supported":true,
-"relay_max_payload":1472,"min_players":2,"max_players":4,"four_player_rooms":true,"seat_routing":true},"resume":null}`.
+"relay_max_payload":1472,"min_players":2,"max_players":4,"four_player_rooms":true,"room_reopen":true,"seat_routing":true},"resume":null}`.
 `resume` is the room id of a seat this player still holds after a lost connection (section 5, `match.resume`), else null.
 
 Errors: `proto` (proto != 1), `bad_game`, `bad_image`, `bad_request` (build/token/shape), `unauthorized` (id does not
@@ -65,7 +65,7 @@ Two peers are *compatible* (can share a room) when `image` and `build` are both 
 Friend view: online `{"player","name","online":true,"state","platform","version","image","build","compatible"}`;
 offline `{"player","name","online":false,"state":"offline"}`. `compatible` is relative to the viewer.
 `state`: `offline | online | hosting | connecting | in_game`:
-`hosting` = host of an `open` room; `connecting` = seated in someone else's `open` room; `in_game` = in a `starting` or
+`hosting` = alone in their own `open` room; `connecting` = in an `open` room with other players; `in_game` = in a `starting` or
 `racing` room (any seat, host included); else `online`.
 
 - `friends.list` -> `{friends:[view]}`
@@ -94,10 +94,13 @@ Room view (used everywhere a room is returned or pushed):
 ```
 - `seats` always has exactly `capacity` entries, index = seat number = in-game player slot (seat 0 = Player 1).
 - Seat state: `connected | reconnecting | empty`. `ready` is the seat's `match.ready` flag. `transport` is `""` until the
-  host reports it (`direct | relay`, `match.transport`).
+  host reports it (`direct | relay`, `match.transport`). `pick` and `character` are the seat's `match.pick`.
 - Room state: `open` (joinable) -> `starting` (host pressed start; seats frozen) -> `racing` -> `closed`. `closed` is only
   ever seen inside `room.closed`.
-- `rules`: object of at most 16 keys, each key `[a-z_]{1,16}`, each value an integer 0..65535. Opaque to the service.
+- `rules`: object of at most 16 keys, each key `[a-z_]{1,16}`, each value an integer 0..65535. Opaque to the service. The
+  client publishes the host's game there: `setup` (version), `game_type`, `mode`, `difficulty`, and the race before
+  `room.start`: `race` (generation), `race_mode`, `race_track`, `race_ai`, `race_humans`, `race_karts`, `race_chars_low`,
+  `race_chars_high`, `race_bots`, `race_teams`, `race_seats`.
 
 Seat assignment is server-authoritative. The host is seat 0. Every join takes the lowest free seat index. Seats are
 never accepted from the client. A player who leaves an `open` room frees the seat; the next join takes the lowest free
@@ -146,6 +149,12 @@ occupied seats (`need_players`). Freezes seats, clears every `ready` flag, ends 
 room from search (a handle obtained earlier then answers `room_not_open` to `room.join`). Errors: `not_found`, `not_host`, `room_not_open`, `need_players`.
 When every occupied seat has `match.ready` true while `starting`, the state becomes `racing` (event `room.updated`).
 
+### room.reopen (host only)
+`{"op":"room.reopen","seq":n,"room":"<id>","rules":{...}}` -> `{room:view}` with state `open`. Requires state `racing`, when
+`capabilities.room_reopen` is true. Clears every `ready` flag and keeps the seats, their picks and the room. The new rules say
+where the session goes next (`after_race`, a generation, and `after_dest`). Repeating it on an open room changes nothing.
+Errors: `not_found`, `not_host`, `room_not_racing`.
+
 ### Room events
 - `room.created {room, seat, relay_token?}` (host, after `room.host`)
 - `room.updated {room:view}`: full snapshot after any change (join, leave, ready, state, rules, capacity, seat
@@ -158,7 +167,10 @@ When every occupied seat has `match.ready` true while `starting`, the state beco
 Only the host of an `open` room can invite. Up to the number of free seats (never more than 3) invites are outstanding
 at once; each expires after 60 s.
 
-- `invite.send {player}` -> `{invite:"<16 hex>",expires:<ms>}`. A second invite to the same player replaces the first.
+- `invite.send {player}` -> `{invite:"<16 hex>",expires:<ms>}`. A second invite to the same player replaces the first. A
+  player alone in their own open room counts as free: accepting closes that room in the same step, and a refused accept
+  leaves it as it was. The game creates that room when the Online menu opens; clients no longer use `room.search` and
+  `room.join`, which stay for older builds.
   Errors: `not_found` (you host no open room), `not_friends`, `offline`, `version_mismatch`, `busy` (target is in another
   room), `already_in_room` (target is in this one), `room_full`, `invite_limit` (outstanding invites already cover every
   free seat), `limit`, `bad_request` (presence false, own code).
@@ -184,7 +196,8 @@ All take `room` (the id from the room view) and require that the caller holds a 
 - `port`: 1024..65535 (the game's UDP port). `lan`: up to 4 loopback/private IPv4. `public_ip`+`public_port`: both or neither,
   the client's own claim (the service never sees UDP). `candidates`: up to 6, `kind` in `host|srflx|upnp`, IPv4 any scope,
   port 1..65535. `relay` (optional bool): only meaningful with `hello.relay`.
-Server stores it for the seat and pushes to every other connected seat of the room
+Server stores it for the seat. The room is a star: the host's endpoint goes to every other connected seat, a guest's to
+the host only, as
 `match.peer {room,seat,player,name,ip,port,lan,public_ip?,public_port?,candidates,same_network,relay}` where `ip` is the
 address the service saw and `same_network` is true when it is in the receiver's address group (the same IPv4 address, or the
 same IPv6 /64). `lan` and non-public `candidates` are only sent to a seat on the same network. It also pushes the publisher the
@@ -193,6 +206,11 @@ unchanged one is not written.
 A public address can only be the sender's own: on an IPv4 connection a `public_ip` or public candidate other than the
 connection's address is dropped, not forwarded. On an IPv6 connection the claim cannot be compared, so it passes as a claim;
 only a punch acknowledgement, keyed by the room, makes a client use an address.
+
+### match.pick
+`{"op":"match.pick","seq":n,"room":"<id>","pick":0|1|2,"character":0..11}` -> `{}`; everyone gets `room.updated` if it changed.
+`pick` is 0 none, 1 selecting, 2 confirmed; `character` is required unless `pick` is 0. Only in an `open` room, and only for the
+sender's own seat, which the connection decides: an optional `seat` naming any other is refused with `not_your_seat`.
 
 ### match.ready
 `{"op":"match.ready","seq":n,"room":"<id>","ready":true}` -> `{}`; everyone gets `room.updated` if the flag changed. See `room.start` for the

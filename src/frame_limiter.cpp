@@ -1,5 +1,6 @@
 #include "frame_limiter.h"
 
+#include <atomic>
 #include <mutex>
 
 #include <rex/cvar.h>
@@ -15,6 +16,7 @@ namespace {
 
 FrameLimiter g_limiter;
 std::mutex g_limiter_mutex;
+std::atomic<bool> g_local_instance_pacing{false};
 
 }  // namespace
 
@@ -22,10 +24,13 @@ int ConfiguredFrameRate() {
   return FrameRateOrDefault(REXCVAR_GET(eck_frame_rate));
 }
 
+void SetLocalInstancePacing(bool active) { g_local_instance_pacing.store(active, std::memory_order_release); }
+
 // A change of rate re-arms the limiter, so time spent at another rate is never waited for or caught up.
 void PaceGuestFrame() {
   static int last_rate = -1;  // DEBUG_SAULO
-  const int rate = LimiterRate(ConfiguredFrameRate());
+  const int selected = ConfiguredFrameRate();
+  const int rate = g_local_instance_pacing.load(std::memory_order_acquire) ? LocalInstanceLimiterRate(selected) : LimiterRate(selected);
   std::optional<LimiterClock::time_point> deadline;
   const auto before = LimiterClock::now();
   {

@@ -178,6 +178,11 @@ void Rendezvous::StopSeat(int seat) {
   if (SeatIndexOk(seat)) seats_[size_t(seat)] = {};
 }
 
+void Rendezvous::KeepAlive(const Endpoint& to, Transport& out) const {
+  const std::vector<uint8_t> packet = EncodePunch({PunchKind::kPunch, uint8_t(my_seat_ + 1), key_});
+  out.Send(to, packet.data(), packet.size());
+}
+
 void Rendezvous::Stop() {
   stun_stage_ = Stage::kIdle;
   stun_.clear();

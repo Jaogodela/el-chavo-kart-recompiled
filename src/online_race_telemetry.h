@@ -77,8 +77,9 @@ struct Output {
 
 class RaceTracker {
  public:
-  void Arm(RaceSetup setup);
-  void Reset() { phase_ = Phase::kIdle; }
+  // Both return the lines to log. A race still running ends unreported, and the service counts it abandoned.
+  std::vector<std::string> Arm(RaceSetup setup);
+  std::vector<std::string> Stop(std::string_view reason);
   bool Active() const { return phase_ != Phase::kIdle; }
   Output Step(const GameView& game, const ServiceView& service, double now);
 
@@ -88,11 +89,14 @@ class RaceTracker {
   void Begin(const ServiceView& service, double now, Output& out);
   void Finish(const GameView& game, const ServiceView& service, double now, Output& out);
   void Drop(std::string_view reason, Output& out);
+  void Reset() { phase_ = Phase::kIdle; }
 
   Phase phase_ = Phase::kIdle;
   RaceSetup setup_;
   double armed_at_ = -1;
   double started_at_ = 0;
+  double seen_at_ = 0;
+  int last_state_ = kInProgress;
   int logged_state_ = -2;  // DEBUG_SAULO
   uint32_t game_ = 0;
   int race_ = 0;

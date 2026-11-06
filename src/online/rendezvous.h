@@ -72,6 +72,8 @@ class Rendezvous final : public DatagramTap {
   // Where this seat's punches came from, first heard first.
   const std::vector<Endpoint>& heard(int seat) const;
   void StopSeat(int seat);
+  // One punch to a proven endpoint, so an idle session keeps its NAT mapping open.
+  void KeepAlive(const Endpoint& to, Transport& out) const;
 
   // Forgets the room: from now on its STUN answers and punches are dropped unanswered.
   void Stop();

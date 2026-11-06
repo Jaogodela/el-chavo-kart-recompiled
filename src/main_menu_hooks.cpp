@@ -17,11 +17,13 @@
 #include <rex/system/kernel_state.h>
 
 #include "guest_memory.h"
+#include "guest_region.h"
 #include "hard_exit.h"
 #include "language_setting.h"
 #include "main_menu.h"
 #include "main_menu_swf.h"
 #include "online_menu_overlay.h"
+#include "open_file_policy.h"
 #include "sha256.h"
 
 REXCVAR_DECLARE(std::string, eck_language);
@@ -34,10 +36,6 @@ namespace {
 
 constexpr uint32_t kEngineAllocator = 0x83C1D568;
 constexpr uint32_t kAllocatorMallocSlot = 40;
-constexpr uint32_t kObjectScanBytes = 0x80;
-constexpr uint32_t kChildScanBytes = 0x100;
-constexpr int kMaxObjectDepth = 4;
-constexpr size_t kMaxScannedObjects = 2048;
 constexpr int kLoggedCandidates = 40;
 constexpr int kLoggedOpens = 64;
 constexpr uint32_t kMaxHashedBytes = 8u << 20;
@@ -57,7 +55,7 @@ bool IsReadable(uint32_t address, uint32_t length) {
   }
   return (info.state & rex::memory::kMemoryAllocationCommit) != 0 &&
          (info.protect & rex::memory::kMemoryProtectRead) != 0 &&
-         uint64_t(address) + length <= uint64_t(info.base_address) + info.region_size;
+         eck::GuestRangeInRegion(address, length, heap->page_size(), info.region_size);
 }
 
 bool HasMovieSignature(const uint8_t* bytes) {
@@ -178,74 +176,34 @@ uint32_t EngineHeapMovie(PPCContext& ctx, uint8_t* base, const std::vector<uint8
   return address;
 }
 
-struct MovieFields {
-  uint32_t pointer;
-  uint32_t size;
+struct GuestView {
+  const uint8_t* base;
+  bool Readable(uint32_t address, uint32_t length) const { return IsReadable(address, length); }
+  uint32_t U32(uint32_t address) const { return eck::LoadBE32(base, address); }
 };
 
-// A movie held in an object shows up as a size word next to a pointer to the movie bytes.
-std::optional<MovieFields> FindMovieFields(const uint8_t* base, uint32_t object, uint32_t span) {
-  if (!IsReadable(object, span)) {
-    return std::nullopt;
-  }
-  for (uint32_t at = 0; at + 4 <= span; at += 4) {
-    if (eck::LoadBE32(base, object + at) != eck::kMainMenuSwfFingerprint.size) {
-      continue;
-    }
-    for (const int64_t neighbor : {int64_t(-4), int64_t(4)}) {
-      const int64_t pointer_at = int64_t(at) + neighbor;
-      if (pointer_at < 0 || pointer_at + 4 > span) {
-        continue;
-      }
-      const uint32_t data = eck::LoadBE32(base, object + uint32_t(pointer_at));
-      if (IsReadable(data, 4) && std::memcmp(base + data, "GFX", 3) == 0) {
-        return MovieFields{object + uint32_t(pointer_at), object + at};
-      }
-    }
-  }
-  return std::nullopt;
-}
-
-bool LooksLikeHeapObject(uint32_t address) {
-  return address >= 0x40000000 && address < 0x80000000 && address % 4 == 0;
-}
-
-// Breadth-first through the objects the opened file points at, so a movie owned by a wrapper is still found.
-std::optional<MovieFields> FindMovieFieldsInTree(const uint8_t* base, uint32_t root) {
-  std::vector<uint32_t> level{root};
-  std::set<uint32_t> visited{root};
-  for (int depth = 0; depth < kMaxObjectDepth && !level.empty(); ++depth) {
-    std::vector<uint32_t> next;
-    for (const uint32_t object : level) {
-      const uint32_t span = depth == 0 ? kObjectScanBytes : kChildScanBytes;
-      if (!IsReadable(object, span)) {
-        continue;
-      }
-      if (const auto fields = FindMovieFields(base, object, span)) {
-        return fields;
-      }
-      for (uint32_t at = 0; at + 4 <= span && visited.size() < kMaxScannedObjects; at += 4) {
-        const uint32_t child = eck::LoadBE32(base, object + at);
-        if (LooksLikeHeapObject(child) && visited.insert(child).second) {
-          next.push_back(child);
-        }
-      }
-    }
-    level = std::move(next);
-  }
-  return std::nullopt;
-}
-
 void InspectOpenedFile(PPCContext& ctx, uint8_t* base, uint32_t url, uint32_t file) {
-  if (file == 0 || !IsReadable(file, 4)) {
-    return;
-  }
+  const std::string package = AsciiAt(base, url);
+  const eck::open_file::Inspection inspection = eck::open_file::InspectionOf(package);
   static std::atomic<int> logged{0};
   if (logged.fetch_add(1) < kLoggedOpens) {
-    REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] open file url={} file=0x{:08X} vtable=0x{:08X}", AsciiAt(base, url), file,
-                eck::LoadBE32(base, file));
+    REXLOG_INFO("[DEBUG_SAULO][OPEN-FILE] package={} file=0x{:08X} operation={}", package, file,
+                eck::open_file::InspectionName(inspection));
   }
-  const auto fields = FindMovieFieldsInTree(base, file);
+  if (inspection == eck::open_file::Inspection::kPass) {
+    return;
+  }
+  if (file == 0 || !IsReadable(file, 4)) {
+    static std::once_flag once;
+    std::call_once(once, [] { REXLOG_INFO("[DEBUG_SAULO][OPEN-FILE] inspection skipped reason=invalid_pointer"); });
+    return;
+  }
+  eck::NoteOnlineMovie(package);
+  if (inspection != eck::open_file::Inspection::kPatchMainMenu) {
+    return;
+  }
+  const auto fields =
+      eck::open_file::FindMovieFieldsInTree(GuestView{base}, file, eck::kMainMenuSwfFingerprint.size);
   if (!fields) {
     return;
   }
@@ -401,10 +359,6 @@ REX_HOOK_RAW(sub_82A46B68) {
       case eck::ReservedKey::kExit:
         REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] action={}", key);
         eck::HardExit("Exit Game selected, hard-exiting process.");
-        break;
-      case eck::ReservedKey::kOnlineEnter:
-        REXLOG_INFO("[DEBUG_SAULO][MAIN-MENU] action={}", key);
-        eck::RequestOnlineMenu();
         break;
       case eck::ReservedKey::kOnlineMenu:
         eck::NoteMainMenuShown();

@@ -10,6 +10,7 @@
 #include <rex/system/kernel_state.h>
 
 #include "guest_memory.h"
+#include "guest_region.h"
 
 namespace eck::online_guest {
 
@@ -21,7 +22,7 @@ inline bool Readable(uint32_t address, uint32_t length) {
   rex::memory::HeapAllocationInfo info{};
   if (heap == nullptr || !heap->QueryRegionInfo(address, &info)) return false;
   return (info.state & rex::memory::kMemoryAllocationCommit) != 0 && (info.protect & rex::memory::kMemoryProtectRead) != 0 &&
-         uint64_t(address) + length <= uint64_t(info.base_address) + info.region_size;
+         GuestRangeInRegion(address, length, heap->page_size(), info.region_size);
 }
 
 struct Guest {

@@ -9,9 +9,16 @@
 namespace eck::race {
 namespace {
 
-enum Type : uint8_t { kConfig = 1, kPhaseMsg = 2, kKart = 3, kFinish = 4, kResult = 5, kLeave = 6, kLoadedMsg = 7 };
+enum Type : uint8_t {
+  kConfig = 1, kPhaseMsg = 2, kKart = 3, kFinish = 4, kResult = 5, kLeave = 6, kLoadedMsg = 7, kInput = 8, kSnapshot = 9
+};
 
 constexpr float kMaxCoordinate = 1.0e7f;
+constexpr float kQuatScale = 32767.0f;
+constexpr uint16_t kKnownPadButtons = 0xF3FF;  // the two reserved bits are never set by a real pad
+constexpr uint8_t kMaxRaceState = 4;
+
+int16_t ClampToI16(float value) { return int16_t(std::clamp(std::lround(value), -32767L, 32767L)); }
 
 struct Writer {
   std::vector<uint8_t> out;
@@ -25,6 +32,7 @@ struct Writer {
     U16(v >> 16);
   }
   void I32(int32_t v) { U32(uint32_t(v)); }
+  void I16(int16_t v) { U16(uint16_t(v)); }
   void F32(float v) { U32(std::bit_cast<uint32_t>(v)); }
 };
 
@@ -47,6 +55,7 @@ struct Reader {
     return lo | (uint32_t(U16()) << 16);
   }
   int32_t I32() { return int32_t(U32()); }
+  int16_t I16() { return int16_t(U16()); }
   float F32() { return std::bit_cast<float>(U32()); }
   // A coordinate, which must be finite and bounded.
   float Coord() {
@@ -139,6 +148,40 @@ struct Encoder {
     w.U8(kLoadedMsg);
     w.U32(m.race_id);
     w.U8(m.seat);
+  }
+  void operator()(const InputMsg& m) const {
+    w.U8(kInput);
+    w.U32(m.race_id);
+    w.U8(m.seat);
+    w.U32(m.seq);
+    w.U32(m.snapshot_ack);
+    w.U8(m.loaded ? 1 : 0);
+    w.U16(m.pad.buttons);
+    w.U8(m.pad.left_trigger);
+    w.U8(m.pad.right_trigger);
+    w.I16(m.pad.left_x);
+    w.I16(m.pad.left_y);
+    w.I16(m.pad.right_x);
+    w.I16(m.pad.right_y);
+  }
+  void operator()(const SnapshotMsg& m) const {
+    w.U8(kSnapshot);
+    w.U32(m.race_id);
+    w.U32(m.seq);
+    w.U32(m.host_ms);
+    w.U8(m.race_state);
+    w.U8(m.begun ? 1 : 0);
+    for (uint32_t ack : m.input_ack) w.U32(ack);
+    for (uint8_t age : m.input_age_ms) w.U8(age);
+    w.U8(uint32_t(std::min<size_t>(m.karts.size(), kMaxKarts)));
+    for (size_t i = 0; i < m.karts.size() && i < kMaxKarts; ++i) {
+      const KartSample& kart = m.karts[i];
+      w.U8(kart.slot);
+      for (float v : kart.position) w.F32(v);
+      for (float v : kart.quat) w.I16(ClampToI16(v * kQuatScale));
+      for (float v : kart.velocity) w.I16(ClampToI16(v));
+      w.I16(ClampToI16(kart.speed));
+    }
   }
 };
 
@@ -261,6 +304,52 @@ std::optional<Message> Decode(const uint8_t* data, size_t size) {
       m.seat = r.U8();
       if (m.seat >= kMaxHumans) return std::nullopt;
       out = m;
+      break;
+    }
+    case kInput: {
+      InputMsg m;
+      m.race_id = r.U32();
+      m.seat = r.U8();
+      m.seq = r.U32();
+      m.snapshot_ack = r.U32();
+      const uint8_t loaded = r.U8();
+      m.pad.buttons = r.U16();
+      m.pad.left_trigger = r.U8();
+      m.pad.right_trigger = r.U8();
+      m.pad.left_x = r.I16();
+      m.pad.left_y = r.I16();
+      m.pad.right_x = r.I16();
+      m.pad.right_y = r.I16();
+      if (m.seat >= kMaxHumans || loaded > 1 || (m.pad.buttons & ~kKnownPadButtons) != 0) return std::nullopt;
+      m.loaded = loaded == 1;
+      out = m;
+      break;
+    }
+    case kSnapshot: {
+      SnapshotMsg m;
+      m.race_id = r.U32();
+      m.seq = r.U32();
+      m.host_ms = r.U32();
+      m.race_state = r.U8();
+      const uint8_t begun = r.U8();
+      for (uint32_t& ack : m.input_ack) ack = r.U32();
+      for (uint8_t& age : m.input_age_ms) age = r.U8();
+      const uint8_t count = r.U8();
+      if (m.race_state > kMaxRaceState || begun > 1 || count > kMaxKarts) return std::nullopt;
+      m.begun = begun == 1;
+      uint32_t slots = 0;
+      for (uint8_t i = 0; i < count; ++i) {
+        KartSample kart;
+        kart.slot = r.U8();
+        for (float& v : kart.position) v = r.Coord();
+        for (float& v : kart.quat) v = float(r.I16()) / kQuatScale;
+        for (float& v : kart.velocity) v = float(r.I16());
+        kart.speed = float(r.I16());
+        if (kart.slot >= kMaxKarts || (slots >> kart.slot) & 1) return std::nullopt;
+        slots |= 1u << kart.slot;
+        m.karts.push_back(kart);
+      }
+      out = std::move(m);
       break;
     }
     default:

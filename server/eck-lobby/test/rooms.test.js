@@ -32,7 +32,7 @@ test('a 2-player room: host takes seat 0, a friend finds it by search and takes 
   const update = a.events('room.updated').at(-1).room;
   assert.deepEqual(seatsOf(update), [a.who.player, b.who.player]);
   assert.equal(update.players, 2);
-  assert.equal(b.call('friends.list').friends[0].state, 'hosting');
+  assert.equal(b.call('friends.list').friends[0].state, 'connecting');
   assert.equal(a.call('friends.list').friends[0].state, 'connecting');
 });
 
@@ -375,7 +375,7 @@ test('resuming from a second connection takes the seat over from the stale one',
   assert.equal(host.events('room.updated').at(-1).room.seats[1].ready, true);
 });
 
-test('match.endpoint reaches every other seat tagged with the sender seat, in either publishing order', () => {
+test('match.endpoint follows the star: host and guests learn each other, two guests never do, in either order', () => {
   const env = makeHub();
   const { clients, room } = party(env, 3);
   const [a, b, c] = clients;
@@ -383,16 +383,16 @@ test('match.endpoint reaches every other seat tagged with the sender seat, in ei
   const toA = a.events('match.peer');
   assert.equal(toA.length, 1);
   assert.deepEqual([toA[0].seat, toA[0].player, toA[0].port, toA[0].lan], [1, b.who.player, 7002, ['192.168.1.5']]);
-  assert.equal(c.events('match.peer')[0].seat, 1);
+  assert.equal(c.events('match.peer').length, 0);
   assert.equal(b.events('match.peer').length, 0);
   c.call('match.endpoint', { room, port: 7003, public_ip: '203.0.113.9', public_port: 50001,
     candidates: [{ ip: '203.0.113.9', port: 50001, kind: 'srflx' }] });
-  assert.deepEqual(c.events('match.peer').map((e) => e.seat), [1]);
-  const seenByB = b.events('match.peer');
-  assert.deepEqual(seenByB.map((e) => e.seat), [2]);
-  assert.deepEqual([seenByB[0].public_ip, seenByB[0].public_port, seenByB[0].candidates.length, seenByB[0].same_network],
+  assert.equal(c.events('match.peer').length, 0);
+  assert.equal(b.events('match.peer').length, 0);
+  const second = a.events('match.peer');
+  assert.deepEqual(second.map((e) => e.seat), [2]);
+  assert.deepEqual([second[0].public_ip, second[0].public_port, second[0].candidates.length, second[0].same_network],
     ['203.0.113.9', 50001, 1, true]);
-  assert.equal(a.events('match.peer')[0].seat, 2);
   a.call('match.endpoint', { room, port: 7001 });
   assert.deepEqual([b, c].map((x) => x.events('match.peer').map((e) => e.seat)), [[0], [0]]);
   assert.deepEqual(a.events('match.peer').map((e) => e.seat).sort(), [1, 2]);
@@ -513,7 +513,7 @@ test('friend presence follows the room: hosting, connecting, in_game, online aga
   assert.equal(state(c), 'hosting');
   joinRoom(a, b);
   assert.equal(state(a), 'connecting');
-  assert.equal(state(c), 'hosting');
+  assert.equal(state(c), 'connecting');
   const room = env.hub.roomOfPlayer(a.who.player).id;
   a.call('room.start', { room });
   assert.equal(state(c), 'in_game');

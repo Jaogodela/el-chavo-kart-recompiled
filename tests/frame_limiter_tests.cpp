@@ -44,6 +44,28 @@ LimiterClock::time_point At(double seconds) {
 
 double Seconds(LimiterClock::duration d) { return std::chrono::duration<double>(d).count(); }
 
+void TestLocalInstancePacing() {
+  std::printf("local instance pacing\n");
+  CHECK(!LocalInstancePacing(nullptr, 1));
+  CHECK(!LocalInstancePacing("", 1));
+  CHECK(!LocalInstancePacing("b", 0));
+  CHECK(LocalInstancePacing("a", 1));
+  CHECK(LocalInstancePacing("b", 3));
+
+  CHECK(LocalInstanceLimiterRate(kFrameRateUnlimited) == 60);
+  CHECK(LocalInstanceLimiterRate(240) == 60);
+  CHECK(LocalInstanceLimiterRate(60) == 60);
+  CHECK(LocalInstanceLimiterRate(30) == 30);
+  CHECK(LimiterRate(kFrameRateUnlimited) == kUnlimitedFrameRate);
+  CHECK(LimiterRate(240) == 240);
+
+  CHECK(LocalInstancePacingLine(true, kFrameRateUnlimited) ==
+        "[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=yes requested=unlimited effective=60");
+  CHECK(LocalInstancePacingLine(true, 60) == "[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=yes requested=60 effective=60");
+  CHECK(LocalInstancePacingLine(false, kFrameRateUnlimited) ==
+        "[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=no requested=unlimited effective=unlimited");
+}
+
 void TestChoices() {
   std::printf("frame rate choices\n");
   const int expected[] = {30, 60, 90, 120, 144, 165, 240, 0};
@@ -175,6 +197,7 @@ void TestWiring() {
 
 int main() {
   TestChoices();
+  TestLocalInstancePacing();
   TestLimiterSchedule();
   TestLateFramesAndRateChange();
   TestUnlimitedStillHoldsTheFloor();

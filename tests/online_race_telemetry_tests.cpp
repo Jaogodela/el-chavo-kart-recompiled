@@ -260,6 +260,157 @@ void DiscoveryLogsNewIdsOnce() {
   Check(discovery.Note(SetupOf(kTwoHumans)).size() == 3, "nothing new, no summary");
 }
 
+// ---- Finished or left --------------------------------------------------------------------------------------------------
+
+const char* kTimeTrial =
+    "open TA-PistaBrasilM_Circuito0?NumSelectedTrack=0?NumHumanKarts=2?TotalKarts=8?GameType0?CharArray=6-1-0-2-3-4-5-7"
+    "?IsBotArray=0-0-1-1-1-1-1-1?PlayersArray=0-1-99-99-99-99-99-99";
+
+rt::ServiceView Hosting(std::string room = "abcd") {
+  rt::ServiceView view = Online();
+  view.room = std::move(room);
+  view.seat = 0;
+  return view;
+}
+
+bool Says(const std::vector<std::string>& lines, const std::string& text) {
+  for (const std::string& line : lines) {
+    if (line.find(text) != std::string::npos) return true;
+  }
+  return false;
+}
+
+// What the host's menu command leaves behind: no game at all, then the menu world or the next race's.
+void LeaveTheFinishedWorld(rt::RaceTracker& tracker, const rt::ServiceView& service, double& now) {
+  for (const rt::GameView& view : {View(kRaceGame, rt::kFinished, Finished(5, 2)), rt::GameView{}, View(kMenuGame, rt::kCinematic),
+                                   View(kMenuGame, rt::kMenu), rt::GameView{}}) {
+    const rt::Output out = tracker.Step(view, service, now += 0.25);
+    Check(!out.start && !out.complete, "a finished race reports nothing more");
+    Check(!Says(out.lines, "race left before the end"), "a finished race was not left");
+    Check(!Says(out.lines, "race_state="), "and is no longer watched");
+  }
+}
+
+int RunToTheFinish(rt::RaceTracker& tracker, const char* command, const rt::ServiceView& service, double& now, float time) {
+  Load(tracker, command, now);
+  const rt::Output start = tracker.Step(View(kRaceGame, rt::kInProgress), service, now += 0.25);
+  Check(start.start.has_value(), "the race started");
+  now += time + 1;
+  const rt::Output done = tracker.Step(View(kRaceGame, rt::kFinished, Finished(5, 2, time)), service, now);
+  Check(done.complete.has_value() && done.complete->race == start.start->race, "race.complete names the race it finishes");
+  Check(Says(done.lines, "race.complete race="), "and says so");
+  Check(done.complete->duration_ms == int(time * 1000), "one duration");
+  Check((done.complete->places == std::vector<int>{5, 2}), "one set of places");
+  return start.start->race;
+}
+
+void AFinishedRaceStaysCompleteWhateverTheHostDoesNext() {
+  for (const char* command : {kTwoHumans, kTimeTrial}) {
+    rt::RaceTracker tracker;
+    double now = 0;
+    RunToTheFinish(tracker, command, Hosting(), now, 29.5f);
+    LeaveTheFinishedWorld(tracker, Hosting(), now);
+    Check(!tracker.Active(), "tracking ended at the finish");
+    LeaveTheFinishedWorld(tracker, Hosting(""), now);
+  }
+}
+
+void RestartAfterTheFinishStartsANewRaceAndLeavesNothing() {
+  rt::RaceTracker tracker;
+  double now = 0;
+  const int first = RunToTheFinish(tracker, kTwoHumans, Hosting(), now, 60);
+  const std::vector<std::string> lines = tracker.Arm(SetupOf(kTwoHumans));
+  Check(lines.empty(), "the restart is no departure from a finished race");
+  Check(RunToTheFinish(tracker, kTwoHumans, Hosting(), now, 60) == first + 1, "the next race has its own number");
+}
+
+void EachRaceOfAReopenedRoomCountsOnItsOwn() {
+  rt::RaceTracker tracker;
+  double now = 0;
+  for (int race = 0; race < 3; ++race) {
+    Check(RunToTheFinish(tracker, kTimeTrial, Hosting(), now, 45) == race, "the room goes on counting");
+    // An open room gives no telemetry context until the next start.
+    LeaveTheFinishedWorld(tracker, Hosting(""), now);
+    tracker.Step(View(kMenuGame, rt::kMenu), Hosting(""), now += 30);
+  }
+}
+
+// Log el_chavo_kart_012: Back to Character Select from the pause menu 0.7 s in, RaceState still 2 and no lap done.
+void TheHostMenuCommandIsNoFinish() {
+  rt::RaceTracker tracker;
+  double now = 0;
+  Load(tracker, kTwoHumans, now);
+  tracker.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 0.25);
+  tracker.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 0.5);
+  const rt::Output left = tracker.Step(rt::GameView{}, Hosting(), now += 0.25);
+  Check(!left.complete.has_value(), "leaving a running race never completes it");
+  Check(Says(left.lines, "race left before the end race=0 last_state=2 seconds=0 reason=world_gone"), "the evidence is logged");
+  Check(!tracker.Active(), "tracking ends");
+}
+
+void AQuitFromThePauseMenuIsNoFinish() {
+  rt::RaceTracker tracker;
+  double now = 0;
+  Load(tracker, kTimeTrial, now);
+  tracker.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 0.25);
+  tracker.Step(View(kRaceGame, rt::kMenu), Hosting(), now += 15);
+  const rt::Output left = tracker.Step(View(kMenuGame, rt::kCinematic), Hosting(), now += 1);
+  Check(!left.complete.has_value(), "a Time Trial left early is not complete");
+  Check(Says(left.lines, "last_state=3 seconds=15"), "the last state seen in the race");
+}
+
+void RestartDuringARaceLeavesThatRace() {
+  rt::RaceTracker tracker;
+  double now = 0;
+  Load(tracker, kTwoHumans, now);
+  const int first = tracker.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 0.25).start->race;
+  tracker.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 23);
+  Check(Says(tracker.Arm(SetupOf(kTwoHumans)), "race left before the end race=0 last_state=2 seconds=23 reason=new_race"), "said once");
+  tracker.Step(View(kRaceGame + 8, rt::kCinematic), Hosting(), now += 1);
+  const rt::Output next = tracker.Step(View(kRaceGame + 8, rt::kInProgress), Hosting(), now += 1);
+  Check(next.start && next.start->race == first + 1, "the new race has its own number");
+  Check(!next.complete.has_value(), "and the old one stays unfinished");
+}
+
+void ALostServiceLeavesOnlyARunningRace() {
+  rt::RaceTracker racing;
+  double now = 0;
+  Load(racing, kTwoHumans, now);
+  racing.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 0.25);
+  Check(Says(racing.Stop("service_lost"), "reason=service_lost"), "lost before the finish");
+  Check(!racing.Active(), "tracking ends");
+  Check(racing.Stop("service_lost").empty(), "and only once");
+
+  rt::RaceTracker finished;
+  RunToTheFinish(finished, kTwoHumans, Hosting(), now, 60);
+  Check(finished.Stop("service_lost").empty(), "a finished race is not undone by a later loss");
+}
+
+void AGuestNeverCompletesOrAbandonsARace() {
+  rt::ServiceView guest = Hosting();
+  guest.seat = 1;
+  rt::RaceTracker tracker;
+  double now = 0;
+  Load(tracker, kTwoHumans, now);
+  const rt::Output begun = tracker.Step(View(kRaceGame, rt::kInProgress), guest, now += 0.25);
+  Check(!begun.start.has_value() && Says(begun.lines, "reason=guest_seat"), "a guest stops watching at the start");
+  const rt::Output gone = tracker.Step(View(kRaceGame, rt::kFinished, Finished(5, 2)), guest, now += 60);
+  Check(!gone.complete.has_value() && gone.lines.empty(), "its own finish reports nothing");
+  Check(!Says(tracker.Stop("service_lost"), "race left"), "and its leaving says nothing");
+}
+
+void TheHostGoesOnWhenAGuestLeaves() {
+  rt::RaceTracker tracker;
+  double now = 0;
+  Load(tracker, kTwoHumans, now);
+  tracker.Step(View(kRaceGame, rt::kInProgress), Hosting(), now += 0.25);
+  for (int i = 0; i < 8; ++i) {
+    const rt::Output out = tracker.Step(View(kRaceGame, rt::kInProgress, {{0, 6, 0, 0}}), Hosting(), now += 1);
+    Check(!out.complete.has_value() && !Says(out.lines, "race left"), "the race is still running");
+  }
+  Check(tracker.Step(View(kRaceGame, rt::kFinished, Finished(5, 2, 8)), Hosting(), now += 1).complete.has_value(), "until it really ends");
+}
+
 // ---- The wire ----------------------------------------------------------------------------------------------------------
 
 struct Wire {
@@ -393,6 +544,15 @@ int main() {
   NotConnectedDropsTheRaceWithoutWaiting();
   ARaceThatNeverLoadsIsForgotten();
   DiscoveryLogsNewIdsOnce();
+  AFinishedRaceStaysCompleteWhateverTheHostDoesNext();
+  RestartAfterTheFinishStartsANewRaceAndLeavesNothing();
+  EachRaceOfAReopenedRoomCountsOnItsOwn();
+  TheHostMenuCommandIsNoFinish();
+  AQuitFromThePauseMenuIsNoFinish();
+  RestartDuringARaceLeavesThatRace();
+  ALostServiceLeavesOnlyARunningRace();
+  AGuestNeverCompletesOrAbandonsARace();
+  TheHostGoesOnWhenAGuestLeaves();
   EncodesOnlyBoundedRaceSummaries();
   ReportsOnlyToASignedInServiceThatTakesThem();
   ARefusedReportChangesNothing();

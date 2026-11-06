@@ -1,6 +1,8 @@
 #include "online_game_hook.h"
 
 #include <algorithm>
+#include <array>
+#include <optional>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -19,17 +21,43 @@
 #include "guest_memory.h"
 #include "online/peer_table.h"
 #include "online_game_guest.h"
+#include "online_guest_reader.h"
+#include "online_menu_overlay.h"
+#include "online_panel_bridge.h"
 #include "online_probe.h"
+#include "online_probe_layout.h"
 #include "online_race.h"
+#include "online_race_telemetry.h"
+#include "online_race_sync_guest.h"
 #include "online_race_telemetry_guest.h"
+#include "online_race_url.h"
 #include "online_runtime.h"
+#include "online_setup_capture.h"
 #include "settings.h"
+
+// The engine's free.
+REX_EXTERN(sub_822E80C8);
 
 namespace {
 
 using namespace eck::online_guest;
 
 constexpr size_t kGuestSpan = 0x90000000;
+constexpr uint8_t kScriptStringConst = 0x1F;  // EX_StringConst: the ANSI text follows in the bytecode
+constexpr uint32_t kMaxScriptMethodChars = 32;
+constexpr uint32_t kInputStateSize = 16;
+constexpr uint32_t kInputStateButtons = 4;
+constexpr uint32_t kInputStateLeftTrigger = 6;
+constexpr uint32_t kInputStateRightTrigger = 7;
+constexpr uint32_t kInputStateLeftX = 8;
+constexpr uint32_t kInputStateLeftY = 10;
+constexpr uint32_t kInputStateRightX = 12;
+constexpr uint32_t kInputStateRightY = 14;
+constexpr uint32_t kCommandFrame = 0x400;
+constexpr uint32_t kCommandResult = 0x60;
+constexpr uint32_t kCommandString = 0x70;
+constexpr uint32_t kCommandChars = 0x80;
+constexpr double kPanelScanRetrySeconds = 1.0;
 
 enum Group { kGroupIdentity, kGroupNet, kGroupSession, kGroupLive, kGroupEngine, kGroupSocket, kGroupRace, kGroupCount };
 
@@ -151,6 +179,33 @@ void TraceSocket(const char* label, eck::online_probe::Ue3Api api, PPCContext& c
   (void)a1;
 }
 
+void WriteInputAnalog(uint8_t* base, uint32_t state, const eck::race::PadState& pad) {
+  base[state + kInputStateLeftTrigger] = pad.left_trigger;
+  base[state + kInputStateRightTrigger] = pad.right_trigger;
+  eck::StoreBE<int16_t>(base, state + kInputStateLeftX, pad.left_x);
+  eck::StoreBE<int16_t>(base, state + kInputStateLeftY, pad.left_y);
+  eck::StoreBE<int16_t>(base, state + kInputStateRightX, pad.right_x);
+  eck::StoreBE<int16_t>(base, state + kInputStateRightY, pad.right_y);
+}
+
+eck::race::PadState ReadInputState(const uint8_t* base, uint32_t state) {
+  eck::race::PadState pad;
+  pad.buttons = eck::LoadBE<uint16_t>(base, state + kInputStateButtons);
+  pad.left_trigger = base[state + kInputStateLeftTrigger];
+  pad.right_trigger = base[state + kInputStateRightTrigger];
+  pad.left_x = eck::LoadBE<int16_t>(base, state + kInputStateLeftX);
+  pad.left_y = eck::LoadBE<int16_t>(base, state + kInputStateLeftY);
+  pad.right_x = eck::LoadBE<int16_t>(base, state + kInputStateRightX);
+  pad.right_y = eck::LoadBE<int16_t>(base, state + kInputStateRightY);
+  return pad;
+}
+
+struct MovieView {
+  bool Readable(uint32_t address, uint32_t length) const { return Guest{}.Ok(address, length); }
+  uint32_t U32(uint32_t address) const { return Guest{}.P(address); }
+  uint32_t U8(uint32_t address) const { return Guest{}.U8(address); }
+};
+
 }  // namespace
 
 using eck::online_probe::Ue3Api;
@@ -195,13 +250,111 @@ REX_HOOK_RAW(sub_82B74AA0) { TraceSocket("NetDll_sendto", Ue3Api::kSendTo, ctx, 
 REX_EXTERN(__imp__sub_82B74A68);
 REX_HOOK_RAW(sub_82B74A68) { TraceSocket("NetDll_recvfrom", Ue3Api::kRecvFrom, ctx, base, __imp__sub_82B74A68); }
 
+namespace {
+
+void TraceConsoleCommand(PPCContext& ctx, const uint8_t* base) {
+  eck::race_telemetry::OnConsoleCommand(base, ctx.r5.u32);
+  eck::online_probe::OnConsoleCommand(base, ctx.r5.u32, ctx.r4.u32, uint32_t(ctx.lr));
+}
+
+bool IsRaceLaunch(const std::string& command) {
+  const std::optional<eck::race_url::RaceUrl> url = eck::race_url::ParseRaceUrl(command);
+  return url && eck::race_telemetry::SetupOfUrl(*url).has_value();
+}
+
+// The script names the method with a literal right at FFrame.Code, so reading it consumes nothing.
+std::string ScriptMethodName(const uint8_t* base, uint32_t stack) {
+  const uint32_t code = eck::LoadBE32(base, stack + 24);
+  if (base[code] != kScriptStringConst) return {};
+  std::string name;
+  for (uint32_t i = 1; i <= kMaxScriptMethodChars && base[code + i] != 0; ++i) name.push_back(char(base[code + i]));
+  return name;
+}
+
+}  // namespace
+
+// UGFxMoviePlayer::execActionScriptVoid(this, FFrame*, result): every screen shows, hides and takes its buttons here.
+REX_EXTERN(__imp__sub_829B1990);
+REX_HOOK_RAW(sub_829B1990) {
+  if (REXCVAR_GET(eck_online_enabled) && GroupOk(kGroupRace, base)) {
+    eck::NoteOnlineScreenCall(eck::LoadBE32(base, ctx.r3.u32 + eck::online_probe::layout::kObjectClass), ctx.r3.u32,
+                              ScriptMethodName(base, ctx.r4.u32));
+  }
+  __imp__sub_829B1990(ctx, base);
+}
+
+// The game's GFxExternalInterface::Callback(this, view, method, args, count): every ExternalInterface.call of a movie.
+REX_EXTERN(__imp__sub_829A1FA0);
+REX_HOOK_RAW(sub_829A1FA0) {
+  if (REXCVAR_GET(eck_online_enabled) && GroupOk(kGroupRace, base)) {
+    const std::string method = eck::lobby::MovieText(MovieView{}, ctx.r5.u32);
+    if (eck::lobby::IsSetupCall(method)) {
+      const eck::lobby::MovieArgument argument = eck::lobby::FirstMovieArgument(MovieView{}, ctx.r6.u32, ctx.r7.u32);
+      eck::NoteOnlineMovieCall(method, argument.number, argument.text);
+    }
+  }
+  __imp__sub_829A1FA0(ctx, base);
+}
+
+// XamInputGetState(user, flags, *X_INPUT_STATE): every controller reaches the game through this stub, so a remote seat is
+// a pad here and takes the same screens a local player does.
+REX_EXTERN(__imp__sub_830D9E00);
+REX_HOOK_RAW(sub_830D9E00) {
+  const uint32_t user = ctx.r3.u32;
+  const uint32_t state = ctx.r5.u32;
+  const bool online = REXCVAR_GET(eck_online_enabled) && GroupOk(kGroupRace, base);
+  const eck::lobby::PadRule rule = online ? eck::OnlineLobby().RuleFor(user) : eck::lobby::PadRule{};
+  if (rule.virtual_pad) {
+    if (state != 0) {
+      static std::array<std::atomic<uint32_t>, eck::lobby::kPanels> packets{};
+      std::memset(base + state, 0, kInputStateSize);
+      eck::StoreBE32(base, state, packets[user].fetch_add(1) + 1);
+      const uint16_t own = rule.echo_buttons ? eck::OnlineLobby().own_pad().buttons : 0;
+      eck::StoreBE<uint16_t>(base, state + kInputStateButtons, uint16_t(rule.buttons | (own & rule.echo_buttons)));
+      WriteInputAnalog(base, state, rule.analog);
+    }
+    ctx.r3.u64 = 0;
+    return;
+  }
+  if (rule.source_pad >= 0) ctx.r3.u32 = uint32_t(rule.source_pad);
+  __imp__sub_830D9E00(ctx, base);
+  if (state == 0) return;
+  if (ctx.r3.u32 != 0) {
+    if (rule.own_pad) eck::OnlineLobby().SetOwnPad({});
+    if (rule.press == 0) return;
+    static std::atomic<uint32_t> packet{};
+    std::memset(base + state, 0, kInputStateSize);
+    eck::StoreBE32(base, state, packet.fetch_add(1) + 1);
+    ctx.r3.u64 = 0;
+  }
+  const uint16_t buttons = eck::LoadBE<uint16_t>(base, state + kInputStateButtons);
+  if (rule.own_pad) {
+    eck::OnlineLobby().NoteOwnBack((buttons & eck::lobby::kPadB) != 0, rule.back_leaves);
+    eck::OnlineLobby().NoteOwnMenuButton((buttons & rule.menu_button) != 0);
+    eck::OnlineLobby().SetOwnPad(ReadInputState(base, state));
+  }
+  const uint16_t reached = uint16_t((buttons & rule.allow) | rule.press);
+  if (reached != buttons) eck::StoreBE<uint16_t>(base, state + kInputStateButtons, reached);
+}
+
 // AActor::ConsoleCommand(FString* result, this, const FString* command, bWriteToLog): the string is already evaluated here,
 // so reading it consumes nothing. Only race start URLs are logged.
 REX_EXTERN(__imp__sub_826A1F30);
 REX_HOOK_RAW(sub_826A1F30) {
   if (GroupOk(kGroupRace, base)) {
-    eck::race_telemetry::OnConsoleCommand(base, ctx.r5.u32);
-    eck::online_probe::OnConsoleCommand(base, ctx.r5.u32, ctx.r4.u32, uint32_t(ctx.lr));
+    const std::string command = ConsoleCommandText(base, ctx.r5.u32);
+    if (REXCVAR_GET(eck_online_enabled) && eck::lobby::IsMenuCommand(command)) eck::OnlineLobby().NoteHostReturn(command);
+    if (REXCVAR_GET(eck_online_enabled) && IsRaceLaunch(command)) {
+      // The script only ever discards this result, but it frees what it is given.
+      if (eck::OnlineLobby().HoldRace(command)) {
+        REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race held command={}", command);
+        for (uint32_t offset = 0; offset < 12; offset += 4) eck::StoreBE32(base, ctx.r3.u32 + offset, 0);
+        eck::NoteOnlineTravel();
+        return;
+      }
+      eck::NoteOnlineRaceLaunch();
+    }
+    TraceConsoleCommand(ctx, base);
   }
   __imp__sub_826A1F30(ctx, base);
 }
@@ -287,11 +440,169 @@ REX_HOOK_RAW(sub_830DAB40) {
   __imp__sub_830DAB40(ctx, base);
 }
 
+namespace {
+
+namespace layout = eck::online_probe::layout;
+
+// WorldInfo.Game: the actor the game's own travel goes through.
+uint32_t CurrentGame() {
+  const Guest g;
+  const uint32_t world = g.P(layout::kGWorld);
+  const uint32_t level = world ? g.P(world + layout::kWorldLevel) : 0;
+  const uint32_t actors = level ? g.P(level + layout::kLevelActors) : 0;
+  const uint32_t info = actors ? g.P(actors) : 0;
+  return info ? g.P(info + layout::kWorldGame) : 0;
+}
+
+// AActor::ConsoleCommand with the string in a stack frame of its own. The result is the engine's to free.
+void RunConsoleCommand(PPCContext& ctx, uint8_t* base, uint32_t actor, const std::string& command) {
+  const uint32_t saved_sp = ctx.r1.u32;
+  const uint32_t frame = saved_sp - kCommandFrame;
+  ctx.r1.u32 = frame;
+  const uint32_t result = frame + kCommandResult;
+  const uint32_t text = frame + kCommandString;
+  const uint32_t chars = frame + kCommandChars;
+  const uint32_t count = uint32_t(command.size()) + 1;
+  for (size_t i = 0; i < command.size(); ++i) eck::StoreBE<uint16_t>(base, chars + 2 * uint32_t(i), uint16_t(command[i]));
+  eck::StoreBE<uint16_t>(base, chars + 2 * uint32_t(command.size()), 0);
+  for (uint32_t offset = 0; offset < 12; offset += 4) eck::StoreBE32(base, result + offset, 0);
+  eck::StoreBE32(base, text, chars);
+  eck::StoreBE32(base, text + 4, count);
+  eck::StoreBE32(base, text + 8, count);
+  ctx.r3.u32 = result;
+  ctx.r4.u32 = actor;
+  ctx.r5.u32 = text;
+  ctx.r6.u32 = 0;
+  TraceConsoleCommand(ctx, base);
+  __imp__sub_826A1F30(ctx, base);
+  if (const uint32_t data = eck::LoadBE32(base, result)) {
+    ctx.r3.u32 = data;
+    sub_822E80C8(ctx, base);
+  }
+  ctx.r1.u32 = saved_sp;
+}
+
+// DEBUG_SAULO: only when the outcome changes.
+void LogPanelScan(const eck::lobby::PanelScan& scan, const eck::menu::PanelObjects& objects) {
+  const auto hits = [](const std::vector<uint32_t>& at) {
+    std::string text;
+    for (const uint32_t offset : at) text += (text.empty() ? "" : ",") + std::to_string(offset);
+    return text.empty() ? std::string("none") : text;
+  };
+  REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] panel_scan manager=0x{:08X} base=0x{:08X} panel0=0x{:08X} readable={} shift={} pad_hits={} "
+              "game_hits={}",
+              scan.manager, scan.fields ? scan.fields->pad : 0, objects[0], scan.readable ? "yes" : "no", scan.shift,
+              hits(scan.pad_hits), hits(scan.game_hits));
+  const eck::lobby::ScanCandidate& seen = scan.candidate;
+  REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] panel_candidate pad_at=0x{:X} game_at=0x{:X} parent_at=0x{:X} parent=0x{:08X} state_at=0x{:X} "
+              "state={} character_at=0x{:X} character={} failed={}",
+              seen.pad_at, seen.game_at, seen.parent_at, seen.parent, seen.state_at, seen.state, seen.character_at, seen.character,
+              seen.failed);
+  REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] remote_panel_bridge={} reason={}", scan.fields ? "available" : "unavailable", scan.failure);
+}
+
+// The layout is searched once per set of panels. A miss is retried at this pace, as the game may just not be readable yet.
+std::optional<eck::lobby::Panels> CurrentPanels(const eck::menu::PanelObjects& objects) {
+  static eck::menu::PanelObjects scanned{};
+  static eck::lobby::PanelScan scan;
+  static std::string reported;
+  static double next_scan = 0;
+  const double now = eck::OnlineNowSeconds();
+  if (objects != scanned || (!scan.fields && now >= next_scan)) {
+    scanned = objects;
+    next_scan = now + kPanelScanRetrySeconds;
+    scan = eck::lobby::ScanPanels(MovieView{}, objects, CurrentGame());
+    const std::string outcome = std::string(scan.failure) + std::to_string(scan.fields ? scan.fields->pad : 0);
+    if (outcome != reported) {
+      reported = outcome;
+      LogPanelScan(scan, objects);
+    }
+  }
+  if (!scan.fields) return std::nullopt;
+  return eck::lobby::ReadPanels(MovieView{}, objects, *scan.fields);
+}
+
+std::optional<int> OwnPanel() {
+  const uint32_t game = CurrentGame();
+  const int primary = game ? Guest{}.I32(game + layout::kGamePrimaryController) : -1;
+  if (primary < 0 || primary >= eck::lobby::kPanels) return std::nullopt;
+  return primary;
+}
+
+// The saved panel of a run is not the one of the game that travels, so the primary pad is read at the moment of leaving.
+// False when there is no game to travel from: a map is loading.
+bool RunTravel(PPCContext& ctx, uint8_t* base, const eck::lobby::TravelRequest& travel) {
+  const Guest g;
+  const uint32_t game = CurrentGame();
+  const int primary = game ? g.I32(game + layout::kGamePrimaryController) : -1;
+  if (primary < 0 || primary >= eck::lobby::kPanels) {
+    Log("travel_skipped", game, "travel skipped reason=no_game primary=" + std::to_string(primary));
+    return false;
+  }
+  const std::string command = eck::lobby::TravelCommand(travel, primary);
+  if (command.size() > eck::lobby::kMaxCommandChars) {
+    REXLOG_INFO("[DEBUG_SAULO][ONLINE] travel skipped reason=command_too_long chars={}", command.size());
+    return true;
+  }
+  REXLOG_INFO("[DEBUG_SAULO][ONLINE] travel command={}", command);
+  eck::NoteOnlineTravel();
+  RunConsoleCommand(ctx, base, game, command);
+  return true;
+}
+
+}  // namespace
+
 namespace eck {
+
+void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
+  if (!REXCVAR_GET(eck_online_enabled) || !GroupOk(kGroupRace, base)) return;
+  lobby::Bridge& bridge = OnlineLobby();
+  if (const lobby::TravelRequest travel = bridge.TakeTravel(); travel.kind != lobby::TravelKind::kNone) {
+    // Nothing else takes a player out of a race that is over, however late the game can act on it.
+    if (!RunTravel(ctx, base, travel) && travel.kind != lobby::TravelKind::kRace) bridge.RetryTravel(travel);
+  }
+  if (const std::string race = bridge.TakeReleasedRace(); !race.empty() && race.size() <= lobby::kMaxCommandChars) {
+    REXLOG_INFO("[DEBUG_SAULO][ONLINE-RACE] race released");
+    RunConsoleCommand(ctx, base, CurrentGame(), race);
+  }
+  static lobby::LobbyPads pads;
+  static int session = 0;
+  const lobby::Plan plan = bridge.plan();
+  if (plan.session != session) {
+    session = plan.session;
+    pads.NewSession();
+    bridge.ClearOwn();
+    if (plan.local_seat >= 0) REXLOG_INFO("[DEBUG_SAULO][ONLINE-GAME] {}", lobby::CanonicalPanelsLine(plan.local_seat));
+  }
+  const std::optional<lobby::Panels> panels = plan.on_screen ? CurrentPanels(plan.panels) : std::nullopt;
+  const std::optional<int> physical = panels ? OwnPanel() : std::nullopt;
+  const std::optional<int> race_pad = plan.in_race ? OwnPanel() : std::nullopt;
+  const bool racing = TickRaceSync(ctx, base, plan, race_pad, bridge);
+  if (!physical) {
+    pads.Reset();
+    const std::optional<int> pad = plan.locked ? OwnPanel() : std::nullopt;
+    if (pad) bridge.SetRules(lobby::LockedPadRules(*pad));
+    else if (!racing) bridge.SetRules({});
+    bridge.ClearOwn();
+    return;
+  }
+  bridge.SetRules(pads.Step(OnlineNowSeconds(), plan, *panels, *physical));
+  bridge.ReportOwn((*panels)[size_t(lobby::LocalPanel(plan, *physical))], plan.session);
+  bridge.SetPadSeats(lobby::CanonicalPadSeats(plan), *physical);
+  // DEBUG_SAULO: one line per panel change, all four when the room changes.
+  if (plan.local_seat < 0) return;
+  const uint64_t room = uint64_t(plan.session) << 16 | uint64_t(plan.local_seat + 1) << 8;
+  for (int i = 0; i < lobby::kPanels; ++i) {
+    const lobby::PanelView& panel = (*panels)[size_t(i)];
+    const uint64_t occupied = plan.remote[size_t(i)] ? 0x80 : 0;
+    Log("lobby_panel" + std::to_string(i), room | occupied | uint64_t(panel.state) << 5 | uint64_t(panel.character),
+        lobby::PanelLine(plan, *panels, i, *physical));
+  }
+}
 
 void LogOnlineGameHooks() {
   REXLOG_INFO("[DEBUG_SAULO][ONLINE-XBOX] hooks linked: identity=4 xuid=2 xgi_session=9 xnet=3 live_virtuals=6 engine=2 "
-              "net_socket=3 race_url=1 crt_srand=1 live_profile_env={} debug_env={}",
+              "net_socket=3 race_url=1 crt_srand=1 screen_calls=1 input_state=1 live_profile_env={} debug_env={}",
               EnvFlag(kLiveProfileEnv), EnvFlag(kDebugEnv));
 }
 

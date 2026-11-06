@@ -15,7 +15,7 @@ struct FriendRowView {
 // What one friend's row shows, given what this player is doing right now.
 FriendRowView DescribeFriend(const Snapshot& state, const Friend& entry);
 
-// A row of the Invite Friends list: every friend, with only the ones who can receive an invite selectable.
+// A row of the Invite Player list: every friend, with only the ones who can receive an invite selectable.
 struct InviteChoice {
   std::string player;
   std::string name;
@@ -24,7 +24,7 @@ struct InviteChoice {
 };
 std::vector<InviteChoice> InviteChoices(const std::vector<Friend>& friends);
 
-// "Saulo (Direct)" or "Ana (Relay) 51 ms": one seat of the room, for lists.
+// "Saulo (Direct)" or "Ana (Relay) 51 ms": one seat of the session, for lists.
 std::string SeatLine(const Seat& seat, const PeerSnapshot* peer);
 
 }  // namespace eck::online

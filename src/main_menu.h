@@ -10,9 +10,7 @@ namespace eck {
 inline constexpr std::string_view kExitCommand = "ECK_EXIT_GAME";
 
 // Reserved text requests the patched movie sends; the exec hook answers them and every other key is left alone.
-inline constexpr std::string_view kOnlineEnterCommand = "ECK_ONLINE_ENTER";  // Free Race / Multiplayer confirmed
-inline constexpr std::string_view kOnlineMenuCommand = "ECK_ONLINE_MENU";    // the main-menu movie loaded
-inline constexpr std::string_view kExhibitionCommand = "Exhibition";
+inline constexpr std::string_view kOnlineMenuCommand = "ECK_ONLINE_MENU";  // the main-menu movie loaded
 
 struct MainMenuItem {
   std::string_view name;
@@ -77,12 +75,11 @@ constexpr std::optional<std::u16string_view> MainMenuTextOverride(std::string_vi
 
 constexpr bool IsExitCommand(std::string_view key) { return key == kExitCommand; }
 
-enum class ReservedKey { kNone, kExit, kOnlineEnter, kOnlineMenu };
+enum class ReservedKey { kNone, kExit, kOnlineMenu };
 
 // Exact matches only: a key that merely starts with ECK_ is an ordinary key.
 constexpr ReservedKey ClassifyReservedKey(std::string_view key) {
   if (key == kExitCommand) return ReservedKey::kExit;
-  if (key == kOnlineEnterCommand) return ReservedKey::kOnlineEnter;
   if (key == kOnlineMenuCommand) return ReservedKey::kOnlineMenu;
   return ReservedKey::kNone;
 }

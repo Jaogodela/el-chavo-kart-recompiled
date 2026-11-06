@@ -14,6 +14,7 @@
 #include "online/identity.h"
 #include "online/instance.h"
 #include "online/local_addresses.h"
+#include "frame_limiter.h"
 #include "online_game_hook.h"
 #include "online_race_telemetry_guest.h"
 #include "online_setting.h"
@@ -104,10 +105,25 @@ online::OnlineService& Online() {
   return *g_service;
 }
 
+bool LeaveOnlineForExit() {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  return g_service && g_service->LeaveSession("window_close");
+}
+
 void TickOnline(const online::UserSettings& settings) {
   online::OnlineService& service = Online();
   service.Apply(settings);
   service.Update(OnlineNowSeconds());
+}
+
+static void UpdateLocalInstancePacing() {
+  static const char* const instance = std::getenv("ECK_INSTANCE");
+  static bool active = false;
+  const bool wanted = LocalInstancePacing(instance, int(Online().GamePeers().size()));
+  if (wanted == active) return;
+  active = wanted;
+  SetLocalInstancePacing(active);
+  REXLOG_INFO("{}", LocalInstancePacingLine(active, ConfiguredFrameRate()));  // DEBUG_SAULO
 }
 
 void PumpOnlineService() {
@@ -118,6 +134,7 @@ void PumpOnlineService() {
   const online::UserSettings settings = SavedSettings();
   if (settings.enabled) EnsureOnlineGameSocket();
   TickOnline(settings);
+  UpdateLocalInstancePacing();
   const bool signed_in = Online().SignedIn();
   if (signed_in != g_runtime_signed_in) {
     g_runtime_signed_in = signed_in;

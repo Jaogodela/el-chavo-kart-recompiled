@@ -18,6 +18,7 @@ void PeerTable::Begin(const std::string& room, int my_seat, bool relay_coordinat
   room_ = room;
   my_seat_ = my_seat;
   relay_coordinated_ = relay_coordinated;
+  relay_paused_ = false;
   peers_.clear();
 }
 
@@ -25,6 +26,7 @@ void PeerTable::Clear() {
   room_.clear();
   my_seat_ = -1;
   relay_coordinated_ = false;
+  relay_paused_ = false;
   peers_.clear();
 }
 
@@ -53,7 +55,7 @@ const PeerState* PeerTable::Find(int seat) const {
 void PeerTable::UpdateSeats(const std::vector<Seat>& seats) {
   if (!active()) return;
   for (const Seat& seat : seats) {
-    if (seat.seat == my_seat_) continue;
+    if (seat.seat == my_seat_ || !OnMyStar(seat.seat)) continue;
     if (seat.state == SeatState::kEmpty) {
       peers_.erase(std::remove_if(peers_.begin(), peers_.end(), [&](const PeerState& p) { return p.seat == seat.seat; }),
                    peers_.end());
@@ -72,7 +74,7 @@ void PeerTable::UpdateSeats(const std::vector<Seat>& seats) {
 }
 
 void PeerTable::SetPeer(const PeerInfo& info) {
-  if (!active() || info.room != room_ || info.seat == my_seat_ || info.seat < 0) return;
+  if (!active() || info.room != room_ || info.seat == my_seat_ || info.seat < 0 || !OnMyStar(info.seat)) return;
   PeerState& peer = Ensure(info.seat);
   const bool moved = peer.endpoint_known && (peer.info.ip != info.ip || peer.info.port != info.port ||
                                              peer.info.public_ip != info.public_ip ||
@@ -80,10 +82,12 @@ void PeerTable::SetPeer(const PeerInfo& info) {
   if (peer.lost || moved) {
     const std::string player = peer.player;
     const std::string name = peer.name;
+    const PathKind announced = peer.announced;
     peer = PeerState{};
     peer.seat = info.seat;
     peer.player = player;
     peer.name = name;
+    peer.announced = announced;
   }
   peer.present = true;
   peer.lost = false;
@@ -129,11 +133,20 @@ void PeerTable::HostAnnounced(PathKind kind) {
   Ensure(0).announced = kind;
 }
 
+void PeerTable::RelayRefused(int seat) {
+  PeerState* peer = Mutable(seat);
+  if (peer && peer->path == PeerPath::kRelay) peer->path = PeerPath::kFailed;
+}
+
+void PeerTable::Expire(int seat) {
+  if (PeerState* peer = Mutable(seat)) peer->path = PeerPath::kFailed;
+}
+
 std::vector<PathChoice> PeerTable::Decide(double now) {
   std::vector<PathChoice> out;
   for (PeerState& peer : peers_) {
     const bool open = peer.path == PeerPath::kPending || peer.path == PeerPath::kProbing;
-    if (!peer.present || !open || !peer.endpoint_known) continue;
+    if (!peer.present || !open || (relay_paused_ && !peer.direct_proven)) continue;
     const bool expired = peer.path == PeerPath::kProbing && now >= peer.probe_deadline;
     const bool give_up = !peer.direct_proven && (peer.direct_failed || expired);
     const bool follows_host = !host() && peer.seat == 0 && RelayPossible(peer);
@@ -143,6 +156,8 @@ std::vector<PathChoice> PeerTable::Decide(double now) {
       if (peer.announced == PathKind::kRelay) choice = PeerPath::kRelay;
       else if (peer.announced == PathKind::kDirect && peer.direct_proven) choice = PeerPath::kDirect;
       else if (peer.announced == PathKind::kDirect && peer.direct_failed) choice = PeerPath::kFailed;
+    } else if (!host() && peer.announced == PathKind::kRelay) {
+      choice = PeerPath::kFailed;
     } else if (peer.direct_proven) {
       choice = PeerPath::kDirect;
       announce = host();
@@ -171,13 +186,14 @@ bool PeerTable::AllEstablished() const {
   return any;
 }
 
-bool PeerTable::AnyFailed() const {
-  return std::any_of(peers_.begin(), peers_.end(),
-                     [](const PeerState& peer) { return peer.present && peer.path == PeerPath::kFailed; });
+bool PeerTable::AllDirect() const {
+  return !peers_.empty() &&
+         std::all_of(peers_.begin(), peers_.end(), [](const PeerState& peer) { return peer.path == PeerPath::kDirect; });
 }
 
 void PeerTable::PauseRelay() {
   relay_coordinated_ = false;
+  relay_paused_ = true;
   for (PeerState& peer : peers_) {
     if (peer.path == PeerPath::kRelay) {
       peer.path = PeerPath::kProbing;
@@ -188,6 +204,7 @@ void PeerTable::PauseRelay() {
 
 void PeerTable::FailRelayPaths() {
   relay_coordinated_ = false;
+  relay_paused_ = false;
   for (PeerState& peer : peers_) {
     if (peer.path == PeerPath::kRelay) peer.path = PeerPath::kFailed;
   }

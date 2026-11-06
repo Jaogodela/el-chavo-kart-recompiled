@@ -8,7 +8,7 @@ import { Metrics, SAMPLE_MS, countryCode, platformCategory, sampleBucket, versio
 import {
   BUCKETS, CAPABILITIES, LIMITS, MAX_RACES_PER_ROOM, MIN_PLAYERS, ProtocolError, RACE_DURATION_GRACE_MS, RELAY, RELAY_ROOM,
   SUPPORTED_IMAGES, compatible, fail, ipGroup, ipv4Kind, isLocalAddress, normalizeFriendCode, ownEndpoint, parseCapacity,
-  parseEndpoint, parseHello, parseRaceComplete, parseRaceStart, parseRelayFrame, parseRules,
+  parseEndpoint, parseHello, parsePick, parseRaceComplete, parseRaceStart, parseRelayFrame, parseRules,
 } from './protocol.js';
 import { sha256Hex, toHex } from './sha256.js';
 
@@ -38,7 +38,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS room_seats (room TEXT NOT NULL, seat INTEGER NOT NULL, player TEXT NOT NULL UNIQUE, cid TEXT,
      grace INTEGER, ready INTEGER NOT NULL DEFAULT 0, transport TEXT NOT NULL DEFAULT '', counted INTEGER NOT NULL DEFAULT 0,
      relay INTEGER NOT NULL DEFAULT 0, platform TEXT NOT NULL DEFAULT '', version TEXT NOT NULL DEFAULT '',
-     ip TEXT NOT NULL DEFAULT '', ep TEXT, PRIMARY KEY (room, seat))`,
+     ip TEXT NOT NULL DEFAULT '', ep TEXT, pick INTEGER NOT NULL DEFAULT 0, pick_character INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (room, seat))`,
   `CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, room TEXT NOT NULL, sender TEXT NOT NULL,
      target TEXT NOT NULL, created INTEGER NOT NULL, UNIQUE (room, target))`,
   `CREATE TABLE IF NOT EXISTS handles (handle TEXT PRIMARY KEY, room TEXT NOT NULL, viewer TEXT NOT NULL,
@@ -105,6 +106,13 @@ function ensureRoomRaceColumns(sql) {
   }
 }
 
+function ensureSeatPickColumns(sql) {
+  const have = new Set(sql.all('PRAGMA table_info(room_seats)').map((c) => c.name));
+  for (const name of ['pick', 'pick_character']) {
+    if (!have.has(name)) sql.run(`ALTER TABLE room_seats ADD COLUMN ${name} INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+
 // One room as the dashboard shows it: a short id and counts, no player, address, connection or token.
 function roomReport(room, seats, now) {
   const peers = roomPeers(seats).map((s) => seatTransport(s, room));
@@ -148,6 +156,7 @@ export class Hub {
     };
     for (const statement of SCHEMA) host.sql.run(statement);
     ensureRoomRaceColumns(host.sql);
+    ensureSeatPickColumns(host.sql);
     this.metrics = new Metrics(host.sql, () => host.now());
     if (!this.meta('salt')) this.setMeta('salt', this.randomHex(16));
     this.reconcile();
@@ -484,8 +493,13 @@ export class Hub {
     const row = this.host.sql.get(`SELECT rooms.state AS state, rooms.host AS host FROM room_seats JOIN rooms ON rooms.id = room_seats.room
       WHERE room_seats.player = ?`, player);
     if (!row) return 'online';
-    if (row.state === 'open') return row.host === player ? 'hosting' : 'connecting';
-    return 'in_game';
+    if (row.state !== 'open') return 'in_game';
+    return this.soloHost(this.roomOfPlayer(player), player) ? 'hosting' : 'connecting';
+  }
+
+  // Sitting alone in the hidden session this player's Online menu opened: still free to be invited somewhere else.
+  soloHost(room, player) {
+    return Boolean(room) && room.state === 'open' && room.host === player && this.seatRows(room.id).length === 1;
   }
 
   friendView(player, viewer) {
@@ -650,8 +664,10 @@ export class Hub {
       const s = bySeat.get(i);
       list.push(s ? {
         seat: i, player: s.player, name: this.playerRow(s.player)?.name ?? '', state: s.cid ? 'connected' : 'reconnecting',
-        ready: Boolean(s.ready), platform: s.platform, version: s.version, transport: s.transport,
-      } : { seat: i, player: '', name: '', state: 'empty', ready: false, platform: '', version: '', transport: '' });
+        ready: Boolean(s.ready), platform: s.platform, version: s.version, transport: s.transport, pick: s.pick,
+        character: s.pick_character,
+      } : { seat: i, player: '', name: '', state: 'empty', ready: false, platform: '', version: '', transport: '', pick: 0,
+        character: 0 });
     }
     return {
       room: room.id, host: room.host, host_name: this.playerRow(room.host)?.name ?? '', capacity: room.capacity,
@@ -797,7 +813,7 @@ export class Hub {
       }
     }
     this.announce(room.id);
-    this.statusLater([seat.player]);
+    this.statusLater([seat.player, room.host]);
     this.maybeRace(room.id);
   }
 
@@ -821,7 +837,7 @@ export class Hub {
     if (reason !== 'declined' && reason !== 'accepted') {
       this.notifyPlayer(invite.target, { ev: 'invite.ended', invite: invite.id, reason });
     }
-    if (reason === 'declined' || reason === 'accepted' || reason === 'expired') {
+    if (reason === 'declined' || reason === 'accepted' || reason === 'expired' || reason === 'target_busy') {
       this.notifyPlayer(invite.sender, { ev: 'invite.ended', invite: invite.id, room: invite.room, reason });
     }
   }
@@ -849,14 +865,17 @@ export class Hub {
     if (checkFriend && !this.areFriends(att.player, room.host)) fail('not_friends');
     if (!this.hostConnected(room)) fail('offline');
     if (!compatible(att, room)) fail('version_mismatch');
-    if (this.roomOfPlayer(att.player)) fail('busy');
+    const own = this.roomOfPlayer(att.player);
+    if (own && !this.soloHost(own, att.player)) fail('busy');
     if (room.state !== 'open') fail('room_not_open');
     const seats = this.seatRows(room.id);
     if (seats.length >= room.capacity) fail('room_full');
     this.limitJoin(att);
+    if (own) this.closeRoom(own, 'cancelled', att.cid);
     const seat = this.addSeat(room, seats, att);
     this.track(() => this.metrics.count('joins'));
     this.host.sql.run('DELETE FROM invites WHERE room = ? AND target = ?', room.id, att.player);
+    for (const other of this.host.sql.all('SELECT * FROM invites WHERE target = ?', att.player)) this.endInvite(other, 'target_busy');
     this.host.sql.run('DELETE FROM handles WHERE viewer = ?', att.player);
     this.trimInvites(room);
     this.announce(room.id);
@@ -864,7 +883,7 @@ export class Hub {
     return this.entry(this.roomRow(room.id), seat, att);
   }
 
-  // The publisher's endpoint goes to every other connected seat, and it learns the endpoints already stored for them.
+  // The host-authoritative star: the host and each other seat learn each other's endpoint; two guests never do.
   introduce(roomId, publisherSeat) {
     const rows = this.seatRows(roomId);
     const mine = rows.find((s) => s.seat === publisherSeat);
@@ -880,7 +899,7 @@ export class Hub {
       };
     };
     for (const other of rows) {
-      if (other.seat === publisherSeat) continue;
+      if (other.seat === publisherSeat || (publisherSeat !== 0 && other.seat !== 0)) continue;
       if (mine?.ep && other.cid) {
         const s = this.socketByCid(other.cid);
         if (s) this.send(s.conn, eventFor(mine, other));
@@ -1273,6 +1292,20 @@ const HANDLERS = {
     return { room: this.view(this.roomRow(room.id)) };
   },
 
+  // After a race the host's game goes on, and the room with it. Repeating this changes nothing.
+  'room.reopen'(att, msg) {
+    const { room, seat } = this.mySeat(att, msg);
+    if (seat.seat !== 0) fail('not_host');
+    if (room.state === 'open') return { room: this.view(room) };
+    if (room.state !== 'racing') fail('room_not_racing');
+    const rules = msg.rules === undefined ? room.rules : JSON.stringify(parseRules(msg.rules));
+    this.host.sql.run(`UPDATE rooms SET state = 'open', rules = ?, refreshed = ? WHERE id = ?`, rules, this.host.now(), room.id);
+    this.host.sql.run('UPDATE room_seats SET ready = 0 WHERE room = ?', room.id);
+    this.announce(room.id);
+    this.statusLater(this.seatRows(room.id).map((s) => s.player));
+    return { room: this.view(this.roomRow(room.id)) };
+  },
+
   'invite.send'(att, msg) {
     if (!att.presence) fail('bad_request', 'presence required');
     const target = playerOf(msg.player);
@@ -1285,7 +1318,7 @@ const HANDLERS = {
     if (!recipient) fail('offline');
     if (!compatible(recipient.att, room)) fail('version_mismatch');
     const targetRoom = this.roomOfPlayer(target);
-    if (targetRoom) fail(targetRoom.id === room.id ? 'already_in_room' : 'busy');
+    if (targetRoom && !this.soloHost(targetRoom, target)) fail(targetRoom.id === room.id ? 'already_in_room' : 'busy');
     const free = room.capacity - this.seatRows(room.id).length;
     if (free <= 0) fail('room_full');
     const others = this.host.sql.get('SELECT COUNT(*) AS n FROM invites WHERE room = ? AND target != ?', room.id, target).n;
@@ -1339,6 +1372,18 @@ const HANDLERS = {
     this.host.sql.run('UPDATE room_seats SET ready = ? WHERE room = ? AND seat = ?', ready, room.id, seat.seat);
     this.announce(room.id);
     this.maybeRace(room.id);
+    return {};
+  },
+
+  // The connection decides the seat: a pick only ever writes the sender's own row.
+  'match.pick'(att, msg) {
+    const { room, seat } = this.mySeat(att, msg);
+    if (room.state !== 'open') fail('room_not_open');
+    const { pick, character } = parsePick(msg, seat.seat);
+    if (seat.pick === pick && seat.pick_character === character) return {};
+    this.host.sql.run('UPDATE room_seats SET pick = ?, pick_character = ? WHERE room = ? AND seat = ?', pick, character, room.id,
+      seat.seat);
+    this.announce(room.id);
     return {};
   },
 

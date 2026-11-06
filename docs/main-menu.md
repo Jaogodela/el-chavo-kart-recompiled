@@ -18,7 +18,7 @@ supported build.
 | Address | What | Used for |
 | --- | --- | --- |
 | `sub_82BD99F8` | Scaleform memory-file constructor `(this, name, data, size)`; r5 is the buffer, r6 its size | Replaces the main-menu movie buffer when size is 176575 and SHA-256 is `6ac9fb05fdac97a9070878a99000ac6bd217b1678c68cf8ae5784e92b4ae8d7e` |
-| `sub_82C22F28` | Scaleform open-by-URL wrapper `(loader, url, flags)`, returns the opened file object; its virtual call is the game's file opener | Looks through the returned object (up to four levels, bounded) for a size word of 176575 next to a pointer to `GFX` bytes, and swaps both for the patched copy only when the fingerprint matches |
+| `sub_82C22F28` | Scaleform open-by-URL wrapper `(loader, url, flags)`, returns the opened file object; its virtual call is the game's file opener | The URL decides (`src/open_file_policy.h`): an unknown movie passes untouched and a screen movie is only noted. For `ChavoKart_MainMenu/` only, it looks through the returned object (up to four levels, bounded) for a size word of 176575 next to a pointer to `GFX` bytes, and swaps both for the patched copy only when the fingerprint matches |
 | `sub_82A46B68` | Exec `UKartScreen_Base::execGetFieldValueByName(this, FFrame*, FString* result)`, registered at `0x83BE3148` | Overrides the four main-menu texts and receives the exit request |
 
 The exec is reproduced step by step (parameter through the native table at `0x83C77308`, virtual at vtable offset 424,

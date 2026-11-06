@@ -176,7 +176,7 @@ void TestHostFallbackRules() {
   auto choices = table.Decide(0.1);
   Check(choices.size() == 1 && choices[0].seat == 2 && choices[0].path == PeerPath::kFailed && !choices[0].announce,
         "a failed punch without relay fails that seat only");
-  Check(table.AnyFailed() && !table.AllEstablished(), "a failed seat is reported");
+  Check(table.Find(2)->path == PeerPath::kFailed && !table.AllEstablished(), "a failed seat is reported");
   table.PunchStarted(1, 2.0);
   Check(table.Decide(3.0).empty(), "a late punch still gets its minimum time");
   choices = table.Decide(3.6);
@@ -197,28 +197,20 @@ void TestJoinerFollowsHost() {
   table.Begin("room", 2, true);
   table.UpdateSeats(Seats({online::SeatState::kConnected, online::SeatState::kConnected, online::SeatState::kConnected,
                            online::SeatState::kConnected}));
-  Check(!table.host() && table.peers().size() == 3, "seat 2 sees seats 0, 1 and 3");
-  for (const int seat : {0, 1, 3}) {
-    table.SetPeer(Peer("room", seat, "203.0.113.9", 50000 + seat, true));
-    table.BeginProbe(seat, 0.0);
-  }
+  Check(!table.host() && table.peers().size() == 1 && table.Find(0), "a guest's only peer is the host: no mesh");
+  table.SetPeer(Peer("room", 1, "203.0.113.9", 50001, true));
+  table.SetPeer(Peer("room", 3, "203.0.113.9", 50003, true));
+  Check(table.peers().size() == 1, "another guest's endpoint is ignored");
+  table.SetPeer(Peer("room", 0, "203.0.113.9", 50000, true));
+  table.BeginProbe(0, 0.0);
   table.DirectProven(0, {0xCB007101, 50000}, 0.5);
-  Check(table.Decide(0.5).empty() || table.Find(0)->path != PeerPath::kDirect, "the joiner waits for the host's announcement");
+  Check(table.Decide(0.5).empty() && table.Find(0)->path != PeerPath::kDirect, "the joiner waits for the host's announcement");
+  Check(table.Decide(4.0).empty(), "even past the window: only the host decides");
   table.HostAnnounced(online::PathKind::kDirect);
-  auto choices = table.Decide(0.6);
-  bool direct0 = false;
-  for (const auto& c : choices) direct0 |= c.seat == 0 && c.path == PeerPath::kDirect && !c.announce;
-  Check(direct0, "the host's direct announcement is followed without announcing back");
-
-  // Between two joiners nobody announces: relay once the window is over.
-  choices = table.Decide(3.0);
-  bool relay1 = false, relay3 = false;
-  for (const auto& c : choices) {
-    relay1 |= c.seat == 1 && c.path == PeerPath::kRelay && !c.announce;
-    relay3 |= c.seat == 3 && c.path == PeerPath::kRelay && !c.announce;
-  }
-  Check(relay1 && relay3, "joiner-to-joiner paths decide locally");
-  Check(table.AllEstablished(), "all three peers have a path");
+  const auto choices = table.Decide(4.1);
+  Check(choices.size() == 1 && choices[0].seat == 0 && choices[0].path == PeerPath::kDirect && !choices[0].announce,
+        "the host's direct announcement is followed without announcing back");
+  Check(table.AllEstablished(), "and the guest is established");
 
   online::PeerTable follower;
   follower.Begin("room", 1, true);
@@ -237,6 +229,60 @@ void TestJoinerFollowsHost() {
   plain.DirectFailed(0);
   const auto failed = plain.Decide(0.1);
   Check(failed.size() == 1 && failed[0].path == PeerPath::kFailed, "no relay and no direct path fails");
+}
+
+void TestEndpointNeverArrives() {
+  online::PeerTable host;
+  host.Begin("room", 0, true);
+  host.UpdateSeats(Seats({online::SeatState::kConnected, online::SeatState::kConnected}));
+  host.BeginProbe(1, 0.0);
+  Check(host.Decide(2.0).empty(), "the host waits out the window");
+  const auto relay = host.Decide(2.6);
+  Check(relay.size() == 1 && relay[0].path == PeerPath::kRelay && relay[0].announce, "then relays a seat whose endpoint never came");
+  host.RelayRefused(1);
+  Check(host.Find(1)->path == PeerPath::kFailed, "a relay the service refuses fails that seat");
+
+  online::PeerTable guest;
+  guest.Begin("room", 1, true);
+  guest.UpdateSeats(Seats({online::SeatState::kConnected, online::SeatState::kConnected}));
+  guest.HostAnnounced(online::PathKind::kRelay);
+  const auto follow = guest.Decide(0.1);
+  Check(follow.size() == 1 && follow[0].path == PeerPath::kRelay, "a guest follows the relay without the host's endpoint");
+
+  online::PeerTable refused;
+  refused.Begin("room", 1, false);
+  refused.UpdateSeats(Seats({online::SeatState::kConnected, online::SeatState::kConnected}));
+  refused.HostAnnounced(online::PathKind::kRelay);
+  const auto failed = refused.Decide(0.1);
+  Check(failed.size() == 1 && failed[0].path == PeerPath::kFailed, "a guest without the relay cannot follow it");
+
+  online::PeerTable lone;
+  lone.Begin("room", 0, false);
+  lone.UpdateSeats(Seats({online::SeatState::kConnected, online::SeatState::kConnected}));
+  lone.BeginProbe(1, 0.0);
+  Check(lone.Decide(9.0).empty() && lone.Find(1)->path == PeerPath::kProbing, "no relay: the table waits, the budget ends it");
+  lone.Expire(1);
+  Check(lone.Find(1)->path == PeerPath::kFailed, "and the seat is failed");
+
+  online::PeerTable moved;
+  moved.Begin("room", 1, true);
+  moved.UpdateSeats(Seats({online::SeatState::kConnected, online::SeatState::kConnected}));
+  moved.SetPeer(Peer("room", 0, "203.0.113.9", 50000, true));
+  moved.HostAnnounced(online::PathKind::kDirect);
+  moved.SetPeer(Peer("room", 0, "203.0.113.9", 50009, true));
+  Check(moved.Find(0)->announced == online::PathKind::kDirect, "a moved host keeps its announcement: it will not repeat it");
+}
+
+void TestKeepAlive() {
+  online::Rendezvous rendezvous;
+  RecordingTransport out;
+  rendezvous.BeginRoom(online::PunchKey("room"), 1);
+  const Endpoint host{0xCB007101, 7101};
+  rendezvous.KeepAlive(host, out);
+  Check(out.CountTo(host) == 1, "a keepalive is one datagram to the proven endpoint");
+  const auto packet = online::DecodePunch(out.sent[0].data.data(), out.sent[0].data.size());
+  Check(packet && packet->kind == online::PunchKind::kPunch && packet->side == 2 && packet->key == online::PunchKey("room"),
+        "shaped as a punch of this session and seat");
 }
 
 void TestDisconnectAndReconnect() {
@@ -283,7 +329,7 @@ void TestDisconnectAndReconnect() {
   Check(again.size() == 1 && again[0].seat == 2 && again[0].path == PeerPath::kRelay, "the relay is chosen again after the seat is resumed");
 
   linked.FailRelayPaths();
-  Check(linked.Find(2)->path == PeerPath::kFailed && linked.AnyFailed(), "a closed relay fails its seats");
+  Check(linked.Find(2)->path == PeerPath::kFailed, "a closed relay fails its seats");
 }
 
 void TestGameSocketRelay() {
@@ -324,6 +370,8 @@ int main() {
   TestDirectVersusRelayAsHost();
   TestHostFallbackRules();
   TestJoinerFollowsHost();
+  TestEndpointNeverArrives();
+  TestKeepAlive();
   TestDisconnectAndReconnect();
   TestGameSocketRelay();
   return online_test::Finish();

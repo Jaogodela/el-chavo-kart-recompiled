@@ -1,9 +1,9 @@
 #pragma once
 
 // Pure model of an online race: how a room's seats become kart slots, the datagrams the PCs exchange during the race,
-// and the host-authoritative phase machine. No guest memory and no sockets: nothing here is connected to the game's
-// karts yet (see "Gameplay sync status" in docs/online-analysis.md).
+// and the host-authoritative phase machine. No guest memory and no sockets.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -16,9 +16,9 @@ inline constexpr int kMaxHumans = 4;
 inline constexpr int kMaxKarts = 8;  // "Race against 7 competitors"
 inline constexpr uint8_t kMagic0 = 'E';
 inline constexpr uint8_t kMagic1 = 'R';
-inline constexpr uint8_t kVersion = 1;
+inline constexpr uint8_t kVersion = 2;
 inline constexpr size_t kHeaderSize = 4;
-inline constexpr size_t kMaxDatagram = 256;
+inline constexpr size_t kMaxDatagram = 320;
 
 inline constexpr double kLoadTimeoutSeconds = 45.0;
 inline constexpr double kCountdownSeconds = 3.0;
@@ -109,7 +109,52 @@ struct Loaded {
   bool operator==(const Loaded&) const = default;
 };
 
-using Message = std::variant<RaceConfig, PhaseMsg, KartState, Finish, RaceResult, Leave, Loaded>;
+// What a controller reports, native XInput values: everything the game derives driving from.
+struct PadState {
+  uint16_t buttons = 0;
+  uint8_t left_trigger = 0;
+  uint8_t right_trigger = 0;
+  int16_t left_x = 0;
+  int16_t left_y = 0;
+  int16_t right_x = 0;
+  int16_t right_y = 0;
+  bool operator==(const PadState&) const = default;
+};
+
+// A guest's pad, to the host only.
+struct InputMsg {
+  uint32_t race_id = 0;
+  uint8_t seat = 0;
+  uint32_t seq = 0;
+  uint32_t snapshot_ack = 0;  // the newest snapshot this guest has
+  bool loaded = false;        // its karts exist
+  PadState pad;
+  bool operator==(const InputMsg&) const = default;
+};
+
+struct KartSample {
+  uint8_t slot = 0;
+  float position[3]{};
+  float quat[4]{0, 0, 0, 1};
+  float velocity[3]{};
+  float speed = 0;
+  bool operator==(const KartSample&) const = default;
+};
+
+// The host's race, to every guest. `begun` repeats in every snapshot, so a lost one costs nothing.
+struct SnapshotMsg {
+  uint32_t race_id = 0;
+  uint32_t seq = 0;
+  uint32_t host_ms = 0;
+  uint8_t race_state = 0;
+  bool begun = false;
+  std::array<uint32_t, kMaxHumans> input_ack{};  // per seat: the newest input the host has applied
+  std::array<uint8_t, kMaxHumans> input_age_ms{};  // and how long the kart has been running on it, capped at 255
+  std::vector<KartSample> karts;
+  bool operator==(const SnapshotMsg&) const = default;
+};
+
+using Message = std::variant<RaceConfig, PhaseMsg, KartState, Finish, RaceResult, Leave, Loaded, InputMsg, SnapshotMsg>;
 
 std::vector<uint8_t> Encode(const Message& message);
 // Rejects a short, long, mistyped, wrong-version or non-finite datagram, and any trailing bytes.

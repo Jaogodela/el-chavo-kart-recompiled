@@ -54,7 +54,22 @@ struct UserSettings {
   std::string name = kDefaultOnlineName;
 };
 
-// One other seat of the current room, as the game and the launcher see it.
+// An invite the service took: it holds a seat until it is answered.
+struct SentInvite {
+  std::string id;
+  std::string player;
+  std::string name;
+  double expires = 0;
+};
+
+// The last invite that did not lead to a seat; `generation` grows with each.
+struct InviteOutcome {
+  int generation = 0;
+  std::string name;
+  bool declined = false;  // false: the service refused to deliver it
+};
+
+// One other seat of the current session, as the game and the launcher see it.
 struct PeerSnapshot {
   int seat = -1;
   std::string name;
@@ -71,15 +86,21 @@ struct Snapshot {
   std::vector<Friend> friends;
   std::vector<Request> incoming;  // friend requests to answer
   std::vector<Request> outgoing;  // friend requests still waiting
-  std::vector<Invite> invites;    // friends' invitations to their room, oldest first
-  std::vector<RoomAd> rooms;      // the last room.search answer
-  int search_generation = 0;      // grows with every answered search
-  std::optional<RoomView> room;   // the room this player is seated in
+  std::vector<Invite> invites;    // friends' invitations to their session, oldest first
+  std::vector<SentInvite> invited;  // this host's invites still waiting for an answer
+  InviteOutcome invite_outcome;
+  bool hosting = false;           // this player wants a hidden session, seated or not yet
+  bool creating_session = false;  // a first invite is waiting for its session
+  std::string sending_invite;     // the friend whose invite the service has not answered yet
+  bool joining = false;           // an accepted invite is on its way to a seat
+  uint32_t accepted_generation = 0;  // grows with every accepted invite
+  std::optional<RoomView> room;   // the session this player is seated in
   int seat = -1;                  // this player's seat in `room`
+  int session_generation = 0;     // grows every time this player enters or leaves a room
   bool reconnecting = false;      // signed out of the service with a seat still held
   std::vector<PeerSnapshot> peers;
   bool paths_ready = false;       // every connected peer has a direct or relay path
-  std::string closed_reason;      // why the last room ended, until a new one begins
+  std::string closed_reason;      // why the last room ended, empty after a leave of this player's own
   std::string notice;             // the last thing worth telling the player; stays until replaced
   bool testing = false;
   std::optional<ConnectionReport> test;
@@ -111,9 +132,9 @@ struct GamePeer {
   bool relay = false;
 };
 
-// The player's connection to the online service: identity, friends, presence, rooms of 2 to 4 seats, invites and the
-// per-seat UDP paths between the seated players. It signals and proves each path on the gameplay socket; the race
-// itself never passes through it unless a seat is relayed. Thread-safe.
+// The player's connection to the online service: identity, friends, presence, one hidden session of up to 4 seats,
+// invites and the UDP path between the host and each other seat. It signals and proves each path on the gameplay
+// socket; the race itself never passes through it unless a seat is relayed. Thread-safe.
 class OnlineService {
  public:
   explicit OnlineService(ServiceConfig config);
@@ -130,16 +151,22 @@ class OnlineService {
   void DeclineFriend(const std::string& player);  // also withdraws an outgoing request
   void RemoveFriend(const std::string& player);
 
-  // Rooms. The service assigns seats; the host is seat 0.
-  bool CreateRoom(int capacity, const RoomRules& rules);
-  bool UpdateRoom(int capacity, const RoomRules* rules);  // host, room open; capacity < 0 keeps it
-  void SearchRooms();
-  bool JoinRoom(const std::string& handle);  // a handle of the last search
-  bool StartRace();                          // host: freezes the seats
-  bool SetReady(bool ready);
-  void LeaveRoom();  // the host leaving closes the room for everyone
-  void CancelRoom();
-  bool SendInvite(const std::string& player);
+  // The hidden session. The service assigns seats; the host is seat 0. Hosting is an intent: it is sent once signed in
+  // and kept alive until left or replaced by an accepted invite.
+  void HostSession(const RoomRules& rules);
+  bool StartRace();  // host, every seated peer connected: freezes the seats
+  bool PublishRace(const RoomRules& rules);  // the same, carrying the race every seat has to load
+  // Host, after a race: the room is open again, and `rules` say where everybody goes. False when the service cannot do it.
+  bool ReopenRoom(const RoomRules& rules);
+  void SendPick(PickState pick, int character);  // the local seat's character; sent only when it changed
+  // The host leaving closes it for everyone. True when the service was told. `source` is for the log.
+  bool LeaveSession(const char* source = "menu");
+  // This side gave up on a session the service still shows: `reason` is what the player is told.
+  void AbandonSession(const std::string& reason);
+  // One send at a time. With no session yet, `session_rules` creates one and the invite follows once seat 0 is confirmed.
+  bool SendInvite(const std::string& player, const std::optional<RoomRules>& session_rules = std::nullopt);
+  // One accepted invite makes one join: false when the invite is gone, already accepted, or this player is busy. A session
+  // of this player's own with nobody in it ends first.
   bool AcceptInvite(const std::string& invite);
   void DeclineInvite(const std::string& invite);
 
@@ -169,13 +196,19 @@ class OnlineService {
  private:
   enum class Step { kIdle, kOpening, kGreeting, kOnline };
   enum class Purpose {
-    kHello, kFriends, kRequests, kAdd, kAccept, kDecline, kRemove, kRoomHost, kRoomUpdate, kRoomLeave, kRoomSearch,
-    kRoomJoin, kRoomStart, kInviteSend, kInviteAccept, kInviteDecline, kEndpoint, kReady, kResume, kTransport, kRace
+    kHello, kFriends, kRequests, kAdd, kAccept, kDecline, kRemove, kRoomHost, kRoomUpdate, kRoomLeave, kRoomStart, kInviteSend,
+    kInviteAccept, kInviteDecline, kEndpoint, kReady, kPick, kResume, kTransport, kRace, kRoomReopen
   };
   struct Pending {
     Purpose purpose = Purpose::kHello;
     std::string player;
     double sent_at = 0;
+    std::string room;
+  };
+  struct InviteSend {
+    std::string player;
+    std::string name;
+    double deadline = 0;
   };
 
   void OpenChannel(double now);
@@ -193,6 +226,18 @@ class OnlineService {
   void ClearRoom(bool keep_reason);
   void UpdateFriend(const Friend& entry);
   void Refresh();
+  void PumpHosting();
+  void SendHost();
+  void DropAcceptedInvite(const std::string& reason);
+  void InviteRefused(const std::string& player, bool declined);
+  void DispatchInvite();
+  void FailInviteSend(const std::string& reason);
+  void AbandonOwnSession();
+  void InviteLog(const std::string& line);
+  void LifecycleLog(const std::string& line);
+  bool LeaveLocked(const char* source);
+  static bool RoomScoped(Purpose purpose);
+  void Debug(const std::string& line);
   void Send(Purpose purpose, const std::function<std::string(int)>& encode, const std::string& player = {});
   void SendLocked(const std::string& text);
   bool Connected() const { return step_ == Step::kOnline; }
@@ -204,15 +249,18 @@ class OnlineService {
   std::string SessionName() const;
   bool InRoom() const { return room_.has_value(); }
   bool IsHost() const { return room_ && seat_ == 0; }
+  bool SoloHost() const { return IsHost() && room_->state == RoomState::kOpen && room_->players <= 1; }
 
   // Gameplay path setup on the socket.
   void PumpPaths(double now);
   void SendEndpoint();
   void BeginStun();
   std::optional<std::vector<Endpoint>> StunServers();
+  void PumpSocket(OnlineGameSocket& socket, double now);
+  void PumpEstablishment(double now);
   void StartPunchFor(const PeerState& peer, double now);
   void ApplyChoices(const std::vector<PathChoice>& choices);
-  void FailPaths(const std::string& reason);
+  void LeaveFailed(const std::string& reason);
 
   ServiceConfig config_;
   mutable std::mutex mutex_;
@@ -242,16 +290,28 @@ class OnlineService {
   std::vector<Friend> friends_;
   std::vector<Request> incoming_, outgoing_;
   std::vector<Invite> invites_;
-  std::vector<RoomAd> rooms_;
-  int search_generation_ = 0;
+  std::vector<SentInvite> invited_;
+  InviteOutcome invite_outcome_;
+  std::optional<InviteSend> sending_;
+  std::optional<RoomRules> hosting_;
+  double next_host_refresh_ = 0;
+  std::optional<std::string> accepted_invite_;
+  std::string accepted_host_;
+  bool replacing_role_ = false;
+  uint32_t accepted_generation_ = 0;
+  bool joining_ = false;
+  double join_deadline_ = 0;
   std::string notice_;
   std::vector<std::string> notices_;
   std::string closed_reason_;
 
   std::optional<RoomView> room_;
   int seat_ = -1;
+  int session_generation_ = 0;
+  bool reopening_ = false;
   uint32_t relay_token_ = 0;
   std::string held_room_;  // a seat held across a lost connection, to resume
+  double hold_deadline_ = 0;
   std::map<int, int> rtt_;
 
   struct TestState;
@@ -268,11 +328,14 @@ class OnlineService {
   PeerTable peers_;
   Udp udp_ = Udp::kNone;
   bool stun_started_ = false;
+  double stun_done_at_ = 0;
   Endpoint mapped_;
   bool endpoint_sent_ = false;
+  bool ready_sent_ = false;
+  std::optional<std::pair<PickState, int>> pick_sent_;
+  double next_keepalive_ = 0;
   std::array<bool, kMaxSeats> punching_{};
-  Establishment establishment_;
-  bool race_started_ = false;
+  std::array<Establishment, kMaxSeats> establishment_{};
 };
 
 }  // namespace eck::online

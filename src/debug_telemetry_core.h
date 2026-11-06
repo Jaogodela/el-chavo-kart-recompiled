@@ -17,6 +17,7 @@ inline constexpr double kSafeDeltaFloor = 0.0025;
 inline constexpr double kHitchSeconds = 0.1;
 // UWorld::Tick clamps the delta at 0.4 s, so longer gaps cannot be gameplay timing.
 inline constexpr double kLoadingStallSeconds = 0.3;
+inline constexpr double kGpuFencePct = 25.0;
 inline constexpr int kWarmupFrames = 30;
 inline constexpr int kMinValidFrames = 10;
 inline constexpr int kMinFramesForVerdict = 60;
@@ -358,6 +359,11 @@ struct PerfInputs {
   double cp_fence_pct = 0;
 };
 
+// A long gap with the command processor parked on the GPU fence is GPU time this process did not get, not a load.
+inline const char* StallKind(bool cp_available, double cp_fence_pct) {
+  return cp_available && cp_fence_pct >= kGpuFencePct ? "gpu_fence_wait" : "loading_or_streaming";
+}
+
 inline Bottleneck Classify(const PerfInputs& in) {
   if (in.frame_ms <= 0 || in.fps <= 0) {
     return Bottleneck::kUnknown;
@@ -369,7 +375,7 @@ inline Bottleneck Classify(const PerfInputs& in) {
   const bool game = in.world_ms > 0.5 * in.frame_ms;
   const bool render = render_cpu_ms > 0.5 * in.frame_ms;
   const bool gpu =
-      in.cp_available && (in.cp_fence_pct >= 25.0 || (in.sync_ms > 0.4 * in.frame_ms && in.cp_idle_pct < 20.0));
+      in.cp_available && (in.cp_fence_pct >= kGpuFencePct || (in.sync_ms > 0.4 * in.frame_ms && in.cp_idle_pct < 20.0));
   const bool swap = in.swap_ms > 0.4 * in.frame_ms;
   const int candidates = int(game) + int(render) + int(gpu) + int(swap);
   if (candidates == 0) {

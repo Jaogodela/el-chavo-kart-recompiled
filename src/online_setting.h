@@ -6,7 +6,7 @@ inline constexpr char kOnlineEnabledSetting[] = "eck_online_enabled";
 inline constexpr bool kDefaultOnlineEnabled = false;
 inline constexpr char kOnlineEnabledLabel[] = "Online play";
 inline constexpr char kOnlineEnabledHelp[] =
-    "Lets you create and join rooms of 2 to 4 players with your friends. Players meet through the online service; "
+    "Lets you race with up to 3 invited friends. Players meet through the online service; "
     "the race itself runs directly between your PCs.";
 
 inline constexpr char kOnlineNameSetting[] = "eck_online_name";

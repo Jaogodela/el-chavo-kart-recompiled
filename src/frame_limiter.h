@@ -59,6 +59,26 @@ inline int LimiterRate(int fps) {
   return fps == kFrameRateUnlimited ? kUnlimitedFrameRate : fps;
 }
 
+// Two instances on one GPU, set by tools/online-instance.ps1 only: past this rate the focused one leaves the other a few
+// frames per second, and that one's race stops with them. Separate PCs never come here.
+inline constexpr int kLocalInstanceRate = 60;
+
+inline bool LocalInstancePacing(const char* instance_label, int connected_peers) {
+  return instance_label != nullptr && *instance_label != '\0' && connected_peers > 0;
+}
+
+inline int LocalInstanceLimiterRate(int fps) {
+  return std::min(LimiterRate(fps), kLocalInstanceRate);
+}
+
+// DEBUG_SAULO
+inline std::string LocalInstancePacingLine(bool active, int fps) {
+  const std::string requested = fps == kFrameRateUnlimited ? "unlimited" : std::to_string(fps);
+  const std::string effective = active ? std::to_string(LocalInstanceLimiterRate(fps)) : requested;
+  return std::string("[DEBUG_SAULO][ONLINE-PACING] local_multi_instance=") + (active ? "yes" : "no") + " requested=" + requested +
+         " effective=" + effective;
+}
+
 using LimiterClock = std::chrono::steady_clock;
 
 inline LimiterClock::duration FramePeriod(int fps) {
@@ -106,5 +126,6 @@ int ConfiguredFrameRate();
 
 // Called on every guest VdSwap: waits for the next frame time of the selected rate.
 void PaceGuestFrame();
+void SetLocalInstancePacing(bool active);
 
 }  // namespace eck

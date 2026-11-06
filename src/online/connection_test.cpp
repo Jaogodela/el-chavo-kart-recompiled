@@ -23,7 +23,7 @@ constexpr char kNotReachable[] = "Cannot reach the online service. Check your in
 std::string MaskedIp(uint32_t ip) { return std::to_string(ip >> 24) + ".x.x.x"; }
 std::string MaskedEndpoint(const net::Endpoint& endpoint) { return MaskedIp(endpoint.ip) + ":" + std::to_string(endpoint.port); }
 
-constexpr char kVerifiedInMatch[] = " Direct peer connectivity will be verified when joining a room.";
+constexpr char kVerifiedInMatch[] = " Direct peer connectivity will be verified when joining a race.";
 
 struct ServiceProbe {
   bool ok = false;
@@ -306,7 +306,7 @@ ConnectionReport SummarizeConnection(const ConnectionFacts& f) {
       }
     }
     line(Mark::kOk, "Relay",
-         Tr("Available. A room that cannot connect directly connects through the online service."));
+         Tr("Available. A race that cannot connect directly connects through the online service."));
   }
   if (f.udp_ok && f.second_answer && !f.same_mapping && !f.public_address) {
     r.details.push_back("NAT: another public port per destination (symmetric NAT)");
@@ -314,8 +314,8 @@ ConnectionReport SummarizeConnection(const ConnectionFacts& f) {
     r.details.push_back("NAT: type unknown, only one STUN server answered");
   }
   if (f.udp_ok) {
-    r.details.push_back(relay ? "peer: direct UDP is only proven by a room's punch; without it the path is relayed"
-                              : "peer: direct UDP is only proven by a room's punch; there is no relay");
+    r.details.push_back(relay ? "peer: direct UDP is only proven by a session's punch; without it the path is relayed"
+                              : "peer: direct UDP is only proven by a session's punch; there is no relay");
   }
   r.details.push_back(relay ? "relay: available" : f.relay_ok ? "relay: needs the UDP port" : "relay: not offered by the service");
   r.details.push_back(f.router == Router::kMapped ? "router: UPnP mapping made"

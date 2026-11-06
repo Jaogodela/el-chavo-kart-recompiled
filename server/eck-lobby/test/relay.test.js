@@ -21,8 +21,8 @@ test('hello answers with the service capabilities', () => {
   assert.deepEqual(reply.capabilities, CAPABILITIES);
   assert.deepEqual(CAPABILITIES, {
     protocol_version: PROTOCOL_VERSION, worker_build: CAPABILITIES.worker_build, public_endpoints: true, relay_supported: true,
-    relay_max_payload: RELAY.maxPayload, min_players: 2, max_players: 4, four_player_rooms: true, seat_routing: true,
-    race_telemetry: true,
+    relay_max_payload: RELAY.maxPayload, min_players: 2, max_players: 4, four_player_rooms: true, room_reopen: true, seat_routing: true,
+    race_telemetry: true, character_picks: true,
   });
 });
 

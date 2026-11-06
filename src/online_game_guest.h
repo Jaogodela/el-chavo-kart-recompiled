@@ -63,6 +63,12 @@ inline constexpr uint32_t kNetRecvFrom = 0x82B74A68;
 inline constexpr uint32_t kActorConsoleCommand = 0x826A1F30;
 // CRT srand(seed): stores the seed in the per-thread data that rand() (0x830B53E0) steps.
 inline constexpr uint32_t kCrtSrand = 0x830B53B0;
+inline constexpr uint32_t kMovieActionScriptVoid = 0x829B1990;
+inline constexpr uint32_t kInputGetState = 0x830D9E00;  // title stub of XamInputGetState(user, flags, *state)
+inline constexpr uint32_t kEngineTick = 0x825A4D98;
+// The ExternalInterface handler, slot 1 of the vtable at 0x8222E700: (this, movie view, method, GFxValue args, count).
+inline constexpr uint32_t kMovieExternalCall = 0x829A1FA0;
+inline constexpr uint32_t kFarMoveActor = 0x825D4E10;
 
 // XGI message ids the session wrappers send.
 inline constexpr uint32_t kMsgSessionCreate = 0x000B0010;
@@ -133,6 +139,11 @@ inline constexpr std::array kSocketFingerprints = {
 inline constexpr std::array kRaceFingerprints = {
     CodeFingerprint{"ActorConsoleCommand", kActorConsoleCommand, {0x7D8802A6, 0x48A18E91, 0x9421FF20, 0x7C771B78}},
     CodeFingerprint{"CrtSrand", kCrtSrand, {0x7D8802A6, 0x9181FFF8, 0xFBE1FFF0, 0x9421FFA0}},
+    CodeFingerprint{"MovieActionScriptVoid", kMovieActionScriptVoid, {0x7D8802A6, 0x48709445, 0x9421FF50, 0x7C7F1B78}},
+    CodeFingerprint{"InputGetState", kInputGetState, {0x48400924, 0x00000000, 0x7D8802A6, 0x9181FFF8}},
+    CodeFingerprint{"EngineTick", kEngineTick, {0x7D8802A6, 0x48B16009, 0xDBC1FF60, 0xDBE1FF68}},
+    CodeFingerprint{"MovieExternalCall", kMovieExternalCall, {0x7D8802A6, 0x48718E1D, 0x3BE1FF10, 0x9421FF10}},
+    CodeFingerprint{"FarMoveActor", kFarMoveActor, {0x7D8802A6, 0x48AE5FB5, 0xDBA1FFA0, 0xDBC1FFA8}},
 };
 
 // `memory` holds the guest image starting at guest address `memory_base`. Returns nullptr when every function matches,

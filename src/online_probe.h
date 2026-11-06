@@ -127,6 +127,8 @@ void OnOnlineRaceStartBlocked(std::string_view reason);
 // AActor::ConsoleCommand entry: `fstring` is the guest address of the FString (data ptr, num incl. NUL, max), UTF-16 BE.
 // Reads it without consuming anything and logs it only when it is a race start URL.
 void OnConsoleCommand(const uint8_t* base, uint32_t fstring, uint32_t self, uint32_t caller);
+// The session seat of each human kart slot of the race about to load, -1 for none.
+void SetRaceSeats(const std::array<int, 4>& seats);
 void OnSeed(uint32_t seed, uint32_t caller);
 std::string XboxContext();  // "t_ms=.. phase=conn:../room:.. seat=.."
 void NoteUe3Api(Ue3Api api);

@@ -17,7 +17,6 @@
 #include "online_game_guest.h"
 #include "online_guest_reader.h"
 #include "online_probe_layout.h"
-#include "online_start_race.h"
 #include "online_race_url.h"
 #include "online_runtime.h"
 
@@ -34,6 +33,7 @@ std::atomic<uint64_t> g_ue3[size_t(Ue3Api::kCount)];
 std::atomic<uint32_t> g_phase{0xFFFFFFFFu};  // connection | room state << 8 | (seat + 1) << 16
 std::atomic<int> g_url_humans{-1};
 std::atomic<int> g_url_total{-1};
+std::array<std::atomic<int>, 4> g_slot_seats{-1, -1, -1, -1};
 
 bool DebugOn() {
   static const bool on = online_guest::EnvOn(std::getenv(online_guest::kDebugEnv));
@@ -83,7 +83,16 @@ struct PawnView {
   int local_slot = -1;  // index in GamePlayers when a local player owns the controller
 };
 
-void PollSlots(const Guest& g, std::vector<PawnView>* pawns, std::vector<uint32_t>* controllers) {
+int OwnPad(const Guest& g) {
+  const uint32_t world = g.P(lay::kGWorld);
+  const uint32_t level = world != 0 ? g.P(world + lay::kWorldLevel) : 0;
+  const uint32_t actors = level != 0 ? g.P(level + lay::kLevelActors) : 0;
+  const uint32_t info = actors != 0 ? g.P(actors) : 0;
+  const uint32_t game = info != 0 ? g.P(info + lay::kWorldGame) : 0;
+  return game != 0 ? g.I32(game + lay::kGamePrimaryController) : -1;
+}
+
+void PollSlots(const Guest& g, std::vector<PawnView>* pawns, std::vector<uint32_t>* controllers, int* owned_slot) {
   const uint32_t engine = g.P(lay::kGEngine);
   if (engine == 0) {
     OnChange("engine", "engine=none");
@@ -102,13 +111,18 @@ void PollSlots(const Guest& g, std::vector<PawnView>* pawns, std::vector<uint32_
     const uint32_t info = pawn != 0 ? g.P(pawn + lay::kKartCharInfo) : 0;
     const int character = info != 0 ? int(g.U8(info + lay::kCharInfoType)) : -1;
     const bool racing_ai = pawn != 0 && (g.P(pawn + lay::kKartFlags1) >> lay::kKartRacingAiBit & 1) != 0;
-    char text[200];
+    const bool owned = user == OwnPad(g);
+    char text[220];
     std::snprintf(text, sizeof text,
-                  "slot=%u user=%d human=%s controller=%s kart=%s character=%d racing_ai=%s role=local", i, user,
-                  pc != 0 ? "yes" : "no", pc != 0 ? Hex(pc).c_str() : "no", pawn != 0 ? Hex(pawn).c_str() : "none",
-                  character, racing_ai ? "yes" : "no");
+                  "slot=%u seat=%d user=%d human=%s controller=%s kart=%s character=%d racing_ai=%s role=%s", i,
+                  i < g_slot_seats.size() ? g_slot_seats[i].load() : -1, user, pc != 0 ? "yes" : "no",
+                  pc != 0 ? Hex(pc).c_str() : "no", pawn != 0 ? Hex(pawn).c_str() : "none", character,
+                  racing_ai ? "yes" : "no", owned ? "local" : "remote_designated");
     OnChange("slot" + std::to_string(i), text);
-    if (pc != 0) controllers->push_back(pc);
+    if (pc != 0) {
+      if (owned) *owned_slot = int(controllers->size());
+      controllers->push_back(pc);
+    }
   }
 
   // Every pawn of the world.
@@ -159,13 +173,14 @@ void Poll(double now) {
   const Guest g;
   std::vector<PawnView> pawns;
   std::vector<uint32_t> controllers;
-  PollSlots(g, &pawns, &controllers);
+  int owned_slot = -1;
+  PollSlots(g, &pawns, &controllers, &owned_slot);
 
   const PawnView* local = nullptr;
   const PawnView* remote = nullptr;
   for (const PawnView& view : pawns) {
-    if (view.local_slot == 0) local = &view;
-    if (view.local_slot < 0 && (remote == nullptr || g.I32(view.pawn + lay::kKartIdPawn) < g.I32(remote->pawn + lay::kKartIdPawn))) {
+    if (view.local_slot >= 0 && view.local_slot == owned_slot) local = &view;
+    if (view.local_slot >= 0 && view.local_slot != owned_slot && (remote == nullptr || g.I32(view.pawn + lay::kKartIdPawn) < g.I32(remote->pawn + lay::kKartIdPawn))) {
       remote = &view;
     }
   }
@@ -187,8 +202,9 @@ void Poll(double now) {
   const int my_seat = PhaseSeat();
   for (const PawnView& view : pawns) {
     const int id = g.I32(view.pawn + lay::kKartIdPawn);
+    const int slot_seat = view.local_slot >= 0 && size_t(view.local_slot) < g_slot_seats.size() ? g_slot_seats[size_t(view.local_slot)].load() : -1;
     const std::string who = std::string("kart=") + std::to_string(id) +
-                            (view.local_slot >= 0 ? " seat=" + std::to_string(my_seat < 0 ? view.local_slot : my_seat) : "");
+                            (view.local_slot >= 0 ? " seat=" + std::to_string(slot_seat >= 0 ? slot_seat : my_seat) : "");
     const uint32_t node = g.P(view.pawn + lay::kKartCurrentPathNode);
     const std::string progress = who + " lap=" + std::to_string(g.I32(view.pawn + lay::kKartCompletedLaps)) +
                                  " checkpoint=" + Hex(node) + " place=" +
@@ -279,32 +295,11 @@ void OnSeed(uint32_t seed, uint32_t caller) {
   Race("seed=" + Hex(seed) + " srand_caller=" + Hex(caller));
 }
 
-namespace {
-
-// Routes the room menu's Start Race through the probes so the dry-run and the UE3 summary come from one place.
-void InstallStartRaceSeam() {
-  online_start::SetStartRaceHook([](const online_start::Plan& plan) -> std::optional<online_start::Verdict> {
-    if (!online_start::DebugEnabled()) return std::nullopt;
-    RaceStartPlan probe_plan;
-    probe_plan.host_seat = 0;
-    probe_plan.local_seat = plan.local_seat;
-    probe_plan.track = plan.config.track == online_start::kUnknownTrack ? 0 : plan.config.track;
-    probe_plan.laps = plan.config.laps;
-    probe_plan.total_karts = plan.config.total_karts;
-    probe_plan.participants = plan.config.participants;
-    OnOnlineRaceStartRequested(probe_plan);
-    online_start::Verdict verdict;
-    verdict.dry_run = true;
-    verdict.reason = online_start::kUnprovenReason;
-    return verdict;
-  });
+void SetRaceSeats(const std::array<int, 4>& seats) {
+  for (size_t slot = 0; slot < seats.size(); ++slot) g_slot_seats[slot].store(seats[slot]);
 }
 
-}  // namespace
-
 void PumpGuestProbes(double now_seconds) {
-  static const bool seam_installed = (InstallStartRaceSeam(), true);
-  (void)seam_installed;
   if (!DebugOn()) return;
   static double next = 0;
   if (now_seconds < next) return;

@@ -1,6 +1,15 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
+
+#include <rex/ppc/func.h>
+
+
 namespace eck {
+
+// Runs on the game thread between two engine ticks, where a console command can start a travel.
+void OnlineEngineTick(PPCContext& ctx, uint8_t* base);
 
 // DEBUG_SAULO: records at startup that the online guest hooks are part of this build and which developer switches are
 // set.

@@ -30,7 +30,7 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
     catch { $Failures.Add("${Name}: $($_.Exception.Message)"); Write-Host "  FAILED: $($_.Exception.Message)" -ForegroundColor Red }
 }
 
-if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_frame_limiter_tests eck_debug_telemetry_tests eck_input_focus_tests eck_main_menu_tests eck_online_identity_tests eck_online_protocol_tests eck_online_peer_tests eck_online_service_tests eck_online_launcher_tests eck_online_race_tests eck_online_race_telemetry_tests eck_online_menu_tests eck_online_probe_tests' -match $Filter) {
+if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_frame_limiter_tests eck_debug_telemetry_tests eck_input_focus_tests eck_main_menu_tests eck_online_identity_tests eck_online_protocol_tests eck_online_peer_tests eck_online_service_tests eck_online_session_tests eck_online_lobby_tests eck_online_race_sync_tests eck_online_launcher_tests eck_online_race_tests eck_online_race_telemetry_tests eck_online_menu_tests eck_online_probe_tests' -match $Filter) {
     Test-Step 'Console tests (tests\CMakeLists.txt)' {
         $Toolchain = Get-BuildToolchain
         $SavedEnv = Save-BuildEnvironment
@@ -43,13 +43,41 @@ if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tes
             & $Toolchain.CMake --build $BuildDir | Out-Host
             if ($LASTEXITCODE) { throw "Test build failed ($LASTEXITCODE)" }
         } finally { Restore-BuildEnvironment $SavedEnv }
-        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests', 'eck_input_focus_tests', 'eck_main_menu_tests', 'eck_online_identity_tests', 'eck_online_protocol_tests', 'eck_online_peer_tests', 'eck_online_service_tests', 'eck_online_launcher_tests', 'eck_online_race_tests', 'eck_online_race_telemetry_tests', 'eck_online_menu_tests', 'eck_online_probe_tests')) {
+        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests', 'eck_input_focus_tests', 'eck_main_menu_tests', 'eck_online_identity_tests', 'eck_online_protocol_tests', 'eck_online_peer_tests', 'eck_online_service_tests', 'eck_online_session_tests', 'eck_online_lobby_tests', 'eck_online_race_sync_tests', 'eck_online_launcher_tests', 'eck_online_race_tests', 'eck_online_race_telemetry_tests', 'eck_online_menu_tests', 'eck_online_probe_tests')) {
             if ($Filter -and $name -notmatch $Filter) { continue }
             $exe = Join-Path $BuildDir "$name.exe"
             Write-Host "Running $name..."
             & $exe | Out-Host
             if ($LASTEXITCODE) { throw "$name failed ($LASTEXITCODE)" }
         }
+    }
+}
+
+if (-not $Filter -or 'online-instance-logs' -match $Filter) {
+    Test-Step 'Online instances keep the original log name' {
+        $app = Get-Content -Raw -LiteralPath (Join-Path $Root 'src\el_chavo_kart_app.h')
+        if ($app -notmatch 'new ElChavoKartApp\(ctx, "el_chavo_kart"') { throw 'the log basename is no longer el_chavo_kart' }
+        $script = Join-Path $PSScriptRoot 'online-instance.ps1'
+        if ((Get-Content -Raw -LiteralPath $script) -notmatch [regex]::Escape('$env:ECK_INSTANCE = $label')) { throw 'ECK_INSTANCE is no longer set' }
+        $temp = Join-Path ([IO.Path]::GetTempPath()) "eck-instances-$([Guid]::NewGuid().ToString('N'))"
+        try {
+            $next = {
+                param($Name)
+                $text = (& $script -Name $Name -PrepareOnly -InstanceRoot $temp -CopyFrom $temp 6>&1 | ForEach-Object { "$_" }) -join "`n"
+                if ($text -notmatch 'log file:\s+(.+)') { throw "no log file reported for instance $Name" }
+                $Matches[1].Trim()
+            }
+            foreach ($name in 'a', 'b') {
+                $first = & $next $name
+                $expected = [IO.Path]::Combine($temp, $name, 'logs', 'el_chavo_kart_001.log')
+                if ($first -ne $expected) { throw "instance ${name}: $first" }
+                Set-Content -LiteralPath $first -Value ''
+                Set-Content -LiteralPath (Join-Path (Split-Path $first) "eck_${name}_009.log") -Value ''
+                $second = Split-Path -Leaf (& $next $name)
+                if ($second -ne 'el_chavo_kart_002.log') { throw "instance ${name}: $second" }
+            }
+            Write-Host 'Instances a and b: el_chavo_kart_NNN.log in their own folders, ECK_INSTANCE kept.'
+        } finally { if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force } }
     }
 }
 

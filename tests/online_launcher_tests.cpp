@@ -78,7 +78,7 @@ void TestPingText() {
 
 void TestLocalization() {
   const eck::TextPackage packages[] = {eck::TextPackage::kInt, eck::TextPackage::kEsm, eck::TextPackage::kEsn, eck::TextPackage::kPtb};
-  Check(std::size(eck::kOnlineStrings) == 25, "all 25 online strings are listed");
+  Check(std::size(eck::kOnlineStrings) == 22, "all 22 online strings are listed");
   for (const eck::OnlineString& row : eck::kOnlineStrings) {
     for (const eck::TextPackage package : packages) {
       const char* text = eck::OnlineText(row.key, package);
@@ -86,10 +86,10 @@ void TestLocalization() {
     }
     Check(std::strcmp(eck::OnlineText(row.key, eck::TextPackage::kPtb), row.ptb) == 0, "ptb lookup");
   }
-  Check(std::strcmp(eck::OnlineText("Create Room", eck::TextPackage::kInt), "Create Room") == 0, "INT is the English text");
-  Check(std::strcmp(eck::OnlineText("Create Room", eck::TextPackage::kEsm), "Crear sala") == 0, "ESM");
+  Check(std::strcmp(eck::OnlineText("Invite Player", eck::TextPackage::kInt), "Invite Player") == 0, "INT is the English text");
+  Check(std::strcmp(eck::OnlineText("Invite Player", eck::TextPackage::kEsm), "Invitar jugador") == 0, "ESM");
   Check(std::strcmp(eck::OnlineText("Player left", eck::TextPackage::kEsn), "Un jugador se ha marchado") == 0, "ESN differs from ESM");
-  Check(std::strcmp(eck::OnlineText("Start Race", eck::TextPackage::kPtb), "Iniciar corrida") == 0, "PTB");
+  Check(std::strcmp(eck::OnlineText("Invite Player", eck::TextPackage::kPtb), "Convidar jogador") == 0, "PTB");
   Check(std::strcmp(eck::OnlineText("Unknown text", eck::TextPackage::kPtb), "Unknown text") == 0, "an unknown key is unchanged");
   Check(eck::PackageForLanguage("pt-BR") == eck::TextPackage::kPtb && eck::PackageForLanguage("es-MX") == eck::TextPackage::kEsm &&
             eck::PackageForLanguage("es-ES") == eck::TextPackage::kEsn && eck::PackageForLanguage("en-US") == eck::TextPackage::kInt,

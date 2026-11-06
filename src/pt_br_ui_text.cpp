@@ -224,7 +224,7 @@ A  OK     B  Close	A  OK     B  Fechar
 Online	Online
 Online play, friends and the connection test.	Jogo online, amigos e o teste de conexão.
 Online play	Jogo online
-Lets you create and join rooms of 2 to 4 players with your friends. Players meet through the online service; the race itself runs directly between your PCs.	Permite criar salas e entrar em salas de 2 a 4 jogadores com seus amigos. Os jogadores se encontram pelo serviço online; a corrida roda direto entre os seus PCs.
+Lets you race with up to 3 invited friends. Players meet through the online service; the race itself runs directly between your PCs.	Permite correr com até 3 amigos convidados. Os jogadores se encontram pelo serviço online; a corrida em si roda diretamente entre os seus PCs.
 Online name	Nome online
 What other players see: up to 16 letters, digits, - or _.	O que os outros jogadores veem: até 16 letras, números, - ou _.
 Other players see 	Os outros jogadores veem
@@ -260,13 +260,12 @@ Remove	Remover
 That is not a valid friend code.	Esse não é um código de amigo válido.
 No friends yet. Add someone with their friend code.	Nenhum amigo ainda. Adicione alguém com o código de amigo dele.
 Cannot reach the online service right now. Run the Connection test for details.	Não foi possível alcançar o serviço online agora. Faça o teste de conexão para ver os detalhes.
-Create Room	Criar sala
-Find Room	Procurar sala
-Invite Friends	Convidar amigos
+Invite Player	Convidar jogador
 Start Race	Iniciar corrida
-Leave Room	Sair da sala
+Leave	Sair
 Waiting for players	Aguardando jogadores
-Room full	Sala cheia
+Waiting for host	Aguardando host
+Race full	Corrida cheia
 Player left	Jogador saiu
 Connection lost	Conexão perdida
 Unable to connect	Não foi possível conectar
@@ -277,7 +276,7 @@ Hosting	Hospedando
 In game	No jogo
 Offline	Offline
  joined.	 entrou.
- invited you to a room.	 convidou você para uma sala.
+ invited you to a race.	 convidou você para uma corrida.
 Friend request sent.	Pedido de amizade enviado.
 You are now friends.	Vocês agora são amigos.
 Already friends.	Já são amigos.
@@ -285,12 +284,12 @@ Friend request already pending.	Pedido de amizade já pendente.
 That is your own friend code.	Esse é o seu próprio código de amigo.
 Not connected to the online service.	Sem conexão com o serviço online.
 Online identity is unavailable.	A identidade online não está disponível.
-The host closed the room.	O anfitrião fechou a sala.
-The room expired.	A sala expirou.
+The host left the race.	O anfitrião saiu da corrida.
+The race expired.	A corrida expirou.
 No player has that friend code.	Nenhum jogador tem esse código de amigo.
 That player is not your friend.	Esse jogador não é seu amigo.
 Your friend is not online.	Seu amigo não está online.
-One of you is already in a room.	Um de vocês já está em uma sala.
+One of you is already in a race.	Um de vocês já está em uma corrida.
 The race has already started.	A corrida já começou.
 Too many requests. Try again in a moment.	Muitos pedidos. Tente novamente em instantes.
 The online service needs a different version of the game.	O serviço online precisa de outra versão do jogo.
@@ -303,6 +302,7 @@ Direct connections	Conexões diretas
 Router configuration	Configuração do roteador
 Your online identity could not be created.	Não foi possível criar a sua identidade online.
 Cannot reach the online service. Check your internet connection.	Não foi possível alcançar o serviço online. Verifique sua conexão com a internet.
+Connected	Conectado
 Connected.	Conectado.
 Connected · 	Conectado ·
  ms	 ms
@@ -315,11 +315,11 @@ May be blocked by your network or firewall	Pode estar bloqueado pela sua rede ou
 UDP endpoint available	Endpoint UDP disponível
 UDP endpoint available through your router	Endpoint UDP disponível pelo seu roteador
 , but your network's NAT type could not be confirmed (only one STUN server answered).	, mas o tipo de NAT da sua rede não pôde ser confirmado (apenas um servidor STUN respondeu).
- Direct peer connectivity will be verified when joining a room.	 A conectividade direta com os outros jogadores será verificada ao entrar em uma sala.
+ Direct peer connectivity will be verified when joining a race.	 A conectividade direta com os outros jogadores será verificada ao entrar em uma sala.
 Your router may stop some players from connecting to you.	Seu roteador pode impedir que alguns jogadores se conectem a você.
 Another router is in front of yours (often your provider's), so it cannot be opened automatically.	Há outro roteador na frente do seu (geralmente o do provedor), por isso ele não pode ser aberto automaticamente.
 Automatic setup is not available on your router.	A configuração automática não está disponível no seu roteador.
-Available. A room that cannot connect directly connects through the online service.	Disponível. Uma sala que não consegue conectar diretamente conecta pelo serviço online.
+Available. A race that cannot connect directly connects through the online service.	Disponível. Uma sala que não consegue conectar diretamente conecta pelo serviço online.
 Ready for online play	Pronto para jogar online
 Limited: the multiplayer UDP port could not be opened	Limitado: não foi possível abrir a porta UDP do multijogador
 Probably ready: your network's NAT type could not be fully tested	Provavelmente pronto: o tipo de NAT da sua rede não pôde ser totalmente testado

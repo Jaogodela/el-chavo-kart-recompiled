@@ -98,7 +98,6 @@ test('a 3 player room over real WebSockets: friends, search, join, endpoints, re
   const room = hosted.room.room;
   await b.call('match.endpoint', { room, port: 7002, lan: ['127.0.0.1'] });
   assert.equal((await a.next((m) => m.ev === 'match.peer')).seat, 1);
-  assert.equal((await c.next((m) => m.ev === 'match.peer')).seat, 1);
 
   const token = hosted.relay_token;
   const toAll = encodeRelayFrame(token, 1, RELAY.broadcast, Uint8Array.from([1, 2, 3]));

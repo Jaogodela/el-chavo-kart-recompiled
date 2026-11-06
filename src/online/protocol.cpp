@@ -177,35 +177,15 @@ std::optional<RoomView> ReadRoom(const json::Value* v) {
     seat.platform = StringOf(row.Find("platform"));
     seat.version = StringOf(row.Find("version"));
     seat.transport = PathOf(StringOf(row.Find("transport")));
+    const int pick = IntOf(row.Find("pick"));
+    const int character = IntOf(row.Find("character"));
+    if (pick > 0 && pick <= int(PickState::kConfirmed) && character >= 0 && character < kCharacters) {
+      seat.pick = PickState(pick);
+      seat.character = character;
+    }
     room.seats.push_back(std::move(seat));
   }
   return room;
-}
-
-std::optional<RoomAd> ReadRoomAd(const json::Value& row) {
-  if (!row.IsObject()) return std::nullopt;
-  RoomAd ad;
-  ad.handle = StringOf(row.Find("handle"));
-  ad.host = StringOf(row.Find("host"));
-  ad.host_name = StringOf(row.Find("host_name"));
-  ad.players = IntOf(row.Find("players"));
-  ad.capacity = IntOf(row.Find("capacity"));
-  ad.rules = ReadRules(row.Find("rules"));
-  ad.platform = StringOf(row.Find("platform"));
-  ad.version = StringOf(row.Find("version"));
-  if (ad.handle.empty() || ad.host.empty()) return std::nullopt;
-  return ad;
-}
-
-std::optional<std::vector<RoomAd>> ReadRoomAds(const json::Value* v) {
-  if (!v || !v->IsArray()) return std::nullopt;
-  std::vector<RoomAd> out;
-  for (const json::Value& row : v->AsArray()) {
-    std::optional<RoomAd> ad = ReadRoomAd(row);
-    if (!ad) return std::nullopt;
-    out.push_back(std::move(*ad));
-  }
-  return out;
 }
 
 std::optional<Invite> ReadInvite(const json::Value* v) {
@@ -239,6 +219,7 @@ ServiceCapabilities ReadCapabilities(const json::Value& v) {
   caps.four_player_rooms = BoolOf(v.Find("four_player_rooms"), false);
   caps.seat_routing = BoolOf(v.Find("seat_routing"), false);
   caps.race_telemetry = BoolOf(v.Find("race_telemetry"), false);
+  caps.room_reopen = BoolOf(v.Find("room_reopen"), false);
   return caps;
 }
 
@@ -268,7 +249,6 @@ std::optional<ServerMessage> DecodeServerMessage(std::string_view text) {
     message.invite_expires = Int64Of(root->Find("expires"));
     message.server_time = Int64Of(root->Find("time"));
     message.resume = StringOf(root->Find("resume"));
-    message.rooms = ReadRoomAds(root->Find("rooms"));
     message.friends = ReadFriends(root->Find("friends"));
     message.incoming = ReadRequests(root->Find("incoming"));
     message.outgoing = ReadRequests(root->Find("outgoing"));
@@ -391,20 +371,14 @@ std::string EncodeRoomHost(int seq, int capacity, const RoomRules& rules) {
   return Envelope("room.host", seq, ",\"capacity\":" + std::to_string(capacity) + ",\"rules\":" + RulesJson(rules));
 }
 
-std::string EncodeRoomUpdate(int seq, const std::string& room, int capacity, const RoomRules* rules) {
-  std::string more;
-  if (capacity >= 0) more += ",\"capacity\":" + std::to_string(capacity);
-  if (rules) more += ",\"rules\":" + RulesJson(*rules);
-  return WithRoom("room.update", seq, room, more);
+std::string EncodeRoomUpdate(int seq, const std::string& room, const RoomRules& rules) {
+  return WithRoom("room.update", seq, room, ",\"rules\":" + RulesJson(rules));
 }
-
-std::string EncodeRoomCancel(int seq, const std::string& room) { return WithRoom("room.cancel", seq, room); }
 std::string EncodeRoomLeave(int seq, const std::string& room) { return WithRoom("room.leave", seq, room); }
-std::string EncodeRoomSearch(int seq) { return Envelope("room.search", seq); }
-std::string EncodeRoomJoin(int seq, const std::string& handle) {
-  return Envelope("room.join", seq, ",\"handle\":" + Quote(handle));
-}
 std::string EncodeRoomStart(int seq, const std::string& room) { return WithRoom("room.start", seq, room); }
+std::string EncodeRoomReopen(int seq, const std::string& room, const RoomRules& rules) {
+  return WithRoom("room.reopen", seq, room, ",\"rules\":" + RulesJson(rules));
+}
 
 std::string EncodeInviteSend(int seq, const std::string& player) { return WithPlayer("invite.send", seq, player); }
 std::string EncodeInviteAccept(int seq, const std::string& invite) {
@@ -431,6 +405,10 @@ std::string EncodeMatchEndpoint(int seq, const std::string& room, const Endpoint
   return WithRoom("match.endpoint", seq, room,
                   ",\"port\":" + std::to_string(e.port) + ",\"lan\":" + lan + mapped + ",\"candidates\":" + candidates +
                       ",\"relay\":" + (e.relay ? "true" : "false"));
+}
+
+std::string EncodeMatchPick(int seq, const std::string& room, PickState pick, int character) {
+  return WithRoom("match.pick", seq, room, ",\"pick\":" + std::to_string(int(pick)) + ",\"character\":" + std::to_string(character));
 }
 
 std::string EncodeMatchReady(int seq, const std::string& room, bool ready) {
@@ -492,8 +470,8 @@ std::string DescribeServiceError(const std::string& code) {
   if (code == "not_found") return Tr("No player has that friend code.");
   if (code == "not_friends") return Tr("That player is not your friend.");
   if (code == "offline") return Tr("Your friend is not online.");
-  if (code == "busy") return Tr("One of you is already in a room.");
-  if (code == "room_full") return Tr("Room full");
+  if (code == "busy") return Tr("One of you is already in a race.");
+  if (code == "room_full") return Tr("Race full");
   if (code == "room_not_open") return Tr("The race has already started.");
   if (code == "need_players") return Tr("Waiting for players");
   if (code == "bad_request") return Tr("That is not a valid friend code.");

@@ -1,9 +1,8 @@
 #pragma once
 
 // Guest object layout the race probes and race telemetry read. Offsets are computed from the cooked property chains
-// (declaration order, UnrealScript alignment rules, Object = 0x3C bytes). Cross-checked against code only for
-// Pawn.Controller (0x1E4, APawn::IsHumanControlled), Engine.GamePlayers (0x4B4, UGameViewportClient::GetPlayerOwner)
-// and GEngine (0x83CE2624, UEngine::GetEngine). Every other offset is derived: the first runtime log decides.
+// (declaration order, UnrealScript alignment rules, Object = 0x3C bytes, an FQuat aligned to 16). The AKartPawn chain was
+// checked against a real race: KartSpeed equals the velocity's length, racingTime and SavedLocation hold their values.
 // Pure: no ReXGlue.
 
 #include <cstdint>
@@ -46,29 +45,41 @@ inline constexpr uint32_t kKartFlags1 = 0x494;  // bIsInitialized = bit 1, bIsRa
 inline constexpr uint32_t kKartFlags2 = 0x498;  // bGhostMode = bit 3, bIsRaceFinished = bit 21
 inline constexpr uint32_t kKartSteering = 0x544;
 inline constexpr uint32_t kKartSpeed = 0x564;
-inline constexpr uint32_t kKartDriftDirection = 0x5DC;
-inline constexpr uint32_t kKartDriftingElapsed = 0x5EC;
-inline constexpr uint32_t kKartBoostBar = 0x644;
-inline constexpr uint32_t kKartBoosterSpeed = 0x650;
-inline constexpr uint32_t kKartBoosterLevel = 0x654;
-inline constexpr uint32_t kKartCurrentPathNode = 0x674;
-inline constexpr uint32_t kKartDistanceInRace = 0x6E0;
-inline constexpr uint32_t kKartRacePosition = 0x6E8;
-inline constexpr uint32_t kKartRaceFinishPosition = 0x6F0;
-inline constexpr uint32_t kKartCompletedLaps = 0x6F4;
-inline constexpr uint32_t kKartRacingTime = 0x6F8;
-inline constexpr uint32_t kKartAccelInput = 0x720;
-inline constexpr uint32_t kKartBrakeInput = 0x728;
-inline constexpr uint32_t kKartTurnAxisInput = 0x72C;
-inline constexpr uint32_t kKartCharInfo = 0x834;
-inline constexpr uint32_t kKartIdPawn = 0x838;
+inline constexpr uint32_t kKartMovementQuat = 0x570;  // X, Y, Z, W: the heading the kart drives and the mesh follows
+inline constexpr uint32_t kKartDriftDirection = 0x5E0;
+inline constexpr uint32_t kKartDriftingElapsed = 0x5F0;
+inline constexpr uint32_t kKartBoostBar = 0x654;
+inline constexpr uint32_t kKartBoosterSpeed = 0x65C;
+inline constexpr uint32_t kKartBoosterLevel = 0x664;
+inline constexpr uint32_t kKartCurrentPathNode = 0x684;
+inline constexpr uint32_t kKartDistanceInRace = 0x708;
+inline constexpr uint32_t kKartRacePosition = 0x710;
+inline constexpr uint32_t kKartRaceFinishPosition = 0x718;
+inline constexpr uint32_t kKartCompletedLaps = 0x71C;
+inline constexpr uint32_t kKartRacingTime = 0x720;
+inline constexpr uint32_t kKartAccelInput = 0x748;
+inline constexpr uint32_t kKartBrakeInput = 0x750;
+inline constexpr uint32_t kKartTurnAxisInput = 0x754;
+inline constexpr uint32_t kKartCharInfo = 0x85C;
+inline constexpr uint32_t kKartIdPawn = 0x860;  // the kart's slot in the race URL, on every PC
+inline constexpr uint32_t kKartSize = 0x958;
+inline constexpr uint32_t kKartInitializedBit = 1;
 inline constexpr uint32_t kKartRacingAiBit = 22;
 inline constexpr uint32_t kKartRaceFinishedBit = 21;
 
 // KartCharacterInfo, KartPathNode, KartGame_MainGame
 inline constexpr uint32_t kCharInfoType = 0x1C4;  // byte
 inline constexpr uint32_t kPathNodeDistance = 0x290;  // PathDistance, float
-inline constexpr uint32_t kMainGameRaceState = 0x3D4;  // byte, EKartRaceState
+inline constexpr uint32_t kMainGameRaceState = 0x3E0;  // byte, EKartRaceState
+
+// KartScreen_PlayerSelectIndividual: a TMap is 60 bytes and a script delegate 12. ScanPanels still confirms them at runtime.
+inline constexpr uint32_t kPanelPad = 0x44C;     // ControlledById, followed by TheGame
+inline constexpr uint32_t kPanelParent = 0x498;  // ScreenParent
+inline constexpr uint32_t kPanelState = 0x49D;   // byte, EKartPlayerSelectIndividualState
+inline constexpr uint32_t kPanelCharacter = 0x4A8;
+
+// KartGame_Base
+inline constexpr uint32_t kGamePrimaryController = 0x390;
 
 inline constexpr const char* RaceStateName(unsigned state) {
   switch (state) {

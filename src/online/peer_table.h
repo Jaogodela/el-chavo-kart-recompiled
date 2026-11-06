@@ -43,9 +43,9 @@ struct PeerState {
   double probe_deadline = 0;
 };
 
-// Per-seat transport state of the current room, for a client at seat `my_seat`. Pure: no sockets, no clock of its
-// own. The host (seat 0) decides direct or relay for each peer; any other seat follows the host for the host's path
-// and decides on its own for the paths between two non-host seats.
+// Per-seat transport state of the current session, for a client at seat `my_seat`. Pure: no sockets, no clock of its
+// own. A star: the host (seat 0) has one path to each seat and decides direct or relay for each; any other seat has
+// only its path to the host and follows that decision.
 class PeerTable {
  public:
   void Begin(const std::string& room, int my_seat, bool relay_coordinated);
@@ -56,7 +56,10 @@ class PeerTable {
   bool host() const { return my_seat_ == 0; }
   bool relay_coordinated() const { return relay_coordinated_; }
   // The relay of this room stopped working: no more relay choices.
-  void SetRelayCoordinated(bool value) { relay_coordinated_ = value; }
+  void SetRelayCoordinated(bool value) {
+    relay_coordinated_ = value;
+    relay_paused_ = false;
+  }
   // The service link dropped: relay seats wait for the seat to be resumed, then choose again.
   void PauseRelay();
 
@@ -72,6 +75,10 @@ class PeerTable {
   void DirectFailed(int seat);
   // match.transport event: the host's choice for its path to this client.
   void HostAnnounced(PathKind kind);
+  // The service would not relay this seat.
+  void RelayRefused(int seat);
+  // The seat ran out of time to establish a path.
+  void Expire(int seat);
 
   // New choices since the last call.
   std::vector<PathChoice> Decide(double now);
@@ -80,7 +87,8 @@ class PeerTable {
   const std::vector<PeerState>& peers() const { return peers_; }
   // Every connected peer has a path (direct or relay).
   bool AllEstablished() const;
-  bool AnyFailed() const;
+  // Every peer is on a proven direct path: nothing here depends on the service.
+  bool AllDirect() const;
   // The seat whose proven direct endpoint is `endpoint`, or -1.
   int SeatOf(const Endpoint& endpoint) const;
   // The relay stopped: seats that used it have no path any more.
@@ -88,12 +96,15 @@ class PeerTable {
 
  private:
   PeerState* Mutable(int seat);
+  bool OnMyStar(int seat) const { return host() || seat == 0; }
   PeerState& Ensure(int seat);
-  bool RelayPossible(const PeerState& peer) const { return relay_coordinated_ && peer.relay_capable; }
+  // Until a peer's endpoint arrives its relay support is unknown: the service answers for it when the relay is chosen.
+  bool RelayPossible(const PeerState& peer) const { return relay_coordinated_ && (peer.relay_capable || !peer.endpoint_known); }
 
   std::string room_;
   int my_seat_ = -1;
   bool relay_coordinated_ = false;
+  bool relay_paused_ = false;
   std::vector<PeerState> peers_;
 };
 

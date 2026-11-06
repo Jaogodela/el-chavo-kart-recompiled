@@ -11,11 +11,8 @@ std::vector<InviteChoice> InviteChoices(const std::vector<Friend>& friends) {
   for (const Friend& f : friends) {
     InviteChoice choice{f.player, f.name, Tr("Offline"), false};
     if (f.online) {
-      const bool busy = f.state == FriendState::kHosting || f.state == FriendState::kConnecting ||
-                        f.state == FriendState::kInGame;
-      choice.status = f.state == FriendState::kHosting ? Tr("Hosting")
-                      : busy                           ? Tr("In game")
-                                                       : Tr("Online");
+      const bool busy = f.state == FriendState::kConnecting || f.state == FriendState::kInGame;
+      choice.status = busy ? Tr("In game") : Tr("Online");
       if (!f.compatible) choice.status = Tr("Version mismatch");
       choice.selectable = f.compatible && !busy;
     }
@@ -47,7 +44,7 @@ std::string SeatLine(const Seat& seat, const PeerSnapshot* peer) {
     return line + " (" + Tr("Connection lost") + ")";
   }
   if (peer && (peer->path == PeerPath::kDirect || peer->path == PeerPath::kRelay)) {
-    line += std::string(" (") + (peer->path == PeerPath::kDirect ? Tr("Direct") : Tr("Relay")) + ")";
+    line += std::string(" (") + Tr("Connected") + ")";
     if (peer->rtt_ms) line += " " + std::to_string(*peer->rtt_ms) + " ms";
   }
   return line;

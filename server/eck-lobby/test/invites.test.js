@@ -180,16 +180,18 @@ test('only online, compatible friends who are free can be invited, only by the h
   assert.equal(room.length, 16);
 });
 
-test('accepting while already in another room is refused and the invite stays valid', () => {
+test('accepting while seated with other players is refused and the invite stays valid', () => {
   const env = makeHub();
-  const { host, friends } = hostWithFriends(env, 1);
-  const other = greeted(env, 70);
-  befriend(other, friends[0]);
-  const sent = host.call('invite.send', { player: friends[0].who.player });
-  friends[0].call('room.host', {});
-  assert.equal(friends[0].call('invite.accept', { invite: sent.invite }).code, 'busy');
-  assert.equal(friends[0].call('room.cancel', { room: env.hub.roomOfPlayer(friends[0].who.player).id }).code, 'ok');
-  assert.equal(friends[0].call('invite.accept', { invite: sent.invite }).code, 'ok');
+  const { host, friends } = hostWithFriends(env, 2);
+  const [first, second] = friends;
+  const sent = host.call('invite.send', { player: first.who.player });
+  befriend(first, second);
+  first.call('room.host', {});
+  const own = first.call('invite.send', { player: second.who.player });
+  assert.equal(second.call('invite.accept', { invite: own.invite }).code, 'ok');
+  assert.equal(first.call('invite.accept', { invite: sent.invite }).code, 'busy');
+  assert.equal(first.call('room.cancel', { room: env.hub.roomOfPlayer(first.who.player).id }).code, 'ok');
+  assert.equal(first.call('invite.accept', { invite: sent.invite }).code, 'ok');
 });
 
 test('a target that goes offline drops its invites quietly', () => {

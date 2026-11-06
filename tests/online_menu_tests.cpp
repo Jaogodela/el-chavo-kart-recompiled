@@ -1,8 +1,11 @@
-// The Online menu model (src/online_menu.h) and the Start Race seam (src/online_start_race.h) against a scripted service.
+// Online on the character screen (src/online_menu.h, src/online_character_select.h) against a scripted service.
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "online_character_select.h"
 #include "online_menu.h"
 #include "online_test_support.h"
 
@@ -49,611 +52,696 @@ online::Friend MakeFriend(const std::string& code, const std::string& name, onli
   return f;
 }
 
+online::PeerSnapshot Peer(int seat, online::PeerPath path) {
+  online::PeerSnapshot peer;
+  peer.seat = seat;
+  peer.connected = true;
+  peer.path = path;
+  return peer;
+}
+
 // A service that does what the real one does to the snapshot, and counts what the menu asks of it.
 class FakeApi final : public Api {
  public:
   online::Snapshot snap;
-  int creates = 0, searches = 0, joins = 0, starts = 0, leaves = 0, invites_sent = 0, accepts = 0, declines = 0;
-  int last_capacity = 0;
-  online::RoomRules last_rules;
-  std::string last_join, last_invite, last_accept;
-  bool accept_ok = true;
+  int invites_sent = 0, accepts = 0, declines = 0;
+  std::string last_invite, last_accept;
+  bool invite_ok = true;
+  bool answers_later = false;
+  std::optional<online::RoomRules> last_rules;
 
   FakeApi() { snap.connection = online::Connection::kOnline; }
 
   online::Snapshot Snapshot() override { return snap; }
-  bool CreateRoom(int capacity, const online::RoomRules& rules) override {
-    ++creates;
-    last_capacity = capacity;
-    last_rules = rules;
-    snap.room = MakeRoom(capacity, {{"AAAA-1111", "Saulo"}});
-    snap.seat = 0;
-    return true;
-  }
-  void SearchRooms() override { ++searches; }
-  bool JoinRoom(const std::string& handle) override {
-    ++joins;
-    last_join = handle;
-    return true;
-  }
-  bool StartRace() override {
-    ++starts;
-    if (!snap.room) return false;
-    snap.room->state = online::RoomState::kStarting;
-    return true;
-  }
-  void LeaveRoom() override {
-    ++leaves;
-    snap.room.reset();
-    snap.seat = -1;
-  }
-  bool SendInvite(const std::string& player) override {
+  bool SendInvite(const std::string& player, const std::optional<online::RoomRules>& rules) override {
+    if (!invite_ok) return false;
     ++invites_sent;
     last_invite = player;
+    last_rules = rules;
+    if (answers_later) {
+      snap.sending_invite = player;
+      snap.creating_session = !snap.room;
+      return true;
+    }
+    for (const online::Friend& f : snap.friends) {
+      if (f.player == player) snap.invited.push_back({"id", player, f.name, 60.0});
+    }
     return true;
   }
   bool AcceptInvite(const std::string& invite) override {
     ++accepts;
     last_accept = invite;
-    return accept_ok;
+    return true;
   }
   void DeclineInvite(const std::string&) override { ++declines; }
+  void LeaveSession(const char* source) override {
+    ++leaves;
+    last_leave = source;
+    snap.room.reset();
+    snap.seat = -1;
+  }
+  int leaves = 0;
+  std::string last_leave;
 };
 
-struct Rig {
+online::Invite MakeInvite(const std::string& id) {
+  online::Invite invite;
+  invite.id = id;
+  invite.host_name = "Saulo";
+  return invite;
+}
+
+const std::vector<std::pair<std::string, std::string>> kPlayers = {
+    {"AAAA-1111", "Saulo"}, {"BBBB-2222", "Carlos"}, {"CCCC-3333", "Maria"}, {"DDDD-4444", "Caio"}};
+
+online::Snapshot Session(int players, int seat = 0) {
+  online::Snapshot snap;
+  snap.connection = online::Connection::kOnline;
+  snap.room = MakeRoom(4, {kPlayers.begin(), kPlayers.begin() + players});
+  snap.seat = seat;
+  return snap;
+}
+
+online::SentInvite Pending(const std::string& name) { return {"id-" + name, "code-" + name, name, 60.0}; }
+
+std::string ReadSource(const std::string& name) {
+  std::ifstream file(std::string(ECK_REPO_DIR) + "/src/" + name, std::ios::binary);
+  std::ostringstream text;
+  text << file.rdbuf();
+  return text.str();
+}
+
+std::vector<std::string> Texts(const OnlineMenu& menu) {
+  std::vector<std::string> out;
+  for (const Row& row : menu.Rows()) out.push_back(row.text);
+  return out;
+}
+
+bool Press(OnlineMenu& menu, Act act) {
+  const std::vector<Row> rows = menu.Rows();
+  for (size_t i = 0; i < rows.size(); ++i) {
+    if (rows[i].act == act && rows[i].enabled) {
+      menu.SetCursor(int(i));
+      menu.Activate();
+      return true;
+    }
+  }
+  return false;
+}
+
+void TestShortcut() {
+  online::Snapshot none;
+  none.connection = online::Connection::kOnline;
+  Check(!ShortcutFor(false, true, none).visible, "Online play off has no Invite Player");
+  Check(!ShortcutFor(false, true, Session(2)).visible, "not even with a session");
+  Check(!ShortcutFor(true, false, none).visible, "Online play on shows nothing before the character screen");
+  const InviteShortcut alone = ShortcutFor(true, true, none);
+  Check(alone.visible && alone.remaining == 3, "the character screen offers 3 invites");
+  for (const online::Connection connection : {online::Connection::kChecking, online::Connection::kError}) {
+    online::Snapshot unsigned_in;
+    unsigned_in.connection = connection;
+    Check(ShortcutFor(true, true, unsigned_in).visible, "the hint does not wait for the service");
+    Check(OnInvitePress(unsigned_in, true) == InvitePress::kConnecting, "X then says it is connecting");
+    Check(OnInvitePress(unsigned_in, false) == InvitePress::kConnecting, "whatever the game's objects say");
+  }
+
+  online::Snapshot state = Session(1);
+  Check(ShortcutFor(true, true, state).remaining == 3, "a host alone can invite 3");
+  state = Session(2);
+  Check(ShortcutFor(true, true, state).remaining == 2, "host and B: 2 more");
+  state = Session(3);
+  Check(ShortcutFor(true, true, state).remaining == 1, "host, B and C: 1 more");
+  state = Session(4);
+  Check(!ShortcutFor(true, true, state).visible, "a full session has no Invite Player");
+
+  state = Session(2);
+  state.invited = {Pending("Maria"), Pending("Caio")};
+  Check(!ShortcutFor(true, true, state).visible, "pending invites use up the seats");
+  state.invited.pop_back();
+  const InviteShortcut after = ShortcutFor(true, true, state);
+  Check(after.visible && after.remaining == 1, "a declined or expired invite gives its seat back");
+
+  Check(!ShortcutFor(true, true, Session(2, 1)).visible, "only the host invites");
+  Check(std::string(ShortcutFor(true, true, Session(2, 1)).hidden_because) == "guest", "and the log says why");
+  Check(std::string(ShortcutFor(true, true, Session(4)).hidden_because) == "session_full", "as it does for a full session");
+  Check(std::string(ShortcutFor(false, true, none).hidden_because) == "online_play_off", "and for Online play off");
+  online::Snapshot joining = none;
+  joining.joining = true;
+  Check(ShortcutFor(true, true, joining).visible, "still there while joining");
+  Check(OnInvitePress(joining, true) == InvitePress::kConnecting, "X waits for the join");
+
+  Check(OnInvitePress(none, true) == InvitePress::kPicker, "X opens the picker when the service is ready");
+  Check(OnInvitePress(none, false) == InvitePress::kPickerWithoutSetup, "and even without a readable setup");
+  online::Snapshot hosting = none;
+  hosting.hosting = true;
+  Check(OnInvitePress(hosting, false) == InvitePress::kPicker, "a session on its way needs no second reading");
+  Check(OnInvitePress(Session(2), false) == InvitePress::kPicker, "nor does one that exists");
+}
+
+void TestStatusWithoutService() {
+  SessionNotes notes(TextPackage::kPtb);
+  notes.NoteStatus("Connecting to online service", 10.0);
+  Check(notes.Toast(10.5) == MenuText("Connecting to online service", TextPackage::kPtb), "X before sign-in says so");
+  Check(notes.Toast(10.0 + kToastSeconds + 1).empty(), "for a moment");
+  Check(std::strlen(MenuText("Invite Player", TextPackage::kPtb)) && std::string(MenuText("Invite Player", TextPackage::kPtb)) == "Convidar jogador",
+        "PT-BR hint");
+  Check(std::string(MenuText("Invite Player", TextPackage::kEsm)) == "Invitar jugador", "Spanish hint");
+  Check(std::string(MenuText("Invite Player", TextPackage::kInt)) == "Invite Player", "English hint");
+}
+
+void TestPickerWithoutSetup() {
   FakeApi api;
-  std::vector<online_start::Plan> plans;
-  bool real_entry = false;
-  OnlineMenu menu;
-  double now = 1.0;
-
-  explicit Rig(TextPackage package = TextPackage::kInt)
-      : menu(api, package, [this](const online_start::Plan& plan) {
-          plans.push_back(plan);
-          online_start::Verdict v;
-          v.real_entry = real_entry;
-          v.reason = "test";
-          return v;
-        }) {}
-
-  void Tick() {
-    now += 0.1;
-    menu.Update(now);
+  api.snap.friends = {MakeFriend("BBBB-2222", "Carlos", online::FriendState::kOnline, true)};
+  OnlineMenu menu(api, TextPackage::kInt, Page::kInvite, std::nullopt, true);
+  const std::vector<Row> rows = menu.Rows();
+  Check(rows.front().text == "Game setup unavailable" && rows.front().act == Act::kNone, "the picker says why");
+  bool friend_listed = false;
+  for (const Row& row : rows) {
+    if (row.act != Act::kInviteFriend) continue;
+    friend_listed = true;
+    Check(!row.enabled, "and cannot send");
   }
-  void Press(Act act) {
-    const std::vector<Row> rows = menu.Rows();
-    for (size_t i = 0; i < rows.size(); ++i) {
-      if (rows[i].act == act && rows[i].enabled) {
-        menu.SetCursor(int(i));
-        menu.Activate();
-        return;
-      }
-    }
-    Check(false, "no enabled row for the action");
-  }
-  std::vector<std::string> Texts() const {
-    std::vector<std::string> out;
-    for (const Row& row : menu.Rows()) out.push_back(row.text);
-    return out;
-  }
-  bool Has(const std::string& text) const {
-    for (const std::string& t : Texts()) {
-      if (t == text) return true;
-    }
-    return false;
-  }
-  const Row* Find(Act act) const {
-    static std::vector<Row> rows;
-    rows = menu.Rows();
-    for (const Row& row : rows) {
-      if (row.act == act) return &row;
-    }
-    return nullptr;
-  }
-};
-
-void TestLocalOnlineChoice() {
-  Rig rig;
-  Check(rig.menu.page() == Page::kMode, "the menu starts at the Local / Online choice");
-  const std::vector<Row> rows = rig.menu.Rows();
-  Check(rows.size() == 2 && rows[0].text == "Local" && rows[0].act == Act::kLocal, "first row is Local");
-  Check(rows[1].text == "Online" && rows[1].act == Act::kOnline, "second row is Online");
-  Check(rows[0].enabled && rows[1].enabled, "both choices are selectable");
-
-  Rig offline;
-  offline.api.snap.connection = online::Connection::kOff;
-  offline.menu.Update(1.0);
-  offline.menu.Activate();
-  Check(offline.menu.TakeOutcome() == Outcome::kLocal, "Local works with no online service");
-  Check(offline.api.creates + offline.api.searches + offline.api.joins + offline.api.starts + offline.api.leaves +
-                offline.api.invites_sent + offline.api.accepts == 0,
-        "Local never calls the online service");
-  Check(offline.menu.TakeOutcome() == Outcome::kNone, "the outcome is taken once");
-
-  Rig back;
-  back.menu.Back();
-  Check(back.menu.TakeOutcome() == Outcome::kClose, "B at the choice closes the menu");
+  Check(friend_listed, "but stays the same picker");
+  Check(rows.back().act == Act::kBack, "with a way back");
+  menu.Activate();
+  Check(api.invites_sent == 0 && menu.closed(), "the cursor lands on Back and nothing was sent");
 }
 
-void TestOnlinePage() {
-  Rig rig;
-  rig.Press(Act::kOnline);
-  Check(rig.menu.page() == Page::kOnline, "Online opens the Online page");
-  Check(rig.Has("Create Room") && rig.Has("Find Room") && rig.Has("Back"), "Online offers Create Room and Find Room");
-  Check(rig.Find(Act::kCreateRoom)->enabled && rig.Find(Act::kFindRoom)->enabled, "both enabled when connected");
+void TestScreenTracking() {
+  constexpr uint32_t kMenu = 0x100, kCompetition = 0x200, kManager = 0x300, kPanel = 0x400, kTrack = 0x500;
+  ScreenTracker screens;
+  Check(screens.current() == GameScreen::kOther, "nothing is known at first");
+  screens.NoteMovie("/ package/ChavoKart_MainMenu/ChavoKartMainMenu");
+  screens.NoteCall(kMenu, 0x10, "ShowScreen");
+  Check(screens.current() == GameScreen::kMainMenu, "the main menu");
+  screens.NoteCall(kMenu, 0x10, "HideScreen");
+  screens.NoteMovie("/ package/ChavoKart_CompetitionSelect/ChavoKartCompetitionSelect");
+  screens.NoteCall(kCompetition, 0x10, "ShowScreen");
+  Check(screens.current() == GameScreen::kCompetition, "CompetitionSelect comes straight after Free Race");
 
-  Rig offline;
-  offline.api.snap.connection = online::Connection::kError;
-  offline.menu.Update(1.0);
-  offline.Press(Act::kOnline);
-  Check(!offline.Find(Act::kCreateRoom)->enabled && !offline.Find(Act::kFindRoom)->enabled, "disabled when not connected");
-  Check(offline.Has("Unable to connect"), "the failure is shown");
-  Check(offline.menu.cursor() == int(offline.menu.Rows().size()) - 1, "the cursor rests on Back");
-  offline.menu.Back();
-  Check(offline.menu.page() == Page::kMode, "Back returns to the choice");
+  screens.NoteCall(kCompetition, 0x10, "OnPressXButton");
+  Check(!screens.TakeInvitePress(), "X does nothing on CompetitionSelect");
+
+  screens.NoteCall(kCompetition, 0x10, "HideScreen");
+  screens.NoteMovie("/ package/ChavoKart_PlayerSelectManager/ChavoKartPlayerSelectManager");
+  screens.NoteCall(kManager, 0x10, "ShowScreen");
+  screens.NoteMovie("/ package/ChavoKart_PlayerSelect/ChavoKartPlayerSelect");
+  for (int panel = 0; panel < 4; ++panel) screens.NoteCall(kPanel, 0x10, "ShowScreen");
+  Check(screens.current() == GameScreen::kCharacter, "PlayerSelectManager is the character screen, whatever its panels do");
+  screens.NoteCall(kManager, 0x10, "OnPressAButton");
+  Check(!screens.TakeInvitePress(), "A stays the game's");
+  screens.NoteCall(kManager, 0x10, "OnPressXButton");
+  Check(screens.TakeInvitePress(), "X opens Invite Player");
+  Check(!screens.TakeInvitePress(), "one press, one picker");
+
+  screens.NoteCall(kManager, 0x10, "HideScreen");
+  screens.NoteMovie("/ package/ChavoKart_TrackSelect/ChavoKartTrackSelect");
+  screens.NoteCall(kTrack, 0x10, "ShowScreen");
+  Check(screens.current() == GameScreen::kTrack, "the track screen is not the lobby");
+  screens.NoteCall(kTrack, 0x10, "OnPressXButton");
+  Check(!screens.TakeInvitePress(), "X does nothing there");
+
+  screens.NoteCall(kTrack, 0x10, "HideScreen");
+  screens.NoteCall(kManager, 0x10, "ShowScreen");
+  Check(screens.current() == GameScreen::kCharacter, "coming back needs no movie: the class is known for the whole run");
+  screens.NoteMapChange();
+  Check(screens.current() == GameScreen::kOther, "a race leaves the character screen without hiding it");
+
+  screens.NoteCall(kManager, 0x10, "ShowScreen");
+  screens.NoteCall(kManager, 0x10, "");
+  Check(screens.current() == GameScreen::kCharacter, "a call with no literal method changes nothing");
+
+  Check(ScreenOfMovie("/ package/ChavoKart_PlayerSelect/ChavoKartPlayerSelect") == GameScreen::kOther, "a panel is not the screen");
 }
 
-void TestCreateRoom() {
-  for (int capacity : {2, 3, 4}) {
-    Rig rig;
-    rig.Press(Act::kOnline);
-    rig.Press(Act::kCreateRoom);
-    Check(rig.menu.page() == Page::kCreate, "Create Room page");
-    Check(rig.menu.capacity() == 4, "four players by default");
-    while (rig.menu.capacity() != capacity) rig.Press(Act::kPlayers);
-    Check(rig.Has(std::to_string(capacity) + " Players"), "the selector shows " + std::to_string(capacity) + " Players");
-    rig.Press(Act::kCreate);
-    Check(rig.api.creates == 1 && rig.api.last_capacity == capacity, "Create asks for the selected capacity");
-    Check(rig.api.last_rules == DefaultRules(), "Create sends the room rules");
-    rig.Tick();
-    Check(rig.menu.page() == Page::kRoom, "the room page opens when the service seats the host");
-  }
-  Rig rig;
-  rig.Press(Act::kOnline);
-  rig.Press(Act::kCreateRoom);
-  rig.menu.SetCursor(1);
-  for (int i = 0; i < 5; ++i) rig.menu.Adjust(-1);
-  Check(rig.menu.capacity() == 2, "left stops at 2 players");
-  for (int i = 0; i < 5; ++i) rig.menu.Adjust(1);
-  Check(rig.menu.capacity() == 4, "right stops at 4 players");
-}
-
-void TestFindRoom() {
-  Rig rig;
-  online::RoomAd open;
-  open.handle = "h1";
-  open.host = "BBBB-2222";
-  open.host_name = "Saulo";
-  open.players = 1;
-  open.capacity = 4;
-  online::RoomAd full = open;
-  full.handle = "h2";
-  full.host = "CCCC-3333";
-  full.host_name = "Ana";
-  full.players = 2;
-  full.capacity = 2;
-  online::RoomAd old = open;
-  old.handle = "h3";
-  old.host = "DDDD-4444";
-  old.host_name = "Beto";
-  rig.api.snap.friends = {MakeFriend("DDDD-4444", "Beto", online::FriendState::kHosting, true, false)};
-  rig.Press(Act::kOnline);
-  rig.Press(Act::kFindRoom);
-  Check(rig.api.searches == 1, "entering Find Room searches once");
-  rig.api.snap.rooms = {open, full, old};
-  rig.api.snap.search_generation = 1;
-  rig.Tick();
-  Check(rig.Has("Saulo 1/4"), "a room shows the host and the players over the capacity");
-  Check(rig.Has("Ana 2/2 - Room full"), "a full room is marked");
-  Check(rig.Has("Beto 1/4 - Version mismatch"), "an incompatible host is marked");
-  bool leaks = false;
-  for (const std::string& text : rig.Texts()) {
-    if (text.find("BBBB") != std::string::npos || text.find("h1") != std::string::npos) leaks = true;
-  }
-  Check(!leaks, "no id or handle is shown");
-  Check(rig.Find(Act::kJoin)->enabled, "the open room is joinable");
-  int disabled = 0;
-  for (const Row& row : rig.menu.Rows()) disabled += row.act == Act::kJoin && !row.enabled;
-  Check(disabled == 2, "the full and incompatible rooms cannot be joined");
-  rig.menu.SetCursor(0);
-  rig.menu.Activate();
-  Check(rig.api.joins == 1 && rig.api.last_join == "h1", "joining sends the selected room's handle");
-  rig.menu.Move(1);
-  rig.menu.Move(-1);
-  rig.Press(Act::kRefresh);
-  Check(rig.api.searches == 1, "Refresh is throttled");
-  rig.now += 3;
-  rig.Tick();
-  rig.Press(Act::kRefresh);
-  Check(rig.api.searches == 2, "Refresh searches again later");
-
-  Rig empty;
-  empty.Press(Act::kOnline);
-  empty.Press(Act::kFindRoom);
-  empty.Tick();
-  Check(empty.Has("No rooms found"), "an empty list says so");
-  empty.menu.Back();
-  Check(empty.menu.page() == Page::kOnline, "Back from Find Room");
-}
-
-void TestSeatList() {
-  Rig rig;
-  rig.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  rig.api.snap.seat = 0;
-  rig.menu.Update(1.0);
-  Check(rig.menu.page() == Page::kRoom, "a seated player sees the room");
-  const std::vector<std::string> texts = rig.Texts();
-  Check(texts.size() >= 8, "four seats, status and actions");
-  Check(texts[0] == "Player 1: Saulo (Host, You)", "seat 1 is the host and you: " + texts[0]);
-  Check(texts[1] == "Player 2: Ana", "seat 2: " + texts[1]);
-  Check(texts[2] == "Player 3: Waiting for players" && texts[3] == "Player 4: Waiting for players", "empty seats wait");
-  Check(texts[4] == "Waiting for players", "the status line waits");
-
-  Rig guest;
-  guest.api.snap.room = MakeRoom(2, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  guest.api.snap.seat = 1;
-  guest.menu.Update(1.0);
-  const std::vector<std::string> g = guest.Texts();
-  Check(g[0] == "Player 1: Saulo (Host)" && g[1] == "Player 2: Ana (You)", "a guest sees who is the host and who is you");
-  Check(g[2] == "Room full", "a full room says so");
-  Check(!guest.Find(Act::kStartRace) && !guest.Find(Act::kInviteFriends), "a guest has no host actions");
-  Check(guest.Find(Act::kLeave) != nullptr, "every player can leave");
-  Check(guest.Has("Waiting for the host"), "the guest waits for the host");
-
-  Rig lost;
-  lost.api.snap.room = MakeRoom(2, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  lost.api.snap.room->seats[1].state = online::SeatState::kReconnecting;
-  lost.api.snap.seat = 0;
-  lost.menu.Update(1.0);
-  Check(lost.Texts()[1] == "Player 2: Ana (Connection lost)", "a reconnecting seat is marked");
-}
-
-void TestStartRaceButton() {
-  Rig one;
-  one.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}});
-  one.api.snap.seat = 0;
-  one.menu.Update(1.0);
-  const Row* start = one.Find(Act::kStartRace);
-  Check(start && !start->enabled, "Start Race is disabled with one player");
-  Check(start && start->text.find("Need 2 players") != std::string::npos, "and says why");
-  one.menu.SetCursor(0);
-  one.menu.Activate();
-  Check(one.api.starts == 0, "a disabled Start Race does nothing");
-
-  Rig two;
-  two.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  two.api.snap.seat = 0;
-  two.menu.Update(1.0);
-  Check(two.Find(Act::kStartRace)->enabled, "Start Race is enabled at 2 of 4: the room need not be full");
-  Check(two.Find(Act::kInviteFriends)->enabled, "Invite Friends is enabled while seats are free");
-
-  Rig full;
-  full.api.snap.room = MakeRoom(2, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  full.api.snap.seat = 0;
-  full.menu.Update(1.0);
-  Check(full.Find(Act::kStartRace)->enabled && !full.Find(Act::kInviteFriends)->enabled,
-        "a full room starts and cannot invite");
-  Check(full.Has("Room full"), "Room full is shown");
-}
-
-void TestStartRaceFlow() {
-  Rig host;
-  host.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  host.api.snap.seat = 0;
-  host.menu.Update(1.0);
-  host.Press(Act::kStartRace);
-  Check(host.api.starts == 1, "Start Race asks the service to freeze the seats");
-  Check(host.plans.empty(), "the race plan waits for the service to confirm");
-  host.Tick();
-  Check(host.plans.size() == 1, "the host maps the seats once the room leaves open");
-  if (!host.plans.empty()) {
-    const online_start::Plan& plan = host.plans[0];
-    Check(plan.host && plan.local_seat == 0 && plan.config.participants.size() == 2, "host plan: seat 0, two humans");
-    Check(plan.karts.size() == 8 && plan.karts[0].seat == 0 && plan.karts[0].local && plan.karts[1].seat == 1 &&
-              plan.karts[1].remote_human,
-          "seat 0 takes slot 0 and seat 1 slot 1 as a remote human");
-    Check(plan.config.participants[0].character == online_start::kUnknownSelection, "selections are recorded as unknown");
-  }
-  Check(host.menu.race_note() == "Race not available yet", "a blocked start is told, not silent");
-  host.Tick();
-  Check(host.plans.size() == 1, "the start is handled once");
-  host.Press(Act::kLeave);
-  Check(host.api.leaves == 1 && host.menu.page() == Page::kOnline, "a started room can still be left");
-
-  Rig guest;
-  guest.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  guest.api.snap.seat = 1;
-  guest.menu.Update(1.0);
-  guest.api.snap.room->state = online::RoomState::kStarting;
-  guest.Tick();
-  Check(guest.plans.size() == 1 && !guest.plans[0].host && guest.plans[0].local_seat == 1, "the guest maps its own seat");
-  if (!guest.plans.empty()) {
-    Check(guest.plans[0].karts[1].local && guest.plans[0].karts[0].remote_human, "the guest drives slot 1 and sees slot 0 remote");
-    Check(guest.plans[0].config.race_id == host.plans[0].config.race_id && guest.plans[0].config.seed == host.plans[0].config.seed,
-          "race id and seed agree on every PC");
-  }
-  Check(guest.Has("Race not available yet"), "the guest sees the blocked note");
-  guest.real_entry = true;
-  Rig ok;
-  ok.real_entry = true;
-  ok.api.snap.room = MakeRoom(2, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  ok.api.snap.seat = 1;
-  ok.menu.Update(1.0);
-  ok.api.snap.room->state = online::RoomState::kRacing;
-  ok.Tick();
-  Check(ok.menu.race_note() == "Race starting", "a proven entry shows Race starting");
-  ok.Press(Act::kLeave);
-  Check(ok.api.leaves == 1 && ok.menu.page() == Page::kOnline, "a joiner returns to the menus without restarting");
-}
-
-void TestInviteFriends() {
-  Rig rig;
-  rig.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  rig.api.snap.seat = 0;
-  rig.api.snap.friends = {
-      MakeFriend("BBBB-2222", "Ana", online::FriendState::kInGame, true),
+void TestPicker() {
+  FakeApi api;
+  api.snap = Session(2);
+  api.snap.friends = {
+      MakeFriend("BBBB-2222", "Carlos", online::FriendState::kOnline, true),
       MakeFriend("CCCC-3333", "Beto", online::FriendState::kOnline, true),
       MakeFriend("DDDD-4444", "Caio", online::FriendState::kOffline, false),
-      MakeFriend("EEEE-5555", "Dani", online::FriendState::kHosting, true),
+      MakeFriend("EEEE-5555", "Dani", online::FriendState::kInGame, true),
       MakeFriend("FFFF-6666", "Edu", online::FriendState::kOnline, true, false),
-      MakeFriend("GGGG-7777", "Fabi", online::FriendState::kOnline, true),
+      MakeFriend("GGGG-7777", "Fabi", online::FriendState::kHosting, true),
   };
-  rig.menu.Update(1.0);
-  rig.Press(Act::kInviteFriends);
-  Check(rig.menu.page() == Page::kInvite && rig.menu.Title() == "Invite Friends", "Invite Friends page");
-  Check(rig.Has("Beto") && rig.Has("Fabi"), "online compatible free friends are listed");
-  Check(!rig.Has("Ana") && !rig.Has("Caio") && !rig.Has("Dani") && !rig.Has("Edu"),
-        "seated, offline, busy and incompatible friends are not listed");
-  rig.menu.SetCursor(0);
-  rig.menu.Activate();
-  Check(rig.api.invites_sent == 1 && rig.api.last_invite == "CCCC-3333", "the selected friend is invited");
-  Check(rig.menu.Toast(rig.now) == "Invite sent", "a short confirmation shows");
-  Check(rig.Has("Beto (Invited)") && !rig.Find(Act::kInviteFriend)->enabled, "an invited friend cannot be invited twice");
-  rig.menu.SetCursor(1);
-  rig.menu.Activate();
-  Check(rig.api.invites_sent == 2 && rig.api.last_invite == "GGGG-7777", "several invites in a row");
-  rig.menu.Back();
-  Check(rig.menu.page() == Page::kRoom, "Back returns to the room");
-  const std::vector<std::string> texts = rig.Texts();
-  Check(texts[2] == "Player 3: Beto (Invited)" && texts[3] == "Player 4: Fabi (Invited)", "invited friends hold the free seats");
+  OnlineMenu menu(api, TextPackage::kInt, Page::kInvite);
+  Check(menu.Title() == "Invite Player", "the picker's title");
+  const std::vector<std::string> rows = Texts(menu);
+  bool seated = false;
+  for (const std::string& row : rows) seated = seated || row.find("Carlos") != std::string::npos;
+  Check(!seated, "a seated friend is not listed");
+  const auto enabled = [&](const std::string& name) {
+    for (const Row& row : menu.Rows()) {
+      if (row.text.rfind(name, 0) == 0) return row.enabled;
+    }
+    return false;
+  };
+  Check(enabled("Beto") && enabled("Fabi"), "free friends can be invited, one alone in their own session too");
+  Check(!enabled("Caio") && !enabled("Dani") && !enabled("Edu"), "offline, busy and incompatible friends show their state");
+  Check(Press(menu, Act::kInviteFriend) && api.last_invite == "CCCC-3333", "selecting a friend sends the invite");
+  Check(menu.closed(), "and closes the picker: the player is back on the character screen");
 
-  rig.api.snap.room->seats[2] = Seated(2, "CCCC-3333", "Beto");
-  rig.api.snap.room->players = 3;
-  rig.Tick();
-  Check(rig.Texts()[2] == "Player 3: Beto" && rig.Texts()[3] == "Player 4: Fabi (Invited)", "an accepted invite takes its seat");
-  Check(rig.menu.Toast(rig.now) == "Beto joined", "and says so");
+  FakeApi refused;
+  refused.snap = Session(1);
+  refused.snap.friends = {MakeFriend("CCCC-3333", "Beto", online::FriendState::kOnline, true)};
+  refused.invite_ok = false;
+  OnlineMenu stays(refused, TextPackage::kInt, Page::kInvite);
+  Press(stays, Act::kInviteFriend);
+  Check(!stays.closed(), "a refused invite stays on the picker");
 
-  rig.api.snap.room->seats[3] = Seated(3, "GGGG-7777", "Fabi");
-  rig.api.snap.room->players = 4;
-  rig.Tick();
-  Check(rig.Has("Room full") && !rig.Find(Act::kInviteFriends)->enabled, "invites stop when the room is full");
+  FakeApi full;
+  full.snap = Session(2);
+  full.snap.invited = {Pending("Maria"), Pending("Caio")};
+  full.snap.friends = {MakeFriend("CCCC-3333", "Beto", online::FriendState::kOnline, true)};
+  OnlineMenu spent(full, TextPackage::kInt, Page::kInvite);
+  spent.Update();
+  Check(!Press(spent, Act::kInviteFriend) && full.invites_sent == 0, "no invite past the seats");
 
-  Rig none;
-  none.api.snap.room = MakeRoom(3, {{"AAAA-1111", "Saulo"}});
-  none.api.snap.seat = 0;
-  none.menu.Update(1.0);
-  none.Press(Act::kInviteFriends);
-  Check(none.Has("No friends to invite"), "an empty list says so");
+  FakeApi early;
+  early.snap.connection = online::Connection::kChecking;
+  OnlineMenu waiting(early, TextPackage::kInt, Page::kInvite);
+  Check(Texts(waiting)[0] == "Connecting", "a service on its way is told");
+  waiting.Back();
+  Check(waiting.closed(), "and B goes back");
+  FakeApi down;
+  down.snap.connection = online::Connection::kError;
+  OnlineMenu failed(down, TextPackage::kInt, Page::kInvite);
+  Check(Texts(failed)[0] == "Unable to connect", "no service is told");
+
+  FakeApi nobody;
+  nobody.snap = Session(1);
+  OnlineMenu lonely(nobody, TextPackage::kInt, Page::kInvite);
+  Check(Texts(lonely)[0] == "No friends to invite", "no friends are told");
+  Press(lonely, Act::kBack);
+  Check(lonely.closed(), "Back leaves the picker");
 }
 
-void TestIncomingInvite() {
-  Rig rig;
-  online::Invite invite;
-  invite.id = "inv1";
-  invite.host = "BBBB-2222";
-  invite.host_name = "Saulo";
-  invite.players = 1;
-  invite.capacity = 4;
-  rig.api.snap.invites = {invite};
-  rig.menu.Update(1.0);
-  Check(rig.menu.HasIncomingInvite() && rig.menu.page() == Page::kIncoming, "an invite shows over the menus");
-  Check(rig.Texts()[0] == "Saulo invited you to a Multiplayer race", "the invite text: " + rig.Texts()[0]);
-  Check(rig.Has("Accept") && rig.Has("Decline"), "Accept and Decline");
-  rig.Press(Act::kAccept);
-  Check(rig.api.accepts == 1 && rig.api.last_accept == "inv1", "Accept answers that invite");
-  Check(rig.api.creates == 0, "Accept never creates a room");
-  rig.api.snap.invites.clear();
-  rig.api.snap.room = MakeRoom(4, {{"BBBB-2222", "Saulo"}, {"AAAA-1111", "Me"}});
-  rig.api.snap.seat = 1;
-  rig.Tick();
-  Check(rig.menu.page() == Page::kRoom && rig.Texts()[0] == "Player 1: Saulo (Host)", "the guest lands in the host's room");
+void TestPickerCreatesNothing() {
+  FakeApi api;
+  api.answers_later = true;
+  api.snap.friends = {MakeFriend("BBBB-2222", "Carlos", online::FriendState::kOnline, true)};
+  const online::RoomRules rules = {{"setup", 1}};
+  Check(OnInvitePress(api.snap, true) == InvitePress::kPicker, "X opens the picker");
+  {
+    OnlineMenu looked(api, TextPackage::kInt, Page::kInvite, std::nullopt, false, rules);
+    Check(Texts(looked)[0].rfind("Carlos", 0) == 0, "with no session, the friends are there");
+    looked.Update();
+    looked.Back();
+    Check(looked.closed(), "Back closes it");
+  }
+  OnlineMenu again(api, TextPackage::kInt, Page::kInvite, std::nullopt, false, rules);
+  again.Update();
+  Check(api.invites_sent == 0, "looking at the friends sends nothing");
 
-  Rig decline;
-  decline.api.snap.invites = {invite};
-  decline.menu.Update(1.0);
-  decline.menu.Back();
-  Check(decline.api.declines == 1 && decline.api.accepts == 0, "B declines");
-  decline.api.snap.invites.clear();
-  decline.Tick();
-  Check(decline.menu.page() == Page::kMode, "the menu returns to the choice");
+  Check(Press(again, Act::kInviteFriend) && api.invites_sent == 1, "choosing a friend starts the send");
+  Check(api.last_rules == rules, "with the game the session has to carry");
+  Check(!again.closed(), "the picker waits for the service");
+  Check(Texts(again)[0] == "Carlos    Connecting", "and says so: " + Texts(again)[0]);
+  again.Update();
+  Check(!Press(again, Act::kInviteFriend) && api.invites_sent == 1, "a second press sends nothing");
+  Check(SeatsLeft(api.snap) == online::kMaxSeats - 1, "and no seat is taken yet");
 
-  Rig pt(TextPackage::kPtb);
-  pt.api.snap.invites = {invite};
-  pt.menu.Update(1.0);
-  Check(pt.Texts()[0] == "Saulo convidou voc\xC3\xAA para uma corrida multiplayer", "the invite is localized");
-
-  Rig busy;
-  busy.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Me"}});
-  busy.api.snap.seat = 0;
-  busy.api.snap.invites = {invite};
-  busy.menu.Update(1.0);
-  Check(!busy.menu.HasIncomingInvite() && busy.menu.page() == Page::kRoom, "a seated player is not interrupted");
+  api.snap = Session(1);
+  api.snap.sending_invite = "BBBB-2222";
+  api.snap.friends = {MakeFriend("BBBB-2222", "Carlos", online::FriendState::kOnline, true)};
+  again.Update();
+  Check(!again.closed(), "the session alone is not the invite");
+  api.snap.sending_invite.clear();
+  api.snap.invited = {Pending("Carlos")};
+  api.snap.invited[0].player = "BBBB-2222";
+  Check(SeatsLeft(api.snap) == 2, "the service took it: one seat is held");
+  again.Update();
+  Check(again.closed(), "and the player is back on the character screen");
 }
 
-void TestRoomEvents() {
-  Rig leave;
-  leave.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  leave.api.snap.seat = 0;
-  leave.menu.Update(1.0);
-  leave.Press(Act::kLeave);
-  Check(leave.api.leaves == 1 && leave.menu.page() == Page::kOnline, "Leave Room leaves and returns to Online");
-  leave.Tick();
-  Check(leave.menu.Toast(leave.now).empty(), "leaving on purpose raises no alarm");
+void TestInviteFailureRetries() {
+  FakeApi api;
+  api.answers_later = true;
+  api.snap.friends = {MakeFriend("BBBB-2222", "Carlos", online::FriendState::kOnline, true)};
+  OnlineMenu menu(api, TextPackage::kInt, Page::kInvite, std::nullopt, false, online::RoomRules{});
+  Press(menu, Act::kInviteFriend);
+  api.snap.sending_invite.clear();
+  api.snap.creating_session = false;
+  api.snap.invite_outcome = {1, "Carlos", false};
+  menu.Update();
+  Check(!menu.closed(), "a failed send stays on the picker");
+  Check(Texts(menu)[0] == "Carlos cannot be invited", "and tells why: " + Texts(menu)[0]);
+  Check(Press(menu, Act::kInviteFriend) && api.invites_sent == 2, "the friend can be tried again");
+  menu.Update();
+  Check(Texts(menu)[0].rfind("Carlos    ", 0) == 0, "and the error goes away");
 
-  Rig host_left;
-  host_left.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  host_left.api.snap.seat = 1;
-  host_left.menu.Update(1.0);
-  host_left.api.snap.room.reset();
-  host_left.api.snap.seat = -1;
-  host_left.api.snap.closed_reason = "host_left";
-  host_left.Tick();
-  Check(host_left.menu.page() == Page::kOnline && host_left.menu.Toast(host_left.now) == "Host left", "host left");
+  FakeApi closed;
+  closed.invite_ok = false;
+  closed.snap = Session(1);
+  closed.snap.friends = {MakeFriend("BBBB-2222", "Carlos", online::FriendState::kOnline, true)};
+  OnlineMenu refused(closed, TextPackage::kInt, Page::kInvite);
+  Press(refused, Act::kInviteFriend);
+  Check(!refused.closed() && Texts(refused)[0] == "Carlos cannot be invited", "a send the service cannot start says the same");
+}
 
-  Rig lost;
-  lost.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  lost.api.snap.seat = 1;
-  lost.menu.Update(1.0);
-  lost.api.snap.room.reset();
-  lost.api.snap.closed_reason = "disconnect";
-  lost.Tick();
-  Check(lost.menu.Toast(lost.now) == "Connection lost", "a lost connection is told");
+void TestStatusNeverNamesTheTransport() {
+  const std::string connected_int = "Carlos \xE2\x80\xA2 Connected";
+  online::Snapshot state = Session(2);
+  state.peers = {Peer(1, online::PeerPath::kDirect)};
+  for (const TextPackage package : {TextPackage::kInt, TextPackage::kPtb, TextPackage::kEsm, TextPackage::kEsn}) {
+    for (const online::PeerPath path : {online::PeerPath::kDirect, online::PeerPath::kRelay}) {
+      state.peers[0].path = path;
+      for (const std::string& line : StatusLines(state, package)) {
+        for (const char* word : {"Direct", "Direta", "Directa", "Relay", "Retransmiss", "Retransmisi", "P2P"}) {
+          Check(line.find(word) == std::string::npos, "the status never says how a player is reached: " + line);
+        }
+      }
+    }
+  }
+  state.peers[0].path = online::PeerPath::kRelay;
+  Check(StatusLines(state, TextPackage::kInt)[0] == connected_int, "English, on the relay");
+  state.peers[0].path = online::PeerPath::kDirect;
+  Check(StatusLines(state, TextPackage::kInt)[0] == connected_int, "Direct to Relay and back reads the same");
+  Check(StatusLines(state, TextPackage::kPtb)[0] == "Carlos \xE2\x80\xA2 Conectado", "PT-BR");
+  Check(StatusLines(state, TextPackage::kEsm)[0] == "Carlos \xE2\x80\xA2 Conectado", "Spanish");
+  Check(StatusLines(state, TextPackage::kEsn)[0] == "Carlos \xE2\x80\xA2 Conectado", "Spanish, Spain");
 
-  Rig left;
-  left.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  left.api.snap.seat = 0;
-  left.menu.Update(1.0);
-  left.api.snap.room->seats[1] = online::Seat{1};
-  left.api.snap.room->players = 1;
-  left.Tick();
-  Check(left.menu.Toast(left.now) == "Player left: Ana", "a player who left is told: " + left.menu.Toast(left.now));
+  state.peers[0].path = online::PeerPath::kPending;
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Connecting", "connecting");
+  state.peers[0].path = online::PeerPath::kFailed;
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Connection lost", "connection lost");
+  state.room->seats[1].state = online::SeatState::kReconnecting;
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Reconnecting", "reconnecting");
+  Check(StatusLines(state, TextPackage::kPtb)[0] == "Carlos \xE2\x80\xA2 Reconectando", "reconnecting, PT-BR");
 
-  Rig joined;
-  joined.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}});
-  joined.api.snap.seat = 0;
-  joined.menu.Update(1.0);
-  joined.api.snap.room->seats[1] = Seated(1, "BBBB-2222", "Ana");
-  joined.api.snap.room->players = 2;
-  joined.Tick();
-  Check(joined.menu.Toast(joined.now) == "Ana joined", "a join is told");
-  Check(joined.menu.Toast(joined.now + 10).empty(), "the notice fades");
+  state = Session(3);
+  state.seat = 1;
+  state.peers = {Peer(0, online::PeerPath::kDirect)};
+  state.room->seats[2].transport = online::PathKind::kRelay;
+  for (const std::string& line : StatusLines(state, TextPackage::kInt)) {
+    Check(line.find("Connected") != std::string::npos, "a seat only the host reaches reads the same");
+  }
+}
 
-  Rig reconnect;
-  reconnect.api.snap.room = MakeRoom(2, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  reconnect.api.snap.seat = 1;
-  reconnect.menu.Update(1.0);
-  reconnect.api.snap.reconnecting = true;
-  reconnect.Tick();
-  Check(reconnect.Has("Connection lost") && reconnect.menu.Toast(reconnect.now) == "Connection lost",
-        "a service reconnect is shown while the seat is held");
-  reconnect.api.snap.reconnecting = false;
-  reconnect.Tick();
-  Check(!reconnect.Has("Connection lost"), "and clears when the service is back");
+void TestLeaveMenu() {
+  const auto guest = [] {
+    online::Snapshot state = Session(2);
+    state.seat = 1;
+    return state;
+  };
+  FakeApi api;
+  api.snap = guest();
+  OnlineMenu resume(api, TextPackage::kInt, Page::kLeave);
+  Check(Texts(resume) == std::vector<std::string>({"Resume", "Leave Multiplayer"}), "a guest's two choices");
+  Check(resume.cursor() == 0, "and the safe one comes first");
+  Check(Press(resume, Act::kResume) && resume.closed() && api.leaves == 0, "Resume goes back to the race");
 
-  Rig back;
-  back.api.snap.room = MakeRoom(2, {{"AAAA-1111", "Saulo"}});
-  back.api.snap.seat = 0;
-  back.menu.Update(1.0);
-  back.menu.Back();
-  Check(back.menu.TakeOutcome() == Outcome::kClose && back.api.leaves == 0, "B hides the menu and keeps the room");
+  OnlineMenu back(api, TextPackage::kInt, Page::kLeave);
+  back.Back();
+  Check(back.closed() && api.leaves == 0, "and so does B");
+
+  OnlineMenu leave(api, TextPackage::kInt, Page::kLeave);
+  Check(Press(leave, Act::kLeave) && leave.closed(), "Leave Multiplayer");
+  Check(api.leaves == 1 && api.last_leave == "guest_menu", "sends one leave");
+  leave.Activate();
+  Check(api.leaves == 1, "and a second press sends nothing");
+
+  FakeApi host;
+  host.snap = Session(2);
+  OnlineMenu confirm(host, TextPackage::kInt, Page::kLeave);
+  Check(Texts(confirm)[0] == "This ends the race for everyone", "a host is told what it means");
+  Check(Press(confirm, Act::kLeave) && host.last_leave == "host_menu", "before leaving");
+
+  FakeApi ended;
+  ended.snap = guest();
+  OnlineMenu open(ended, TextPackage::kInt, Page::kLeave);
+  ended.snap.room.reset();
+  open.Update();
+  Check(open.closed() && ended.leaves == 0, "a session that ends under the menu closes it");
+
+  Check(std::string(MenuText("Host left", TextPackage::kInt)) == "Host left", "Host left, INT");
+  Check(std::string(MenuText("Host left", TextPackage::kPtb)) == "O host saiu", "Host left, PTB");
+  Check(std::string(MenuText("Host left", TextPackage::kEsm)) == "El host sali\xC3\xB3", "Host left, ESM");
+  Check(std::string(MenuText("Host left", TextPackage::kEsn)) == "El host sali\xC3\xB3", "Host left, ESN");
+  Check(std::string(MenuText("Connection lost", TextPackage::kPtb)) == "Conex\xC3\xA3o perdida", "Connection lost, PTB");
+  Check(std::string(MenuText("Connection lost", TextPackage::kEsm)) == "Conexi\xC3\xB3n perdida", "Connection lost, Spanish");
+  Check(std::string(MenuText("Leave Multiplayer", TextPackage::kPtb)) == "Sair do multiplayer", "Leave Multiplayer, PTB");
+  Check(std::string(MenuText("Resume", TextPackage::kPtb)) == "Continuar", "Resume, PTB");
+  Check(std::string(MenuText("Leave Multiplayer", TextPackage::kEsm)) == "Salir del multijugador", "Leave Multiplayer, Spanish");
+}
+
+void TestSessionEndNotes() {
+  const auto end = [](const std::string& reason) {
+    SessionNotes notes(TextPackage::kInt);
+    online::Snapshot state = Session(2);
+    state.seat = 1;
+    notes.Update(state, 1.0);
+    state.room.reset();
+    state.closed_reason = reason;
+    notes.Update(state, 2.0);
+    return notes.Toast(2.0);
+  };
+  Check(end("host_left") == "Host left", "the host left");
+  Check(end("disconnect") == "Host left", "the service gave up on the host");
+  Check(end("cancelled") == "Host left", "the host cancelled");
+  Check(end("connection_lost") == "Connection lost", "this side lost the service");
+  Check(end("").empty(), "a leave of this player's own tells nothing");
+
+  // The note outlasts the trip to the menu.
+  SessionNotes held(TextPackage::kInt);
+  online::Snapshot state = Session(2);
+  held.Update(state, 1.0);
+  state.room.reset();
+  state.closed_reason = "host_left";
+  held.Update(state, 2.0);
+  held.HoldToast(2.0);
+  Check(held.Toast(2.0 + 60) == "Host left", "the load does not use it up");
+  held.ReleaseToast(70.0);
+  Check(held.Toast(71.0) == "Host left", "it starts once the menu is up");
+  Check(held.Toast(70.0 + kToastSeconds + 1).empty(), "and ends like any other");
+}
+
+void TestRoleChangeIsNotALoss() {
+  SessionNotes notes(TextPackage::kInt);
+  online::Snapshot host = Session(1);
+  notes.Update(host, 1.0);
+  online::Snapshot replacing = host;
+  replacing.room.reset();
+  replacing.seat = -1;
+  replacing.joining = true;
+  notes.Update(replacing, 2.0);
+  Check(notes.Toast(2.1).empty(), "leaving an own empty session for an invite is not a lost connection");
+}
+
+void TestInvitePrompt() {
+  FakeApi api;
+  api.snap.connection = online::Connection::kOnline;
+  api.snap.invites = {MakeInvite("invite-1")};
+  Check(CanTakeInvite(api.snap), "a free player takes an invite");
+  OnlineMenu accept(api, TextPackage::kInt, Page::kIncoming, MakeInvite("invite-1"));
+  Check(Texts(accept)[0] == "Saulo invited you to a Multiplayer race", "the prompt: " + Texts(accept)[0]);
+  Check(accept.cursor() == 1, "Accept is highlighted");
+  Check(Press(accept, Act::kAccept) && api.accepts == 1 && api.last_accept == "invite-1", "Accept joins that invite");
+  Check(accept.closed(), "and nothing else opens");
+
+  OnlineMenu decline(api, TextPackage::kInt, Page::kIncoming, MakeInvite("invite-1"));
+  Press(decline, Act::kDecline);
+  Check(api.declines == 1 && decline.closed(), "Decline leaves the player where they were");
+  OnlineMenu back(api, TextPackage::kInt, Page::kIncoming, MakeInvite("invite-1"));
+  back.Back();
+  Check(api.declines == 2, "B declines too");
+
+  OnlineMenu gone(api, TextPackage::kInt, Page::kIncoming, MakeInvite("invite-1"));
+  api.snap.invites.clear();
+  gone.Update();
+  Check(gone.closed(), "an invite that ended closes its prompt");
+
+  online::Snapshot alone = Session(1);
+  alone.invites = {MakeInvite("x")};
+  Check(CanTakeInvite(alone), "a host alone can take an invite");
+  online::Snapshot busy = Session(2);
+  busy.invites = {MakeInvite("x")};
+  Check(!CanTakeInvite(busy), "a host with friends is not interrupted");
+  online::Snapshot guest = Session(2, 1);
+  guest.invites = {MakeInvite("x")};
+  Check(!CanTakeInvite(guest), "a guest is not interrupted");
+  online::Snapshot joining;
+  joining.joining = true;
+  joining.invites = {MakeInvite("x")};
+  Check(!CanTakeInvite(joining), "nor a player already joining");
+}
+
+void TestStatus() {
+  online::Snapshot state = Session(1);
+  Check(StatusLines(state, TextPackage::kInt).empty(), "the host alone has no rows: the game's panels are the players");
+  state.invited = {Pending("Carlos")};
+  std::vector<std::string> lines = StatusLines(state, TextPackage::kInt);
+  Check(lines.size() == 1 && lines[0] == "Carlos \xE2\x80\xA2 Invited", "one real invite, one line");
+  Check(StatusLines(state, TextPackage::kPtb)[0] == "Carlos \xE2\x80\xA2 Convidado", "localized");
+  state.invited.clear();
+  Check(StatusLines(state, TextPackage::kInt).empty(), "a declined or expired invite takes its line away");
+
+  state = Session(2);
+  Check(StatusLines(state, TextPackage::kInt) == std::vector<std::string>({"Carlos \xE2\x80\xA2 Connecting"}), "accepted but not ready");
+  state.peers = {Peer(1, online::PeerPath::kProbing)};
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Connecting", "still probing");
+  state.peers = {Peer(1, online::PeerPath::kDirect)};
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Connected", "ready direct");
+  state.peers = {Peer(1, online::PeerPath::kRelay)};
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Connected", "ready relay");
+  state.peers = {Peer(1, online::PeerPath::kFailed)};
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Connection lost", "a failed seat says so");
+  state.room->seats[1].state = online::SeatState::kReconnecting;
+  Check(StatusLines(state, TextPackage::kInt)[0] == "Carlos \xE2\x80\xA2 Reconnecting", "a reconnecting seat is marked");
+
+  state = Session(4);
+  state.peers = {Peer(1, online::PeerPath::kDirect), Peer(2, online::PeerPath::kRelay), Peer(3, online::PeerPath::kDirect)};
+  Check(StatusLines(state, TextPackage::kInt) == std::vector<std::string>({"Carlos \xE2\x80\xA2 Connected", "Maria \xE2\x80\xA2 Connected", "Caio \xE2\x80\xA2 Connected"}),
+        "direct and relay seats coexist");
+
+  state = Session(3, 1);
+  state.peers = {Peer(0, online::PeerPath::kDirect)};
+  state.room->seats[2].transport = online::PathKind::kRelay;
+  Check(StatusLines(state, TextPackage::kInt) == std::vector<std::string>({"Saulo \xE2\x80\xA2 Connected", "Maria \xE2\x80\xA2 Connected"}),
+        "a guest sees the host's path and what the host reported for the others");
+
+  online::Snapshot joining;
+  joining.joining = true;
+  Check(StatusLines(joining, TextPackage::kInt) == std::vector<std::string>({"Connecting"}), "joining is told");
+}
+
+void TestNotes() {
+  SessionNotes notes(TextPackage::kInt);
+  double now = 1.0;
+  online::Snapshot state = Session(1);
+  notes.Update(state, now);
+  Check(notes.Toast(now).empty(), "nothing yet");
+
+  state.invite_outcome = {1, "Carlos", true};
+  notes.Update(state, ++now);
+  Check(notes.Toast(now) == "Carlos declined", "a decline is told");
+  state.invite_outcome = {2, "Beto", false};
+  notes.Update(state, ++now);
+  Check(notes.Toast(now) == "Beto cannot be invited", "an undelivered invite is told");
+  Check(notes.Toast(now + kToastSeconds + 1).empty(), "and fades");
+
+  state.room->seats[1] = Seated(1, "BBBB-2222", "Carlos");
+  state.room->players = 2;
+  notes.Update(state, ++now);
+  Check(notes.Toast(now) == "Carlos joined", "a join is told");
+  state.room->seats[1] = online::Seat{};
+  state.room->seats[1].seat = 1;
+  state.room->players = 1;
+  notes.Update(state, ++now);
+  Check(notes.Toast(now) == "Player left: Carlos", "a leave is told");
+
+  now += 10;
+  state.room.reset();
+  state.closed_reason = "host_left";
+  notes.Update(state, now);
+  Check(notes.Toast(now) == "Host left", "the host leaving is told");
+
+  SessionNotes quiet(TextPackage::kInt);
+  online::Snapshot mine = Session(2);
+  quiet.Update(mine, 1.0);
+  quiet.NoteLeaving();
+  mine.room.reset();
+  quiet.Update(mine, 2.0);
+  Check(quiet.Toast(2.0).empty(), "leaving on purpose raises no alarm");
+
+  SessionNotes lost(TextPackage::kInt);
+  online::Snapshot seat = Session(2, 1);
+  lost.Update(seat, 1.0);
+  seat.room.reset();
+  seat.closed_reason = "no_path";
+  lost.Update(seat, 2.0);
+  Check(lost.Toast(2.0) == "Unable to connect", "no path to the host ends in a clear failure");
+
+  SessionNotes join(TextPackage::kInt);
+  online::Snapshot trying;
+  trying.joining = true;
+  join.Update(trying, 1.0);
+  trying.joining = false;
+  join.Update(trying, 2.0);
+  Check(join.Toast(2.0) == "Unable to connect", "a refused join is told");
 }
 
 void TestNavigation() {
-  Rig rig;
-  rig.api.snap.room = MakeRoom(4, {{"AAAA-1111", "Saulo"}});
-  rig.api.snap.seat = 0;
-  rig.menu.Update(1.0);
-  // Rows: 4 seats, status, Invite Friends, Start Race (disabled), Leave Room
-  const std::vector<Row> rows = rig.menu.Rows();
-  Check(rows[size_t(rig.menu.cursor())].act == Act::kInviteFriends, "the cursor starts on the first action");
-  rig.menu.Move(1);
-  Check(rows[size_t(rig.menu.cursor())].act == Act::kLeave, "down skips the disabled Start Race");
-  rig.menu.Move(1);
-  Check(rows[size_t(rig.menu.cursor())].act == Act::kInviteFriends, "and wraps around");
-  rig.menu.Move(-1);
-  Check(rows[size_t(rig.menu.cursor())].act == Act::kLeave, "up wraps back");
+  FakeApi api;
+  api.snap = Session(1);
+  api.snap.friends = {MakeFriend("CCCC-3333", "Beto", online::FriendState::kOnline, true),
+                      MakeFriend("DDDD-4444", "Caio", online::FriendState::kOffline, false),
+                      MakeFriend("GGGG-7777", "Fabi", online::FriendState::kOnline, true)};
+  OnlineMenu menu(api, TextPackage::kInt, Page::kInvite);
+  const std::vector<Row> rows = menu.Rows();
+  Check(rows[size_t(menu.cursor())].enabled, "the cursor starts on a real choice");
+  const int first = menu.cursor();
+  menu.Move(1);
+  Check(rows[size_t(menu.cursor())].enabled && menu.cursor() != first, "down skips what cannot be chosen");
+  for (size_t i = 0; i < rows.size(); ++i) menu.Move(1);
+  Check(rows[size_t(menu.cursor())].enabled, "and wraps around");
 }
 
 void TestLanguages() {
   const TextPackage packages[] = {TextPackage::kInt, TextPackage::kEsm, TextPackage::kEsn, TextPackage::kPtb};
-  const char* required[] = {"Local", "Online", "Create Room", "Find Room", "Players", "2 Players", "3 Players",
-                            "4 Players", "Invite Friends", "Start Race", "Leave Room", "Waiting for players",
-                            "Room full", "Host", "You", "Invited", "Accept", "Decline", "Connection lost", "Host left",
-                            "Player left", "Version mismatch"};
-  for (const char* key : required) {
-    bool listed = false;
-    for (const char* all : AllMenuKeys()) listed = listed || std::strcmp(all, key) == 0;
-    Check(listed, std::string("listed: ") + key);
-  }
   for (const char* key : AllMenuKeys()) {
     for (const TextPackage package : packages) {
       const char* text = MenuText(key, package);
       Check(text && text[0], std::string("not empty: ") + key);
     }
-    if (std::strcmp(key, "Local") && std::strcmp(key, "Online")) {
-      Check(std::strcmp(MenuText(key, TextPackage::kPtb), key) != 0 || std::strcmp(key, "Players") == 0 ||
-                std::strcmp(key, "Accept") == 0 || std::strcmp(key, "Friends") == 0,
-            std::string("translated to PTB: ") + key);
+    Check(std::strcmp(MenuText(key, TextPackage::kPtb), key) != 0 || std::strcmp(key, "Connecting") == 0,
+          std::string("translated to PTB: ") + key);
+  }
+  Check(std::strcmp(MenuText("Invite Player", TextPackage::kInt), "Invite Player") == 0, "English");
+  Check(std::strcmp(MenuText("Invite Player", TextPackage::kPtb), "Convidar jogador") == 0, "Portuguese");
+  Check(std::strcmp(MenuText("Invite Player", TextPackage::kEsm), "Invitar jugador") == 0, "Spanish");
+  Check(std::strcmp(MenuText(" joined", TextPackage::kEsm), MenuText(" joined", TextPackage::kEsn)) != 0, "ESM and ESN differ where the game's do");
+  Check(std::strcmp(MenuText("Nothing like this", TextPackage::kEsm), "Nothing like this") == 0, "an unknown text is unchanged");
+}
+
+void TestOneOnlinePath() {
+  const char* banned[] = {"Create Room", "Find Room", "Room Browser", "Room Capacity", "Refresh Rooms", "Leave Room",
+                          "Room full", "Join Room", "No rooms", "2 Players", "3 Players", "4 Players", "sala", "Sala",
+                          "Start Race", "Waiting for players", "\"Local\"", "Local/Online", "Player 1", "participant"};
+  for (const char* source : {"online_menu.h", "online_text.h", "online_menu_overlay.cpp", "online_character_select.h"}) {
+    const std::string text = ReadSource(source);
+    Check(!text.empty(), std::string("source found: ") + source);
+    for (const char* word : banned) {
+      if (std::strcmp(source, "online_text.h") == 0 && std::strcmp(word, "Waiting for players") == 0) continue;
+      Check(text.find(word) == std::string::npos, std::string(source) + " has no " + word);
     }
   }
-  Check(std::strcmp(MenuText("Host left", TextPackage::kEsm), MenuText("Host left", TextPackage::kEsn)) != 0, "ESM and ESN differ where the game's do");
-  Check(std::strcmp(MenuText("Start Race", TextPackage::kPtb), "Iniciar corrida") == 0, "online_text.h strings are reused");
-  Check(std::strcmp(MenuText("Nothing like this", TextPackage::kEsm), "Nothing like this") == 0, "an unknown text is unchanged");
-  Rig pt(TextPackage::kPtb);
-  Check(pt.Texts()[0] == "Local" && pt.Texts()[1] == "Online", "the choice in PTB");
-  Rig es(TextPackage::kEsm);
-  es.Press(Act::kOnline);
-  Check(es.Has("Crear sala") && es.Has("Buscar sala"), "Create and Find in ESM");
+  Check(ReadSource("main_menu.h").find("ECK_ONLINE_ENTER") == std::string::npos, "Free Race sends nothing to the port");
+  Check(ReadSource("main_menu_hooks.cpp").find("RequestOnlineMenu") == std::string::npos, "and opens nothing");
+  const TextPackage packages[] = {TextPackage::kInt, TextPackage::kEsm, TextPackage::kEsn, TextPackage::kPtb};
+  for (const char* key : AllMenuKeys()) {
+    for (const TextPackage package : packages) {
+      const std::string text = MenuText(key, package);
+      for (const char* word : {"Room", "room", "sala", "Sala", "Session", "session"}) {
+        Check(text.find(word) == std::string::npos, "no room or session wording: " + text);
+      }
+    }
+  }
+  const std::string overlay = ReadSource("online_menu_overlay.cpp");
+  Check(overlay.find("IsMouseReleased") != std::string::npos, "a row is activated by the mouse or by Input(), never by both");
 }
 
-void TestDryRun() {
-  online::RoomView room = MakeRoom(4, {{"AAAA-1111", "Saulo"}, {"BBBB-2222", "Ana"}});
-  room.rules = {{"laps", 5}, {"track", 7}, {"items", 0}};
-  const online_start::Plan plan = online_start::MakePlan(room, 1);
-  Check(plan.config.laps == 5 && plan.config.track == 7 && plan.config.rules == 0, "room rules reach the race config");
-  Check(plan.karts.size() == 8 && race::CountKarts(plan.karts).bots == 6, "two humans and six bots");
-  online_start::SetStartRaceHook({});
-  const online_start::Decision debug = online_start::Decide(plan, true);
-  std::string all;
-  for (const std::string& line : debug.lines) all += line + "\n";
-  Check(debug.verdict.dry_run && !debug.verdict.real_entry, "ECK_ONLINE_DEBUG=1 runs the dry run and enters no race");
-  Check(all.find("host_seat=0 local_seat=1 local_player_index=0 role=guest") != std::string::npos, "host seat, local seat and index printed");
-  Check(all.find("seat=0 remote kart_slot=0 player_controller_slot=none") != std::string::npos, "remote seat mapping printed");
-  Check(all.find("seat=1 local kart_slot=1 player_controller_slot=0") != std::string::npos, "local seat mapping printed");
-  Check(all.find("?NumHumanKarts=2?TotalKarts=8?NumSelectedTrack=7?PrimaryControllerID=0") != std::string::npos, "expected URL fields printed");
-  Check(all.find("[DEBUG_SAULO][ONLINE-RACE] start blocked reason=final guest hook unproven") != std::string::npos,
-        "the dry run still reports that the real start is blocked");
-  const online_start::Decision off = online_start::Decide(plan, false);
-  Check(off.lines.size() == 1 && off.lines[0] == std::string(online_start::kLogTag) + " start blocked reason=" + online_start::kNoDebugReason,
-        "without the env var only the blocked line is logged");
-  Check(!off.verdict.dry_run && !off.verdict.real_entry, "and nothing runs");
-  online_start::Plan empty;
-  Check(online_start::Decide(empty, true).lines[0].find("reason=invalid room plan") != std::string::npos, "an invalid plan is blocked, not silent");
-  const online_start::Plan unknown_track = online_start::MakePlan(MakeRoom(2, {{"A", "a"}, {"B", "b"}}), 0);
-  Check(unknown_track.config.track == online_start::kUnknownTrack, "an absent track is recorded as unknown");
-
-  online_start::SetStartRaceHook([](const online_start::Plan&) -> std::optional<online_start::Verdict> {
-    online_start::Verdict v;
-    v.real_entry = true;
-    return v;
-  });
-  Check(online_start::Decide(plan, false).verdict.real_entry, "the seam hands over to a proven hook");
-  online_start::SetStartRaceHook([](const online_start::Plan&) -> std::optional<online_start::Verdict> {
-    online_start::Verdict v;
-    v.reason = "remote kart state not proven";
-    return v;
-  });
-  const online_start::Decision hooked = online_start::Decide(plan, true);
-  Check(!hooked.verdict.real_entry && hooked.lines.size() == 1 && hooked.lines[0].find("remote kart state not proven") != std::string::npos,
-        "a hook's own block reason is logged");
-  online_start::SetStartRaceHook({});
-}
 
 }  // namespace
 
 int main() {
-  TestLocalOnlineChoice();
-  TestOnlinePage();
-  TestCreateRoom();
-  TestFindRoom();
-  TestSeatList();
-  TestStartRaceButton();
-  TestStartRaceFlow();
-  TestInviteFriends();
-  TestIncomingInvite();
-  TestRoomEvents();
+  TestShortcut();
+  TestStatusWithoutService();
+  TestPickerWithoutSetup();
+  TestScreenTracking();
+  TestPicker();
+  TestPickerCreatesNothing();
+  TestInviteFailureRetries();
+  TestRoleChangeIsNotALoss();
+  TestLeaveMenu();
+  TestStatusNeverNamesTheTransport();
+  TestSessionEndNotes();
+  TestInvitePrompt();
+  TestStatus();
+  TestNotes();
   TestNavigation();
   TestLanguages();
-  TestDryRun();
+  TestOneOnlinePath();
   return online_test::Finish();
 }

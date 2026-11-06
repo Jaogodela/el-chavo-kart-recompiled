@@ -89,10 +89,10 @@ void PumpRaceTelemetry(online::OnlineService& service, double now) {
   // Nothing here opens a connection: with no signed-in service a race is simply not reported.
   if (!context.ready) {
     if (armed) LogLines({"race not reported reason=service_not_ready map=" + armed->map});
-    tracker.Reset();
+    LogLines(tracker.Stop("service_lost"));
     return;
   }
-  if (armed) tracker.Arm(std::move(*armed));
+  if (armed) LogLines(tracker.Arm(std::move(*armed)));
   if (!tracker.Active() || now < next) return;
   next = now + kPollSeconds;
   ServiceView view;

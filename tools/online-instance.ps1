@@ -8,7 +8,7 @@
   first start copies the display and graphics settings of the main user folder (-CopyFrom) and gives the instance its
   own online name (Test-a, Test-b, or -OnlineName) with Online play Off; later starts keep the instance's own files and
   only restore a missing online name. The online identity is never copied, so every instance makes its own friend code
-  on first use. Every start writes a new log named after the instance (eck_a_001.log, _002, ...) inside that
+  on first use. Every start writes a new log with the game's own name (el_chavo_kart_001.log, _002, ...) inside that
   instance's logs folder.
   Each instance gets its own gameplay UDP port through ECK_ONLINE_PORT: -Port, or 7101 + the instance letter (a is 7101,
   b is 7102, ... j is 7110) when the name is a single letter a-j or a digit. Any other name needs -Port. Every instance
@@ -65,8 +65,8 @@ $settingsFile = Join-Path $user 'settings.toml'
 $OwnKeys = '^\s*eck_(launcher_(x|y|width|height|maximized|fullscreen)|online_(enabled|name|connection_test))\s*=|^\s*detailed_logging\s*='
 $NameKey = 'eck_online_name'
 
-function Next-LogFile([string]$Folder, [string]$Label) {
-    $prefix = "eck_${Label}_"
+function Next-LogFile([string]$Folder) {
+    $prefix = 'el_chavo_kart_'
     $last = 0
     foreach ($file in Get-ChildItem -LiteralPath $Folder -Filter "$prefix*.log" -ErrorAction SilentlyContinue) {
         if ($file.BaseName.Substring($prefix.Length) -match '^\d{1,9}$') { $last = [Math]::Max($last, [int]$Matches[0]) }
@@ -88,7 +88,7 @@ if ($fresh) {
     Add-Content -LiteralPath $settingsFile -Value "$NameKey = `"$OnlineName`"" -Encoding utf8
 }
 New-Item -ItemType Directory -Force $logs | Out-Null
-$logFile = Next-LogFile $logs $label
+$logFile = Next-LogFile $logs
 
 Write-Host "Online test instance $($label.ToUpperInvariant())$(if ($fresh) { ' (new)' })"
 Write-Host "  instance:       $label"
