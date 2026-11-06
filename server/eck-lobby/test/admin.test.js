@@ -36,10 +36,9 @@ test('GET /admin serves the dashboard page without a token and without any data'
     const html = await response.text();
     assert.match(html, /<title>ECK Online Metrics<\/title>/);
     assert.match(html, /El Chavo Kart · Online Metrics/);
-    for (const label of ['Online now', 'In rooms now', 'Rooms advertised now', 'Active rooms now', 'Direct now', 'Relay now',
-      'Pending now', '2-player rooms', '3-player rooms', '4-player rooms', 'Occupied seats', 'Maximum seats', 'Average occupancy',
-      'Period comparison', 'Current rooms', 'Last rooms', 'Room occupancy', 'Room lifetime', 'Transport', 'Daily totals',
-      'How to read this']) {
+    for (const label of ['Online now', 'Players in rooms', 'Open rooms', 'Peak today', 'Unique players today', 'Races today',
+      'Period comparison', 'Multiplayer activity', 'Players per race', 'Characters', 'Character combinations', 'Tracks', 'Competitions',
+      'Historical activity', 'Daily totals', 'Technical details']) {
       assert.ok(html.includes(label), label);
     }
     assert.ok(!html.includes(TOKEN));
@@ -69,8 +68,7 @@ test('every dashboard answer carries the security headers and a strict CSP', asy
 });
 
 test('the page writes values as text, never markup, and loads nothing from elsewhere', () => {
-  assert.match(ADMIN_JS, /direct: 'Direct', relay: 'Relay', mixed: 'Mixed', pending: 'Pending'/);
-  for (const pill of ['direct', 'relay', 'pending']) assert.ok(ADMIN_CSS.includes(`.pill.${pill}`));
+  assert.ok(ADMIN_CSS.includes('.dist.big'));
   assert.ok(!/<script>|<style>| style=| on[a-z]+=/i.test(ADMIN_HTML));
   assert.ok(!/\beval\(|new Function|innerHTML|document\.cookie|[?&]token=/.test(ADMIN_JS));
   for (const text of [ADMIN_HTML, ADMIN_CSS, ADMIN_JS]) assert.ok(!/(src|href)=["']?https?:|@import|url\(/i.test(text));

@@ -447,6 +447,11 @@ export class Hub {
     return sha256Hex(`${this.meta('salt')}|${ipGroup(ip)}`).slice(0, 32);
   }
 
+  // The stored pseudonym of a player in the unique-player counts; it never leaves this object.
+  playerKey(player) {
+    return sha256Hex(`${this.meta('salt')}|metrics-player|${player}`).slice(0, 32);
+  }
+
   // Greeted sockets; the one whose message is being handled carries its live attachment, not a stored copy.
   sockets() {
     if (!this.index) {
@@ -1107,6 +1112,7 @@ const HANDLERS = {
       build: hello.build, version: hello.version, platform: hello.platform, relay: hello.relay, room: null, seat: -1 });
     if (newSession) this.track(() => this.metrics.session(att));
     else if (hello.presence) this.diagnose('hello_reconnect_deduped');
+    if (hello.presence) this.track(() => this.metrics.playerSeen(this.playerKey(hello.player)));
     this.diagnose('hello_accepted');
     this.index = null;
     if (hello.presence ? !wasOnline || renamed : renamed) this.later(() => this.notifyStatus(hello.player));

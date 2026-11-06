@@ -80,7 +80,14 @@ In `metrics_daily_dimensions`: `platform`, `version`, `country`, `reject`, `tran
 (completed races only), `race_duration_bucket` (`under_2m`, `2_4m`, `4_6m`, `6_10m`, `over_10m`), `races_per_room` (`1`, `2`, `3`,
 `4+`, written once a room closes with at least one race). In `metrics_samples`: one row per 15 minutes (online, in rooms, rooms),
 kept 90 days. In `recent_rooms`: the latest 50 closed rooms that had a guest, 30 days at most, with end time, duration, capacity, peak
-occupancy, transport, platform categories and final state.
+occupancy, transport, platform categories and final state. In `metrics_players`: one row per player per day, holding only a
+pseudonym, kept 730 days.
+
+A unique player is one account counted once for a day, and once for a selected period however many days it played; a period is
+`COUNT(DISTINCT pseudonym)`, never a sum of days. Every presence `hello` records it (the Connection test does not), so a reconnect across
+midnight counts on the new day although it is not a new session. The pseudonym is the first 128 bits of `SHA-256(salt | "metrics-player" |
+friend code)` with the object's stored random salt; it is never returned by any route. Days before the first deploy of this table have no
+rows.
 
 A room counts as direct when it used only direct paths, relay when any seat used the relay, pending when it had a guest and no path
 was chosen. A session is a presence connection; a reconnect within 10 minutes is not a new one. Platform, version and country collapse
@@ -167,10 +174,21 @@ and `/admin/api/history?days=N&recent=M` (days 1 to 365, recent 1 to 50), which 
 is a Worker secret of 16 or more characters, compared by digest; without it the API answers 503. Nothing can be changed from the dashboard.
 Answers carry `no-store`, `nosniff`, `no-referrer`, `DENY` framing, same-origin isolation and a strict Content-Security-Policy.
 
-It shows, now: players online, in rooms, rooms advertised, active rooms, Direct, Relay and Pending seats, rooms by size, occupied and maximum
-seats, average occupancy. Then today's and the selected range's totals, a comparison with the previous period of the same length, current
-rooms (short id only, read live), last rooms, usage and rooms over time, breakdowns by room size, occupancy, lifetime, platform, version,
-country and transport, daily totals, and the rejection and protection counters.
+The page is about gameplay and stays anonymous. In order: a range selector (7, 30, 90, 365 days) and refresh; cards for players online,
+in rooms, open rooms, today's peak, unique players today and in the range, races today and in the range; the range against the previous
+period of the same length (unique players, sessions, rooms, joins, races started and completed, 2, 3 and 4 player races); multiplayer
+activity with the party size of finished rooms (solo, 2, 3, 4); players per race (1 to 4, from race starts); the 12 characters in game
+order; the most common character combinations (Top 15, seat order ignored); the 20 tracks; the 9 competitions; usage over time and
+per-day charts; daily totals; and one collapsed Technical details section (relay, direct and pathless rooms, protocol rejects, requests
+refused by limits, platform, version and country).
+
+Party size is the most players a room held at once, counted when the room ends; a room that never had a guest is solo. Players per race
+is the count the game reported at race start, local split-screen included, and is not room occupancy. A completion rate is completed over
+completed plus abandoned races, so races still running are not in it. Characters by player count and the host's character are not
+reported: no stored aggregate separates them and the race report does not mark the host's seat.
+
+The API still returns every operational figure (rooms, transports, rejects, abuse counters, recent rooms, the live room list) for
+diagnostics; the page just no longer draws them.
 
 ## Deploy (manual; nothing in this repository deploys)
 

@@ -1,5 +1,5 @@
 // The fixed ids race telemetry accepts. Ordering is the game script's: EKartCharacterType, EKartTracks and normalTracks in
-// ChavoKartGame.xxx (docs/online-analysis.md, section 12). Names are the game's own pt-BR localization.
+// ChavoKartGame.xxx (docs/online-analysis.md, section 12). Character names are the game's pt-BR localization, track names its English one.
 export const COMPETITIONS = [
   { id: 'normal_race', name: 'Normal Race' },
   { id: 'time_attack', name: 'Time Attack' },
@@ -28,26 +28,26 @@ export const CHARACTERS = [
 ];
 
 export const TRACKS = [
-  { id: 0, map: 'PistaBrasilM_Circuito0', name: 'Maracanã' },
-  { id: 1, map: 'PistaCastillo_Circuito0', name: 'Castelo do 71' },
-  { id: 2, map: 'PistaTanga_Circuito1', name: 'Pequena cidade' },
-  { id: 3, map: 'PistaMuseo_Circuito0', name: 'O Museu' },
+  { id: 0, map: 'PistaBrasilM_Circuito0', name: 'Brazil Maracana' },
+  { id: 1, map: 'PistaCastillo_Circuito0', name: 'Castle of 71' },
+  { id: 2, map: 'PistaTanga_Circuito1', name: 'Pueblito' },
+  { id: 3, map: 'PistaMuseo_Circuito0', name: 'The Museum' },
   { id: 4, map: 'PistaCiudad_Circuito0', name: 'Chavoltepec' },
-  { id: 5, map: 'PistaBrasilC_Circuito0', name: 'O Céu do Brasil' },
+  { id: 5, map: 'PistaBrasilC_Circuito0', name: 'Brazilian Sky' },
   { id: 6, map: 'PistaAcapulco_Circuito0', name: 'Acapulco' },
-  { id: 7, map: 'PistaCastillo_Circuito1', name: 'Casa da Bruxa' },
-  { id: 8, map: 'PistaElEspacio_Circuito0', name: 'Rota Espacial' },
-  { id: 9, map: 'PistaLaFeria_Circuito0', name: 'O Parque de Diversões' },
-  { id: 10, map: 'PistaHeroes_Circuito0', name: 'Luta Heroica' },
-  { id: 11, map: 'PistaTanga_Circuito0', name: 'Tangamandápio' },
-  { id: 12, map: 'PistaCiudad_Circuito1', name: 'A Cidade' },
-  { id: 13, map: 'PistaBrasilM_Circuito1', name: 'Febre de Futebol' },
-  { id: 14, map: 'PistaMuseo_Circuito1', name: 'Galeria' },
-  { id: 15, map: 'PistaBrasilC_Circuito1', name: 'Sobre o Rio' },
-  { id: 16, map: 'PistaAcapulco_Circuito1', name: 'A Costa' },
-  { id: 17, map: 'PistaLaFeria_Circuito1', name: 'Parque Temático' },
-  { id: 18, map: 'PistaHeroes_Circuito1', name: 'Academia de Heróis' },
-  { id: 19, map: 'PistaElEspacio_Circuito1', name: 'A Via Láctea' },
+  { id: 7, map: 'PistaCastillo_Circuito1', name: 'Haunted House' },
+  { id: 8, map: 'PistaElEspacio_Circuito0', name: 'Space Route' },
+  { id: 9, map: 'PistaLaFeria_Circuito0', name: 'The Funfair' },
+  { id: 10, map: 'PistaHeroes_Circuito0', name: 'Heroic Wrestle' },
+  { id: 11, map: 'PistaTanga_Circuito0', name: 'Tangamandapio' },
+  { id: 12, map: 'PistaCiudad_Circuito1', name: 'The City' },
+  { id: 13, map: 'PistaBrasilM_Circuito1', name: 'Soccer Fever' },
+  { id: 14, map: 'PistaMuseo_Circuito1', name: 'The Gallery' },
+  { id: 15, map: 'PistaBrasilC_Circuito1', name: 'Over Rio' },
+  { id: 16, map: 'PistaAcapulco_Circuito1', name: 'The Coast' },
+  { id: 17, map: 'PistaLaFeria_Circuito1', name: 'Theme Park' },
+  { id: 18, map: 'PistaHeroes_Circuito1', name: "Hero's Gym" },
+  { id: 19, map: 'PistaElEspacio_Circuito1', name: 'Milky Way' },
 ];
 
 export const VALID_COMPETITIONS = new Set(COMPETITIONS.map((c) => c.id));

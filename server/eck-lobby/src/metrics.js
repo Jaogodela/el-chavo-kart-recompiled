@@ -1,10 +1,13 @@
 // Aggregate service metrics for the private dashboard (README.md, Metrics): daily counters, daily counts per dimension,
-// 15-minute usage samples and a bounded list of recently closed rooms. No row names a player, an address or a room, and
-// nothing here keeps per-session state: live numbers come from the hub's sockets and tables.
+// 15-minute usage samples, one keyed pseudonym per player per day for distinct-player counts and a bounded list of recently
+// closed rooms. No row names a player, an address or a room, and nothing here keeps per-session state: live numbers come
+// from the hub's sockets and tables.
 export const METRICS_TIME_ZONE = 'America/Sao_Paulo';
 export const SAMPLE_MS = 15 * 60 * 1000;
 export const SAMPLE_DAYS = 90;
 export const HISTORY_MAX_DAYS = 365;
+// The longest range plus the same length before it, which the period comparison reads.
+export const PLAYER_RETENTION_DAYS = 2 * HISTORY_MAX_DAYS;
 export const DIMENSIONS = ['platform', 'version', 'country', 'reject', 'transport', 'room_capacity', 'room_occupancy',
   'room_lifetime', 'abuse', 'competition', 'player_count', 'race_context', 'race_transport', 'race_duration_bucket', 'races_per_room'];
 export const LIFETIMES = [['under_1m', 60e3], ['1_5m', 5 * 60e3], ['5_15m', 15 * 60e3], ['15_60m', 60 * 60e3], ['over_1h', Infinity]];
@@ -32,6 +35,7 @@ const SUMMED = [...COUNTERS, ...ROOM_COLUMNS, ...RACE_SUM_COLUMNS];
 const PEAKS = ['peak_online', 'peak_in_rooms', 'peak_rooms'];
 const DAY_COLUMNS = [...SUMMED, ...PEAKS];
 const PLAYER_COUNT_TRANSPORTS = ['direct', 'relay', 'mixed'];
+const MULTIPLAYER_SIZES = [2, 3, 4];
 const CROSS_KINDS = ['competition_players', 'track_players', 'track_competition', 'character_competition', 'character_track'];
 
 export const METRICS_SCHEMA = [
@@ -63,6 +67,7 @@ export const METRICS_SCHEMA = [
      races INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, a, b))`,
   `CREATE TABLE IF NOT EXISTS metrics_daily_compositions (day TEXT NOT NULL, player_count INTEGER NOT NULL, composition TEXT NOT NULL,
      races INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, player_count, composition))`,
+  `CREATE TABLE IF NOT EXISTS metrics_players (day TEXT NOT NULL, pseudonym TEXT NOT NULL, PRIMARY KEY (day, pseudonym))`,
 ];
 
 const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: METRICS_TIME_ZONE, year: 'numeric', month: '2-digit',
@@ -137,6 +142,7 @@ export class Metrics {
     ensureColumns(sql, 'metrics_daily_player_counts', PLAYER_COUNT_TRANSPORTS);
     this.peaks = null;
     this.sample = null;
+    this.seen = null;
     this.pending = new Map();
   }
 
@@ -176,6 +182,19 @@ export class Metrics {
     }
     this.sql.run(`INSERT INTO metrics_daily_dimensions (day, dimension, value, count) VALUES (?, ?, ?, 1)
       ON CONFLICT(day, dimension, value) DO UPDATE SET count = count + 1`, day, dimension, value);
+  }
+
+  // One signed-in player today, by the keyed pseudonym the hub derives. A repeat while the object stays awake writes nothing.
+  playerSeen(key) {
+    const day = metricsDay(this.now());
+    if (this.seen?.day !== day) this.seen = { day, keys: new Set() };
+    if (this.seen.keys.has(key)) return;
+    this.sql.run('INSERT OR IGNORE INTO metrics_players (day, pseudonym) VALUES (?, ?)', day, key);
+    this.seen.keys.add(key);
+  }
+
+  uniquePlayers(from, to) {
+    return this.sql.get('SELECT COUNT(DISTINCT pseudonym) AS n FROM metrics_players WHERE day >= ? AND day <= ?', from, to).n;
   }
 
   // One connection that became an online session; `client` is its platform, version and country as reported.
@@ -415,6 +434,8 @@ export class Metrics {
     this.sql.run(`DELETE FROM metrics_samples WHERE bucket IN
       (SELECT bucket FROM metrics_samples WHERE bucket < ? ORDER BY bucket LIMIT ?)`, now - SAMPLE_DAYS * DAY_MS,
     CLEANUP_ROWS);
+    this.sql.run(`DELETE FROM metrics_players WHERE day =
+      (SELECT MIN(day) FROM metrics_players WHERE day < ?)`, daysBefore(metricsDay(now), PLAYER_RETENTION_DAYS));
   }
 
   // `live`: the counts, Maps of platform, version and country to players online and of transport to seats, and the room list.
@@ -428,7 +449,7 @@ export class Metrics {
       day,
       live: { ...live, platform: sorted(live.platform), version: sorted(live.version), country: sorted(live.country),
         transport: sorted(live.transport) },
-      today: { ...today, peak_online: Math.max(today.peak_online, live.online),
+      today: { ...today, unique_players: this.uniquePlayers(day, day), peak_online: Math.max(today.peak_online, live.online),
         peak_in_rooms: Math.max(today.peak_in_rooms, live.in_rooms), peak_rooms: Math.max(today.peak_rooms, live.rooms) },
     };
   }
@@ -443,7 +464,10 @@ export class Metrics {
 
   totals(from, to) {
     const select = [...SUMMED.map((c) => `COALESCE(SUM(${c}), 0) AS ${c}`), ...PEAKS.map((c) => `COALESCE(MAX(${c}), 0) AS ${c}`)];
-    return this.sql.get(`SELECT ${select.join(', ')} FROM metrics_daily WHERE day >= ? AND day <= ?`, from, to);
+    const row = this.sql.get(`SELECT ${select.join(', ')} FROM metrics_daily WHERE day >= ? AND day <= ?`, from, to);
+    const byPlayers = new Map(this.playerCounts(from, to).map((r) => [r.player_count, r.races]));
+    return { ...row, unique_players: this.uniquePlayers(from, to),
+      ...Object.fromEntries(MULTIPLAYER_SIZES.map((n) => [`races_${n}p`, byPlayers.get(n) ?? 0])) };
   }
 
   history(days, recentLimit = RECENT_ROOMS_DEFAULT) {
@@ -456,10 +480,12 @@ export class Metrics {
     const first = daysBefore(last, days - 1);
     const rows = new Map(this.sql.all(`SELECT day, ${DAY_COLUMNS.join(', ')} FROM metrics_daily WHERE day >= ? AND day <= ?
       ORDER BY day`, first, last).map((r) => [r.day, r]));
+    const players = new Map(this.sql.all(`SELECT day, COUNT(*) AS n FROM metrics_players WHERE day >= ? AND day <= ?
+      GROUP BY day`, first, last).map((r) => [r.day, r.n]));
     const daily = [];
     for (let i = days - 1; i >= 0; i--) {
       const day = daysBefore(last, i);
-      daily.push(rows.get(day) ?? { day, ...emptyDay() });
+      daily.push({ ...(rows.get(day) ?? { day, ...emptyDay() }), unique_players: players.get(day) ?? 0 });
     }
     const dimensions = Object.fromEntries(DIMENSIONS.map((d) => [d, []]));
     for (const r of this.sql.all(`SELECT dimension, value, SUM(count) AS count FROM metrics_daily_dimensions
@@ -472,7 +498,9 @@ export class Metrics {
     const totals = this.totals(first, last);
     const previous = this.totals(daysBefore(first, days), daysBefore(first, 1));
     return { generated: now, time_zone: METRICS_TIME_ZONE, days, first, last, sample_ms: SAMPLE_MS, daily, dimensions, samples,
+      players_first_day: this.sql.get('SELECT MIN(day) AS day FROM metrics_players').day ?? null,
       totals, previous, comparison: compare(totals, previous), recent: this.recent(first, recentLimit),
+      party_sizes: partySizes(totals, dimensions.room_occupancy),
       player_counts: this.playerCounts(first, last), competitions: this.raceOutcomes('competition', first, last),
       tracks: this.raceOutcomes('track', first, last), race_cross: this.raceCross(first, last),
       characters: this.characterStats(first, last, daysBefore(first, days), daysBefore(first, 1)),
@@ -482,12 +510,23 @@ export class Metrics {
 
 const emptyDay = () => Object.fromEntries(DAY_COLUMNS.map((c) => [c, 0]));
 
+// Rooms by the largest party they reached. A room that closed without a guest is a party of 1; the occupancy dimension
+// is written only for rooms that had one.
+function partySizes(totals, occupancy) {
+  const counts = [Math.max(0, totals.rooms_closed - totals.rooms_with_guest), 0, 0, 0];
+  for (const { value, count } of occupancy) {
+    const size = Number(value.split('/')[0]);
+    if (size >= 2 && size <= 4) counts[size - 1] += count;
+  }
+  return counts.map((count, i) => ({ players: i + 1, count }));
+}
+
 // Relative change in percent; null when there was nothing before to compare with.
 export const percentChange = (current, previous) => (previous > 0 ? Math.round(1000 * (current - previous) / previous) / 10 : null);
 
-export const COMPARED = ['sessions', 'rooms_created', 'rooms_started', 'rooms_with_guest', 'joins', 'invites', 'direct_selected',
-  'relay_selected', 'peak_online', 'peak_in_rooms', 'peak_rooms', 'races_started', 'races_completed', 'races_abandoned',
-  'rooms_with_race', 'rooms_rematched'];
+export const COMPARED = ['unique_players', 'sessions', 'rooms_created', 'rooms_started', 'rooms_with_guest', 'joins', 'invites',
+  'direct_selected', 'relay_selected', 'peak_online', 'peak_in_rooms', 'peak_rooms', 'races_started', 'races_completed',
+  'races_abandoned', 'rooms_with_race', 'rooms_rematched', ...MULTIPLAYER_SIZES.map((n) => `races_${n}p`)];
 
 export function compare(current, previous) {
   return Object.fromEntries(COMPARED.map((c) => [c, { current: current[c], previous: previous[c],

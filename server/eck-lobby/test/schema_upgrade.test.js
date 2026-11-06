@@ -80,6 +80,8 @@ test('the hub works and the dashboard loads against an upgraded schema, and upgr
   assert.doesNotThrow(() => hub.metricsHistory(30, 20));
   const history = hub.metricsHistory(30, 20);
   assert.equal(history.totals.races_abandoned, 0);
+  assert.deepEqual([history.totals.unique_players, history.players_first_day, hub.metricsSummary().today.unique_players], [0, null, 0]);
+  assert.deepEqual(history.party_sizes.map((s) => s.players), [1, 2, 3, 4]);
   assert.equal(history.dimensions.player_count.length, 0);
   assert.deepEqual([history.characters, history.pairs, history.tracks, history.compositions[2]], [[], [], [], []]);
 

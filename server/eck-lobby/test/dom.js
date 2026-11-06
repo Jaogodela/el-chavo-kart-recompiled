@@ -65,11 +65,10 @@ class FakeNode {
   }
 }
 
-export async function openDashboard({ summary, history, historyFor, range = '30', recent = '20' }) {
+export async function openDashboard({ summary, history, historyFor, range = '30' }) {
   const nodes = new Map();
   for (const id of ADMIN_HTML.matchAll(/id="([^"]+)"/g)) nodes.set(id[1], new FakeNode('div'));
   nodes.get('range').value = range;
-  nodes.get('recent-limit').value = recent;
   const requests = [];
   const sandbox = {
     document: {

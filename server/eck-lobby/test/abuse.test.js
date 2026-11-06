@@ -151,7 +151,7 @@ test('reconnecting does not rewrite the player row or the session metrics', () =
     assert.equal(next.reply.code, 'ok');
     client = next.client;
   }
-  assert.equal(writesTo(writes, 'players').length, 0);
+  assert.deepEqual(writes.filter((q) => /players/.test(q)), []);
   assert.deepEqual(writes.filter((q) => q.includes('metrics_daily') && !q.includes("'abuse'")), []);
 });
 

@@ -342,6 +342,6 @@ test('relayed frames write nothing to the database', () => {
   const tables = env.host.sql.all(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).map((r) => r.name);
   assert.deepEqual(tables.sort(), ['friend_requests', 'friends', 'handles', 'invites', 'meta', 'metrics_daily', 'metrics_daily_character_pairs',
     'metrics_daily_characters', 'metrics_daily_compositions', 'metrics_daily_dimensions', 'metrics_daily_finish_positions',
-    'metrics_daily_player_counts', 'metrics_daily_race_cross', 'metrics_daily_race_outcomes', 'metrics_samples', 'players', 'recent_rooms',
-    'registrations', 'room_seats', 'rooms']);
+    'metrics_daily_player_counts', 'metrics_daily_race_cross', 'metrics_daily_race_outcomes', 'metrics_players', 'metrics_samples', 'players',
+    'recent_rooms', 'registrations', 'room_seats', 'rooms']);
 });
