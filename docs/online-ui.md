@@ -114,8 +114,9 @@ then `ScreenParent`, `playerSelectState` and `selectedPlayer` at their distances
 | No session | every pad and panel is the original game's |
 
 The game shows no character twice, so a panel waits while a local panel or a settled remote panel holds its target, and the
-game's `IsReadyToGo` keeps the host on the screen until every panel is confirmed or closed. Which characters are locked comes
-from each PC's own save: a character the guest has and the host lacks is shown locked on the host's panel.
+game's `IsReadyToGo` keeps the host on the screen until every panel is confirmed or closed. Which characters a player can pick
+comes from that player's own save and Unlock secret characters option. A remote panel is never locked on the PC showing it, and
+the black preview paint is skipped during a session: see `docs/launcher-graphics-gameplay.md`.
 
 Picks are `match.pick` (`server/eck-lobby/PROTOCOL.md`): the service writes only the sender's seat, and every `room.updated`
 carries all of them. They need no UDP path, so Direct and Relay are untouched.

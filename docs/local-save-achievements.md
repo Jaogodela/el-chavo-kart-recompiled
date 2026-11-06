@@ -19,8 +19,9 @@ reads them as not set (`from` = 0) and the game builds its defaults; the first w
 profile from a previous session showed all three files created by the game, one with ~1 KB of data and two empty
 (patch 0024 keeps the zero-size writes safe).
 
-Limits: which gameplay state (options, cups, unlocks, records) is serialized into those blobs versus a content
-container could not be proven without running the game; the manual test below is the check.
+Script progress is one JSON string: `KartManager_Data.SavePlayerProfile` writes `KartScoreDao.GetJSONObjectAsString()` as
+profile setting 111, and `CreateJSONObject` rebuilds that string from the live `KartScoreDao` on every save. Which setting ends
+up in which of the three blobs could not be proven without running the game.
 
 ## User data layout (relative to the user data root)
 

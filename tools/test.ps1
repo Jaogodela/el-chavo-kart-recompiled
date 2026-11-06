@@ -30,7 +30,7 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
     catch { $Failures.Add("${Name}: $($_.Exception.Message)"); Write-Host "  FAILED: $($_.Exception.Message)" -ForegroundColor Red }
 }
 
-if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_game_window_tests eck_frame_limiter_tests eck_debug_telemetry_tests eck_input_focus_tests eck_main_menu_tests eck_online_identity_tests eck_online_protocol_tests eck_online_peer_tests eck_online_service_tests eck_online_session_tests eck_online_lobby_tests eck_online_race_sync_tests eck_online_launcher_tests eck_online_race_tests eck_online_race_telemetry_tests eck_online_menu_tests eck_online_probe_tests' -match $Filter) {
+if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tests eck_launcher_logic_tests eck_game_window_tests eck_frame_limiter_tests eck_debug_telemetry_tests eck_input_focus_tests eck_main_menu_tests eck_character_unlock_tests eck_online_identity_tests eck_online_protocol_tests eck_online_peer_tests eck_online_service_tests eck_online_session_tests eck_online_lobby_tests eck_online_race_sync_tests eck_online_launcher_tests eck_online_race_tests eck_online_race_telemetry_tests eck_online_menu_tests eck_online_probe_tests' -match $Filter) {
     Test-Step 'Console tests (tests\CMakeLists.txt)' {
         $Toolchain = Get-BuildToolchain
         $SavedEnv = Save-BuildEnvironment
@@ -43,7 +43,7 @@ if (-not $Filter -or 'eck_installer_tests eck_ui_text_tests eck_achievements_tes
             & $Toolchain.CMake --build $BuildDir | Out-Host
             if ($LASTEXITCODE) { throw "Test build failed ($LASTEXITCODE)" }
         } finally { Restore-BuildEnvironment $SavedEnv }
-        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_game_window_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests', 'eck_input_focus_tests', 'eck_main_menu_tests', 'eck_online_identity_tests', 'eck_online_protocol_tests', 'eck_online_peer_tests', 'eck_online_service_tests', 'eck_online_session_tests', 'eck_online_lobby_tests', 'eck_online_race_sync_tests', 'eck_online_launcher_tests', 'eck_online_race_tests', 'eck_online_race_telemetry_tests', 'eck_online_menu_tests', 'eck_online_probe_tests')) {
+        foreach ($name in @('eck_installer_tests', 'eck_ui_text_tests', 'eck_achievements_tests', 'eck_launcher_logic_tests', 'eck_game_window_tests', 'eck_frame_limiter_tests', 'eck_debug_telemetry_tests', 'eck_input_focus_tests', 'eck_main_menu_tests', 'eck_character_unlock_tests', 'eck_online_identity_tests', 'eck_online_protocol_tests', 'eck_online_peer_tests', 'eck_online_service_tests', 'eck_online_session_tests', 'eck_online_lobby_tests', 'eck_online_race_sync_tests', 'eck_online_launcher_tests', 'eck_online_race_tests', 'eck_online_race_telemetry_tests', 'eck_online_menu_tests', 'eck_online_probe_tests')) {
             if ($Filter -and $name -notmatch $Filter) { continue }
             $exe = Join-Path $BuildDir "$name.exe"
             Write-Host "Running $name..."

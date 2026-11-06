@@ -690,6 +690,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     }
     ui.Combo(kLanguageLabel, kLanguageHelp, kLanguageSetting, kDefaultLanguage, languages);
     ui.Toggle("Skip intro", "Start directly at the title screen", "eck_skip_intro", false, "Off", "On");
+    ui.Toggle("Unlock secret characters",
+              "Every character can be selected while this is on. Your save and achievements do not change.",
+              "eck_unlock_secret_characters", false, "Off", "On");
     std::vector<trg::Option> frame_rates;
     for (auto& [value, label] : FrameRateChoices()) {
       frame_rates.push_back({std::move(value), std::move(label)});

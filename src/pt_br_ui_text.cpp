@@ -51,6 +51,8 @@ Multisampling	Multisampling
 Texture filtering	Filtragem de texturas
 Game	Jogo
 Skip intro	Pular introdução
+Unlock secret characters	Desbloquear personagens secretos
+Every character can be selected while this is on. Your save and achievements do not change.	Todos os personagens podem ser escolhidos enquanto isto estiver ligado. Seu save e suas conquistas não mudam.
 Start directly at the title screen	Começar direto na tela de título
 Frame rate	Taxa de quadros
 The maximum frame rate the game renders. The game's clock follows real time, so game speed does not change. 30 is the console rate. Unlimited stops at 300.	A taxa máxima de quadros que o jogo renderiza. O relógio do jogo segue o tempo real, então a velocidade do jogo não muda. 30 é a taxa do console. Ilimitado para em 300.

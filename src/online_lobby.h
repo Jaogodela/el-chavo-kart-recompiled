@@ -248,6 +248,20 @@ struct Plan {
   std::array<PanelTarget, kPanels> seats{};
 };
 
+constexpr bool HasRemotePanels(const Plan& plan) {
+  for (const bool remote : plan.remote) {
+    if (remote) return true;
+  }
+  return false;
+}
+
+constexpr bool IsRemotePanel(const Plan& plan, uint32_t panel) {
+  for (size_t i = 0; i < kPanels; ++i) {
+    if (panel != 0 && plan.panels[i] == panel) return plan.remote[size_t(kSeatOfPanel[i])];
+  }
+  return false;
+}
+
 inline Plan MakePlan(const online::Snapshot& state, bool on_screen, const menu::PanelObjects& panels) {
   Plan plan;
   plan.on_screen = on_screen;

@@ -19,6 +19,7 @@ REXCVAR_DECLARE(bool, eck_launcher);
 REXCVAR_DECLARE(bool, eck_skip_launcher);
 REXCVAR_DECLARE(std::string, eck_language);
 REXCVAR_DECLARE(bool, eck_skip_intro);
+REXCVAR_DECLARE(bool, eck_unlock_secret_characters);
 REXCVAR_DECLARE(int32_t, eck_frame_rate);
 REXCVAR_DECLARE(bool, eck_show_fps);
 REXCVAR_DECLARE(bool, eck_show_render_resolution);

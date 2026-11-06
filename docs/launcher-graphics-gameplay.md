@@ -27,6 +27,46 @@ engine is a variable-delta design, so the Hard Corps fixed 60 Hz step schedule a
 is held to 300 FPS so the delta never falls under the engine's floors. Not examined: frame-counted gameplay logic and
 fixed per-frame smoothing, which is what the manual test at 90 and above has to confirm.
 
+## Unlock secret characters
+`eck_unlock_secret_characters`, off by default. From the decoded `ChavoKartGame.xxx` and `TitleMap.xxx`:
+
+| Id | Character | Available |
+| --- | --- | --- |
+| 0, 1, 2 | Chaves, Quico, Seu Madruga | from the start |
+| 3, 4 | Dona Florinda, Professor Girafales | cup 1, Copa Jirafales |
+| 5, 6, 7 | Popis, Nhonho, Senhor Barriga | from the start |
+| 8 | Dona Clotilde | cup 3, Copa Cleotilde |
+| 9 | Paty | cup 5, Copa Sr. Barriga |
+| 10 | Rufino Malfeitor | cup 7, Copa Rufino |
+| 11 | Godines | from the start |
+
+`EKartCharacterType` has these 12 plus `Count` and `MAX`, which are not characters. There are no DLC, test or placeholder slots:
+12 `PlayerCharacterClassNames`, 12 `KartPawn*Arch_SF` packages, 12 preview actors, and `DoPlayerSelection` wraps at 0 and 11.
+
+The defaults are `KartDefaultData_Cups.UnlockedCharacters` and each cup's `UnlocksCharacters`. A cup pays out the first time the
+last unlocked cup ends with `BestPlace` 1 to 3 (`KartProgressManager_Cups.OnCupEnded`, then `KartScreen_WinnersPodium.CheckForUnlockables`
+and `KartScoreDao.AddUnlockedCharacter`). The save is read into `KartScoreDao.UnlockedCharacters`, and
+`KartScreen_PlayerSelectManager.GetListOfLockedCharacters` is 0 to 11 minus that array.
+
+`isCharacterLocked` is the only reader that matters: `KartScreen_PlayerSelectIndividual.ShowPlayer` feeds it to the movie's
+`SetLockVisible`, the movie's `OnGamepadA` refuses a confirm while `lockedMC` is visible, and `OnPressAButton` and
+`OnPressStartButton` check it again.
+
+The array cannot be changed: `CreateCupsJSON` saves it whole on every save, `HasUnblockedAllCharacters` (`Length == 12`) grants
+achievement 34, and `AddUnlockedCharacter` would refuse to record a real cup reward. So `src/character_unlock_hook.cpp` hooks
+`UObject::CallFunction` (`sub_82313048`), finds the function through `GNames`, runs it, and clears the caller's result for that one
+call. `FFrame.Object` is the calling panel, so the answer is per panel: local panels follow the option, and a remote panel in a
+session is always open, so a peer never refuses a pick because of its own save. Peers do not need the option to see a secret
+character, and the protocol and Worker already accept all 12.
+
+`KartSceneCapture2DActor.SetLockVisible(true)` paints the preview black and nothing restores it until the menu map reloads, and the
+four panels share the twelve actors. In a session the hook returns from that function at once. A character the host passed over
+before the room existed stays black on the host until the next map load; this only affects the preview.
+
+The launcher runs before the game, so changing the option means restarting the game. The hook reads the cvar on every check.
+A cup played with a secret character stores it in `CupData.SelectedCharacter` for resuming, as it does for the bots' characters.
+That is not an unlock and resuming does not check it.
+
 ## Local players
 The game polls and range-checks 4 users (`cmplwi 4`). `XamUserGetName` is called from `sub_82A0E268` and `sub_82A0D328` with a
 32-byte buffer, converted as ANSI; the SDK limits to 15 bytes. Patch 0012 provides the 4 name cvars. Patch 0040 (from SSF2T's

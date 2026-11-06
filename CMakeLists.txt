@@ -186,6 +186,7 @@ set(ECK_SOURCES
     src/achievements_menu.cpp
     src/achievements_overlay.cpp
     src/active_log.cpp
+    src/character_unlock_hook.cpp
     src/crash_report.cpp
     src/debug_telemetry.cpp
     src/diagnostics.cpp

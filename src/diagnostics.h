@@ -63,6 +63,7 @@ struct LauncherDisplayIdentity {
 struct LauncherGameplayIdentity {
   std::string language;
   std::string skip_intro;
+  std::string unlock_secret_characters;
   std::string frame_rate;
   std::string frame_rate_in_title;
   std::string render_resolution_in_title;
