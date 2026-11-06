@@ -1,5 +1,6 @@
 #include "online_page.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cfloat>
 #include <cstring>
@@ -47,12 +48,16 @@ void OnlineNameRow(trg::Ui& ui) {
 
 bool AcceptButton(trg::Ui& ui, const char* id) {
   const trg::Theme& t = ui.theme();
+  const bool outlined = t.accent_border.w > 0.0f;
   ImGui::PushStyleColor(ImGuiCol_Button, t.accent);
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered, t.accent_hot);
-  ImGui::PushStyleColor(ImGuiCol_ButtonActive, t.accent);
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, t.accent_pressed.w > 0.0f ? t.accent_pressed : t.accent);
   ImGui::PushStyleColor(ImGuiCol_Text, t.on_accent);
+  ImGui::PushStyleColor(ImGuiCol_Border, t.accent_border);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, outlined ? std::max(1.0f, 1.5f * ui.scale()) : 0.0f);
   const bool clicked = ImGui::Button(id);
-  ImGui::PopStyleColor(4);
+  ImGui::PopStyleVar();
+  ImGui::PopStyleColor(5);
   return clicked;
 }
 

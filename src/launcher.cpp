@@ -59,8 +59,19 @@ constexpr double kPlayFeedbackSeconds = 0.4;
 
 constexpr ImGuiConfigFlags kNavFlags = ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
 
-// The game's sunny yellow over a deep blue background.
-const ImVec4 kAccent = ImVec4(0.98f, 0.80f, 0.16f, 1.0f);
+ImVec4 Rgb(int r, int g, int b) {
+  return ImVec4(float(r) / 255.0f, float(g) / 255.0f, float(b) / 255.0f, 1.0f);
+}
+
+ImVec4 Mixed(const ImVec4& from, const ImVec4& to, float amount) {
+  return ImVec4(from.x + (to.x - from.x) * amount, from.y + (to.y - from.y) * amount,
+                from.z + (to.z - from.z) * amount, 1.0f);
+}
+
+const ImVec4 kAccent = Rgb(0xF2, 0xC3, 0x18);
+const ImVec4 kActionBorder = Rgb(0xD9, 0x48, 0x1F);
+// Lighter than the logo's #E4572E, which is too dark for text on the blue panels.
+const ImVec4 kActionLink = Rgb(0xFF, 0x70, 0x4A);
 const ImVec4 kLeaf = ImVec4(0.12f, 0.40f, 0.22f, 1.0f);
 
 constexpr const char* kAuthorUrl = "https://github.com/saulob";
@@ -72,6 +83,10 @@ const char* TranslateLauncherText(const char* english) {
 
 trg::Theme LauncherTheme() {
   trg::Theme theme = trg::Theme::Ocean().WithAccent(kAccent);
+  theme.accent_hot = Mixed(kAccent, ImVec4(1, 1, 1, 1), 0.10f);
+  theme.accent_pressed = Mixed(kAccent, ImVec4(0, 0, 0, 1), 0.20f);
+  theme.accent_border = kActionBorder;
+  theme.link = kActionLink;
   theme.good = kLeaf;
   return theme;
 }

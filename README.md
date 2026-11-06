@@ -100,6 +100,12 @@ The launcher opens before the game. Hold **Shift** while starting to show it whe
 
 Enter plays, Ctrl+S saves, F11 switches fullscreen and Alt+F4 quits. Escape does not quit.
 
+The launcher takes its colours from the game's logo. Clickable controls (action buttons, the selected page, the active
+toggle option and PLAY) are yellow `#F2C318` with a thin red `#D9481F` outline, lighter on hover and darker while
+pressed. Links, check marks and the keyboard focus ring use the lighter red-orange `#FF704A`. The outline and the extra
+colours come from `patches\trg-launcher\0005-accent-outline.patch`; the application icon is drawn by
+`python -I tools\make-app-icon.py` in the same colours.
+
 ## Controls
 
 On a controller the game uses its own layout: left stick steers, **RT** accelerates, **LT** brakes and reverses, **A**

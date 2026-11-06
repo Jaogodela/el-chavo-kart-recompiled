@@ -1,0 +1,138 @@
+diff --git a/include/trg/launcher.h b/include/trg/launcher.h
+index 5f0eb3e..0f51bfb 100644
+--- a/include/trg/launcher.h
++++ b/include/trg/launcher.h
+@@ -65,6 +65,9 @@ struct Theme {
+   ImVec4 warn;          // "Game files needed" card
+   ImVec4 good_dot;
+   ImVec4 warn_dot;      // also the sidebar's attention dot
++  ImVec4 accent_pressed = ImVec4(0, 0, 0, 0);  // alpha 0: accent_hot
++  ImVec4 accent_border = ImVec4(0, 0, 0, 0);   // alpha 0: no outline
++  ImVec4 link = ImVec4(0, 0, 0, 0);            // alpha 0: dim / accent
+ 
+   // Deep space blue with a green accent (Outpost Kaloki X).
+   static Theme Midnight();
+diff --git a/src/launcher.cpp b/src/launcher.cpp
+index 2234fb1..b744be3 100644
+--- a/src/launcher.cpp
++++ b/src/launcher.cpp
+@@ -28,6 +28,10 @@ ImVec4 Mix(const ImVec4& a, const ImVec4& b, float t) {
+   return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
+ }
+ 
++bool Visible(const ImVec4& c) {
++  return c.w > 0.0f;
++}
++
+ void ApplyTheme(const Theme& t, float s) {
+   ImGuiStyle& st = ImGui::GetStyle();
+   st.WindowPadding = ImVec2(14 * s, 12 * s);  // popups and combos; the launcher's own windows use none
+@@ -66,7 +70,7 @@ void ApplyTheme(const Theme& t, float s) {
+   c[ImGuiCol_HeaderActive] = t.frame_active;
+   c[ImGuiCol_SliderGrab] = t.accent;
+   c[ImGuiCol_SliderGrabActive] = t.accent_hot;
+-  c[ImGuiCol_CheckMark] = t.accent;
++  c[ImGuiCol_CheckMark] = Visible(t.link) ? t.link : t.accent;
+   c[ImGuiCol_PlotHistogram] = t.accent;
+   c[ImGuiCol_PlotHistogramHovered] = t.accent_hot;
+   c[ImGuiCol_TextSelectedBg] = ImVec4(t.accent.x, t.accent.y, t.accent.z, 0.35f);
+@@ -79,7 +83,7 @@ void ApplyTheme(const Theme& t, float s) {
+   c[ImGuiCol_TableBorderStrong] = ImVec4(1, 1, 1, 0.08f);
+   c[ImGuiCol_TableRowBg] = ImVec4(0, 0, 0, 0);
+   c[ImGuiCol_TableRowBgAlt] = ImVec4(0, 0, 0, 0);
+-  c[ImGuiCol_NavCursor] = t.accent;
++  c[ImGuiCol_NavCursor] = Visible(t.link) ? t.link : t.accent;
+   c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.6f);
+ }
+ 
+@@ -93,11 +97,18 @@ ImFont* LoadFirstFont(std::initializer_list<std::string> paths, float size) {
+   return nullptr;
+ }
+ 
+-void PushAccent(const Theme& t) {
++void PushAccent(const Theme& t, float scale) {
+   ImGui::PushStyleColor(ImGuiCol_Button, t.accent);
+   ImGui::PushStyleColor(ImGuiCol_ButtonHovered, t.accent_hot);
+-  ImGui::PushStyleColor(ImGuiCol_ButtonActive, t.accent_hot);
++  ImGui::PushStyleColor(ImGuiCol_ButtonActive, Visible(t.accent_pressed) ? t.accent_pressed : t.accent_hot);
+   ImGui::PushStyleColor(ImGuiCol_Text, t.on_accent);
++  ImGui::PushStyleColor(ImGuiCol_Border, Visible(t.accent_border) ? t.accent_border : ImVec4(0, 0, 0, 0));
++  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, Visible(t.accent_border) ? std::max(1.0f, 1.5f * scale) : 0.0f);
++}
++
++void PopAccent() {
++  ImGui::PopStyleVar();
++  ImGui::PopStyleColor(5);
+ }
+ 
+ // Draws `text` at `pos` and returns its advance. A non-empty url makes it a
+@@ -294,20 +305,20 @@ int Ui::Segmented(const char* id, const std::vector<std::string>& labels, int se
+   for (size_t i = 0; i < labels.size(); ++i) {
+     if (i) ImGui::SameLine(0, gap);
+     const bool sel = int(i) == selected;
+-    if (sel) PushAccent(theme());
++    if (sel) PushAccent(theme(), scale_);
+     ImGui::PushID(int(i));
+     if (ImGui::Button(T(labels[i].c_str()), ImVec2(bw, 0)) && !sel) clicked = int(i);
+     ImGui::PopID();
+-    if (sel) ImGui::PopStyleColor(4);
++    if (sel) PopAccent();
+   }
+   ImGui::PopID();
+   return clicked;
+ }
+ 
+ bool Ui::AccentButton(const char* label, ImVec2 size) {
+-  PushAccent(theme());
++  PushAccent(theme(), scale_);
+   const bool r = ImGui::Button(T(label), size);
+-  ImGui::PopStyleColor(4);
++  PopAccent();
+   return r;
+ }
+ 
+@@ -583,7 +594,7 @@ void Ui::Help(const char* text) {
+ }
+ 
+ void Ui::Link(const char* text, const std::string& url) {
+-  ImGui::PushStyleColor(ImGuiCol_Text, theme().dim);
++  ImGui::PushStyleColor(ImGuiCol_Text, Visible(theme().link) ? theme().link : theme().dim);
+   ImGui::PushFont(nullptr, fonts().size * 0.84f);
+   LinkText(ImGui::GetWindowDrawList(), text, ImGui::GetCursorScreenPos(), ImGui::GetFont(), ImGui::GetFontSize(),
+            ImGui::GetColorU32(ImGuiCol_Text), text, url);
+@@ -970,6 +981,9 @@ void Launcher::DrawSidebar(ImVec2 size) {
+     ImDrawList* dl = ImGui::GetWindowDrawList();
+     if (selected || hot)
+       dl->AddRectFilled(pos, ImVec2(pos.x + item.x, pos.y + item.y), Col(selected ? t.accent : t.frame), 8 * s_);
++    if (selected && Visible(t.accent_border))
++      dl->AddRect(pos, ImVec2(pos.x + item.x, pos.y + item.y), Col(t.accent_border), 8 * s_, 0,
++                  std::max(1.0f, 1.5f * s_));
+     dl->AddText(ImVec2(pos.x + 16 * s_, pos.y + (item_h - ImGui::GetFontSize()) * 0.5f),
+                 Col(selected ? t.on_accent : t.text), T(page.name.c_str()));
+     if (page.needs_attention && page.needs_attention())
+@@ -1048,16 +1062,22 @@ void Launcher::DrawPlayButton(ImVec2 size, bool can_play) {
+   const bool hot = ImGui::IsItemHovered();
+   ImDrawList* dl = ImGui::GetWindowDrawList();
+   const float r = size.y * 0.5f;
++  const bool outlined = can_play && Visible(t.accent_border);
++  const ImVec4& glow = outlined ? t.accent_border : t.accent;
+   if (can_play) {
+     const float pulse = 0.5f + 0.5f * std::sin(float(ImGui::GetTime()) * 3.0f);
+     dl->AddRectFilled(ImVec2(p.x - 3 * s_, p.y - 3 * s_), ImVec2(p.x + size.x + 3 * s_, p.y + size.y + 3 * s_),
+-                      Col(t.accent, hot ? 0.35f : 0.18f), r + 3 * s_);
++                      Col(glow, hot ? 0.35f : 0.18f), r + 3 * s_);
+     const float grow = (3 + 4 * pulse) * s_;
+     dl->AddRect(ImVec2(p.x - grow, p.y - grow), ImVec2(p.x + size.x + grow, p.y + size.y + grow),
+-                Col(t.accent, 0.45f * (1.0f - pulse)), r + grow, 0, 2 * s_);
++                Col(glow, 0.45f * (1.0f - pulse)), r + grow, 0, 2 * s_);
+   }
++  const bool pressed = hot && ImGui::IsMouseDown(ImGuiMouseButton_Left);
++  const ImVec4& fill = pressed && Visible(t.accent_pressed) ? t.accent_pressed : hot ? t.accent_hot : t.accent;
+   dl->AddRectFilled(p, ImVec2(p.x + size.x, p.y + size.y),
+-                    can_play ? Col(hot ? t.accent_hot : t.accent) : Col(hot ? t.frame_hot : t.frame), r);
++                    can_play ? Col(fill) : Col(hot ? t.frame_hot : t.frame), r);
++  if (outlined)
++    dl->AddRect(p, ImVec2(p.x + size.x, p.y + size.y), Col(t.accent_border), r, 0, std::max(1.0f, 1.5f * s_));
+   const float fs = 22 * s_;
+   const ImVec2 ts = config_.fonts.bold->CalcTextSizeA(fs, FLT_MAX, 0, T("PLAY"));
+   const float tri = fs * 0.5f;
