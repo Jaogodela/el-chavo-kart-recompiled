@@ -1,69 +1,96 @@
 <div align="center">
 
-# El Chavo Kart - PC Port
+# El Chavo Kart Recompiled
 
-### El Chavo Kart (Chaves Kart), the Xbox 360 kart racer, recompiled to run natively on Windows, and experimentally on Linux and Steam Deck, with the TRG launcher and Brazilian Portuguese support
+### El Chavo Kart for Xbox 360 running natively on Windows, and experimentally on Linux and Steam Deck, through static recompilation, with the TRG launcher, modern PC options and online multiplayer
 
-<sub>The original Xbox 360 game code, statically recompiled to native PC code with the <a href="https://github.com/rexglue/rexglue-sdk">ReXGlue SDK</a>. <b>No game files included</b>: bring your own El Chavo Kart (USA) Xbox 360 disc image.</sub>
+[![Latest release](https://img.shields.io/github/v/release/saulob/el-chavo-kart-recompiled?style=for-the-badge&label=release&color=99db2e&labelColor=07101f&include_prereleases)](https://github.com/saulob/el-chavo-kart-recompiled/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/saulob/el-chavo-kart-recompiled/total?style=for-the-badge&color=2e7d32&labelColor=07101f)](https://github.com/saulob/el-chavo-kart-recompiled/releases)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20experimental%20%7C%20Steam%20Deck%20experimental-00acc1?style=for-the-badge&labelColor=07101f)
+
+<sub>The original Xbox 360 game code, statically recompiled to native PC code with the <a href="https://github.com/rexglue/rexglue-sdk">ReXGlue SDK</a>. <b>No game files included</b>: bring your own legitimate El Chavo Kart (USA) Xbox 360 game.</sub>
 
 </div>
 
-## Status
-
-**v0.1.0, the first public release**, as a Windows x64 ZIP and a Linux x86_64 AppImage. This is a native PC recompilation,
-not an emulator, and it needs your own copy of the game. Linux and Steam Deck are experimental: the AppImage is native, uses
-Vulkan and has the same launcher and game features as Windows, but it has not been validated on real hardware yet. The
-[known limitations](#known-limitations) list what is still open.
-
 ## Features
 
-- **Native static recompilation** of the game's own code with ReXGlue 0.10.0. Native Windows build, plus an experimental
-  native Linux AppImage (Vulkan, no Proton or Wine).
+- **Native static recompilation** of the game's own code with ReXGlue 0.10.0. It is not an emulator. Native **Windows x64** build, plus an experimental native **Linux x86_64 AppImage** that also runs on the **Steam Deck** (Vulkan, no Proton or Wine).
 - **TRG launcher** in the style of the other ports: Play, Display, Graphics, Gameplay, Achievements, Online, Controls and
   About pages, keyboard and controller navigation, saved window placement, DPI-aware layout and fonts.
+- **Install and reinstall from your own disc image**: the launcher reads your `.iso`, checks its `default.xex` by SHA-256 and
+  copies the game files (about 2 GB). Reinstalling repairs the game files and keeps your settings and saves. Other games and
+  other builds are refused with a clear message.
 - **Languages**: English is the default language. Português (Brasil) selects the game's own official Brazilian
   localization (the `PTB` packages on the disc) and switches the launcher and overlays to Portuguese. English,
   Español (América Latina) and Español (España) select the game's `INT`, `ESM` and `ESN` text and keep the launcher in
   English. A saved language choice is kept.
-- **Disc image import**: the launcher and `tools\build.ps1` read your `.iso` directly, check its `default.xex` by SHA-256 and
-  copy the game files (about 2 GB). Other games and other builds are refused with a clear message.
+- **Graphics options**: Windowed or Borderless Fullscreen (**F11**), window size, monitor, VSync, graphics card selection,
+  render resolution 1x to 4x of the game's 1280x720, internal render resolution, FXAA, 2x or 4x MSAA and texture
+  (anisotropic) filtering.
 - **Frame rate**: 30 (the console rate), 60, 90, 120, 144, 165, 240 or Unlimited, in the launcher; game speed follows real
-  time. Rates above 60 are new and still being validated.
-- **Graphics options**: render resolution 1x to 4x of the game's 1280x720, internal render resolution, FXAA, 2x/4x MSAA,
-  anisotropic filtering, graphics card selection, Windowed or Borderless Fullscreen (F11), VSync.
+  time. Rates above 60 are new and still being validated. **F2** shows the frame counter and **F3** the Ping display.
+- **Gameplay options**: skip the intro, unlock secret characters and unlock race tracks (the save is not changed).
 - **Local multiplayer**: the game's own 1 to 4 player split screen; players 2 to 4 each need a controller.
-- **Online play**: invite up to 3 friends to a race, with friend codes, a connection test, direct UDP and a relay
-  fallback. Off by default; see [Online play](#online-play).
+- **Online multiplayer** for up to 4 players: friends, friend codes, invites, direct UDP with a relay fallback, STUN, UPnP
+  and a connection test. Off by default, and Windows and Linux players play together. See [Online play](#online-play).
 - **Controller and keyboard**: Xbox and SDL-compatible controllers work without setup; the keyboard drives the same
   pad with a kart layout, every key remappable in the launcher.
-- **Local saves and achievements**: no Xbox Live needed. The 46 achievements (1000G) come from the game's own data in
-  the selected language, unlock from the game's own calls and are kept on this PC. F7 shows them in game.
+- **Local saves and 46 achievements (1000G)**: no Xbox Live needed. The achievements come from the game's own data in
+  the selected language, unlock from the game's own calls and are kept on this PC. **F7** shows them in game.
 - **Portable user data**: saves, achievements and settings are in a `user_data` folder beside the program, and logs in a
   `logs` folder next to it.
+- **Crash reporting and Report a bug**: a crash adds a `CRASH REPORT` block to that session's log, and **Report a bug** on
+  the About page shows the newest log and opens the issue page. Nothing is uploaded.
+- **Launcher self-update**: a newer GitHub release is offered when the launcher starts and installed only when you choose it.
 
 ## What you need
 
-- **Windows**: Windows 10 or 11, 64-bit, and a GPU with Direct3D 12.
-- **Linux and Steam Deck (experimental)**: 64-bit x86 with glibc 2.31 or newer (Ubuntu 20.04 or later) and a Vulkan driver.
-  See [docs/linux.md](docs/linux.md), which also covers running it as a Non-Steam Game.
-- Your own **El Chavo Kart (USA)** Xbox 360 disc image (`.iso`). The supported build is:
+- **Windows**: Windows 10 or 11, 64-bit, a GPU with Direct3D 12 and the latest Microsoft Visual C++ 2015-2022 Redistributable (x64).
+- **Linux and Steam Deck (experimental)**: 64-bit x86 Linux, glibc 2.31 or newer (Ubuntu 20.04 or later), a Vulkan-capable GPU
+  and driver, and an X11 or Wayland desktop. The AppImage's highest glibc requirement is 2.30.
+- Your own **El Chavo Kart (USA)** Xbox 360 game, this exact version:
 
-  | | |
-  | --- | --- |
-  | Title ID | 475807D7 |
-  | Media ID | 5C2ECDD6 |
-  | Game version | 0.0.0.3 (built 2013-11-28) |
-  | `default.xex` | 30,003,200 bytes, SHA-256 `1DB4E96B413D5629206FFE63E73C0E1CFACA9EEA24BCF6FCED6DB9B135CE120F` |
-  | Reference image | 7,838,695,424 bytes, SHA-256 `3B4C1BA6CBA41A20D94A89727018526B27FBB31FCD5AD32317D7C244C7C4B9C4` |
+| | |
+| --- | --- |
+| Game | El Chavo Kart |
+| Platform | Xbox 360 |
+| Title ID | `475807D7` |
+| Media ID | `5C2ECDD6` |
+| Game version | `0.0.0.3` (built 2013-11-28) |
+| `default.xex` | 30,003,200 bytes, SHA-256 `1DB4E96B413D5629206FFE63E73C0E1CFACA9EEA24BCF6FCED6DB9B135CE120F` |
+| Reference disc image | 7,838,695,424 bytes, SHA-256 `3B4C1BA6CBA41A20D94A89727018526B27FBB31FCD5AD32317D7C244C7C4B9C4` |
 
-  Other dumps of the same disc work as long as their `default.xex` matches.
+The launcher checks `default.xex` and refuses any other version, because the port is built for this exact game code. Other
+dumps of the same disc work as long as their `default.xex` matches.
 
-## Linux AppImage (experimental)
+## Installing
 
-Download **ElChavoKart-v0.1.0-x86_64.AppImage**, make it executable (`chmod +x`) and run it from a folder you can write to.
-The launcher works as on Windows; `game`, `logs` and `user_data` go next to the AppImage, which also runs where FUSE is
-missing. Windows and Linux players play together through the same service. Everything else, including Steam Deck and
-how to build it, is in [docs/linux.md](docs/linux.md).
+1. Download **ElChavoKart-v0.1.0-windows-x64.zip** from the [latest release](https://github.com/saulob/el-chavo-kart-recompiled/releases/latest)
+   and extract it somewhere you can write to (not `Program Files`).
+2. Run **el_chavo_kart.exe**. The launcher opens.
+3. On the **Play** page click **Install from disc image...** and pick your own `.iso`. Wait until the game files are ready.
+4. Press **PLAY**.
+
+**No game files are included** in the release. **Reinstall** repairs the game files and keeps your settings and saves.
+
+Windows may warn the first time you run the program, because the release is not digitally signed. If you downloaded it
+from this repository's releases page, choose **More info**, then **Run anyway**.
+
+### Linux and Steam Deck
+
+**Experimental.** This is a native x86_64 Linux build that uses Vulkan, packaged as one AppImage. It is not Wine and not
+Proton, and it has the same platform-neutral launcher and game features as Windows. It is built against the Ubuntu 20.04 /
+glibc 2.31 baseline; the highest glibc the final AppImage needs is 2.30. If the system cannot mount the AppImage with
+FUSE, it unpacks itself and runs from there. This release has not been validated on real Linux PCs or Steam Deck hardware.
+
+1. Download **ElChavoKart-v0.1.0-x86_64.AppImage** from the [latest release](https://github.com/saulob/el-chavo-kart-recompiled/releases/latest)
+   and make it executable (right-click > **Properties** > **Permissions** > **Is executable**, or `chmod +x`).
+2. Run it from a folder you can write to, then install your disc image from the **Play** page as above.
+3. On a Steam Deck, do this in **Desktop Mode**, then add the AppImage with **Games > Add a Non-Steam Game to My Library**
+   and play it from **Game Mode**. No compatibility tool or Proton is needed.
+
+The AppImage is read-only, so `game`, `logs` and `user_data` live in folders next to it, and survive updates. Requirements,
+known limits and how to build it are in [docs/linux.md](docs/linux.md).
 
 ## Building it yourself
 
@@ -198,6 +225,19 @@ online service. **F3** shows the Ping while racing. See [docs/online.md](docs/on
 - Localized voice banks were not identified statically; voice language follows the game's own package selection.
 - Controller prompts stay the game's Xbox 360 buttons.
 
+## Security
+
+The final Windows ZIP, Linux AppImage, Windows executable and updater were checked with VirusTotal before release and returned no detections at the time of testing
+
+A VirusTotal scan is an additional check, not a guarantee of safety, so please also verify the SHA-256 of your download
+
+| File | SHA-256 | VirusTotal |
+| --- | --- | --- |
+| `ElChavoKart-v0.1.0-windows-x64.zip` | `45408a77d2625b9c1d9333b29d99e3869b1e566f30903c6ec8f35298a225e4ac` | [VirusTotal](https://www.virustotal.com/gui/file/45408a77d2625b9c1d9333b29d99e3869b1e566f30903c6ec8f35298a225e4ac?nocache=1) |
+| `ElChavoKart-v0.1.0-x86_64.AppImage` | `10d229ca2012b22471f8d9e8bdcec28c6eea6b893ce9e2fcfbd28f5c2271a080` | [VirusTotal](https://www.virustotal.com/gui/file/10d229ca2012b22471f8d9e8bdcec28c6eea6b893ce9e2fcfbd28f5c2271a080?nocache=1) |
+| `el_chavo_kart.exe` (inside the ZIP) | `a4b3009140d91e754f171208f446891bea6248e6a25009b56ec3c840afd94222` | [VirusTotal](https://www.virustotal.com/gui/file/a4b3009140d91e754f171208f446891bea6248e6a25009b56ec3c840afd94222?nocache=1) |
+| `trg-updater.exe` (inside the ZIP) | `66ea40c270ad67907f8fdef4cbbc046aa110803a4ab1cadab00661a662d4329a` | [VirusTotal](https://www.virustotal.com/gui/file/66ea40c270ad67907f8fdef4cbbc046aa110803a4ab1cadab00661a662d4329a?nocache=1) |
+
 ## Credits
 
 - [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), the static recompilation toolkit and runtime
@@ -208,8 +248,8 @@ online service. **F3** shows the Ping while racing. See [docs/online.md](docs/on
   Marvel Ultimate Alliance and Crackdown Recompiled. Third-party notices are in
   [packaging/licenses](packaging/licenses).
 
-El Chavo Kart is a trademark of its respective owners. This project is not affiliated with or endorsed by them. This
-repository contains no game code or assets, and release packages contain no game files.
+El Chavo Kart is a trademark of its respective owners. This project is not affiliated with or endorsed by them. No game
+files are included in this repository or in the release packages.
 
 ## License
 
