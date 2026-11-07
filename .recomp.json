@@ -6,10 +6,12 @@
   "original": {
     "revision": "0.0.0.3"
   },
-  "project": "El Chavo Kart Recompiled",
-  "status": "in-development",
+  "project": "Chaves Kart (El Chavo Kart) Recompiled",
+  "status": "released",
   "targets": [
-    "Windows"
+    "Windows",
+    "Linux",
+    "Steam Deck"
   ],
   "toolchain": "Rexglue",
   "approach": "Static recompilation of the Xbox 360 retail disc version to native PC code using ReXGlue",
@@ -19,10 +21,25 @@
       "link": "https://github.com/saulob"
     }
   ],
-  "links": [],
+  "links": [
+    {
+      "label": "Latest release",
+      "url": "https://github.com/saulob/el-chavo-kart-recompiled/releases/latest"
+    },
+    {
+      "label": "Reddit announcement",
+      "url": "https://www.reddit.com/r/recomps/comments/1xpw6lx/el_chavo_kart_recompiled_para_pc_ya_est%C3%A1/"
+    },
+    {
+      "label": "Reddit announcement - VideojuegosMX",
+      "url": "https://www.reddit.com/r/VideojuegosMX/comments/1xpw6lx/el_chavo_kart_recompiled_para_pc_ya_est%C3%A1/"
+    }
+  ],
   "tags": [
     "launcher",
-    "achievements"
+    "achievements",
+    "high-fps",
+    "online multiplayer"
   ],
-  "notes": "Early development. Native Windows build with the TRG launcher, Brazilian Portuguese as the default language, local saves and achievements, and the original 60 FPS presentation."
+  "notes": "Public native PC release with Windows and experimental Linux/Steam Deck builds, TRG launcher, rendering up to 4x resolution, frame rates up to 240 FPS and Unlimited, local saves and 46 achievements, local multiplayer for up to four players, and exclusive online multiplayer added by this recompilation with friends, invites, Direct UDP, Relay fallback, STUN, UPnP and Windows/Linux cross-play"
 }
