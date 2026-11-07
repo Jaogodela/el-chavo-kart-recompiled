@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=El Chavo Kart
+Comment=El Chavo Kart for Xbox 360, native PC port
+Exec=el_chavo_kart
+Icon=el_chavo_kart
+Categories=Game;
+Terminal=false
+StartupWMClass=io.github.saulob.el-chavo-kart

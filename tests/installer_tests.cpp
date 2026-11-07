@@ -321,8 +321,27 @@ void TestOverlapsAreRefused(const fs::path& base) {
 
 }  // namespace
 
-int main() {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "eck_installer_tests";
+// The production installer on a real disc image, into a folder of the tester's choosing: on a case-sensitive file
+// system this proves every name the launcher and the game look for matches the disc exactly.
+int InstallRealImage(const char* image, const char* game_dir) {
+  const eck::InstallResult result = eck::InstallFromDiscImage(image, game_dir);
+  std::printf("install: %s, %zu files, %llu bytes %s\n", eck::DescribeInstall(result.status).title, result.files,
+              static_cast<unsigned long long>(result.bytes), result.detail.c_str());
+  const eck::GameCheck check = eck::CheckGameFiles(game_dir);
+  std::printf("%s\n", eck::GameFilesLogText(check).c_str());
+  if (!result.ok() || check.state != eck::GameFiles::kReady || check.xex_sha256 != eck::kXexSha256) {
+    std::printf("FAIL: the real disc image did not install: first missing file '%s'\n", check.missing_file.c_str());
+    return 1;
+  }
+  return 0;
+}
+
+int main(int argc, char** argv) {
+  if (argc == 4 && std::strcmp(argv[1], "--real-image") == 0) {
+    return InstallRealImage(argv[2], argv[3]);
+  }
+  const std::filesystem::path dir =
+      std::filesystem::temp_directory_path() / std::filesystem::path(u8"eck_installer_tests João Português");
   std::error_code ec;
   std::filesystem::remove_all(dir, ec);
   std::filesystem::create_directories(dir);

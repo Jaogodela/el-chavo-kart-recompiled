@@ -1,0 +1,205 @@
+diff --git a/include/trg/platform.h b/include/trg/platform.h
+index 9c2b2f3..e539772 100644
+--- a/include/trg/platform.h
++++ b/include/trg/platform.h
+@@ -7,6 +7,7 @@
+ #include <cstdio>
+ #include <functional>
+ #include <mutex>
++#include <optional>
+ #include <string>
+ #include <thread>
+ #include <vector>
+@@ -37,10 +38,30 @@ std::string BrowseForFolder(const std::string& title);
+ bool FileDialogUnavailable();
+ 
+ // Shows a folder (or the folder holding a file, with it selected) in Explorer,
+-// Finder or the Linux file manager.
++// Finder or the Linux file manager. A path that does not exist opens the folder
++// above it, or nothing when that is missing too.
+ void OpenInFileManager(const std::string& utf8_path);
++// Opens an http or https address in the default browser; any other text is ignored.
+ void OpenUrl(const std::string& url);
+ 
++// What OpenUrl and OpenInFileManager ask the system to run. Windows hands
++// program and parameters to ShellExecute (program is the address itself for a
++// URL); elsewhere program and args are started directly, never through a shell,
++// so no text in a path or an address is read as a command.
++struct OpenCommand {
++  std::string program;
++  std::vector<std::string> args;
++  std::string parameters;
++};
++std::optional<OpenCommand> BuildOpenUrlCommand(const std::string& url);
++std::optional<OpenCommand> BuildOpenInFileManagerCommand(const std::string& utf8_path);
++void RunOpenCommand(const OpenCommand& command);
++
++// Replaces RunOpenCommand, so tests see the commands without running them.
++// Returns the previous hook; nullptr restores running them.
++using OpenCommandHook = void (*)(const OpenCommand&);
++OpenCommandHook SetOpenCommandHook(OpenCommandHook hook);
++
+ // True while Shift is held: the "bring the launcher back" override.
+ bool ShiftHeld();
+ 
+diff --git a/src/platform.cpp b/src/platform.cpp
+index 768fbca..cb23819 100644
+--- a/src/platform.cpp
++++ b/src/platform.cpp
+@@ -4,9 +4,11 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <filesystem>
++#include <thread>
+ #include <vector>
+ 
+ #include "trg/file_dialog.h"
++#include "utf8_path.h"
+ 
+ #if defined(_WIN32)
+ #ifndef WIN32_LEAN_AND_MEAN
+@@ -21,8 +23,12 @@
+ #include <shlobj.h>
+ #else
+ #include <climits>
++#include <fcntl.h>
++#include <spawn.h>
+ #include <sys/wait.h>
+ #include <unistd.h>
++
++extern char** environ;
+ #endif
+ 
+ namespace trg {
+@@ -242,43 +248,109 @@ std::string BrowseForFolder(const std::string& title) {
+ 
+ bool FileDialogUnavailable() { return g_dialog_unavailable; }
+ 
+-void OpenInFileManager(const std::string& utf8_path) {
++std::optional<OpenCommand> BuildOpenUrlCommand(const std::string& url) {
++  const bool web = url.compare(0, 8, "https://") == 0 || url.compare(0, 7, "http://") == 0;
++  if (!web) return std::nullopt;
++  for (const unsigned char ch : url) {
++    if (ch < 0x20 || ch == 0x7f) return std::nullopt;
++  }
++  OpenCommand command;
++#if defined(_WIN32)
++  command.program = url;
++#elif defined(__APPLE__)
++  command.program = "open";
++  command.args = {url};
++#else
++  command.program = "xdg-open";
++  command.args = {url};
++#endif
++  return command;
++}
++
++std::optional<OpenCommand> BuildOpenInFileManagerCommand(const std::string& utf8_path) {
++  if (utf8_path.empty()) return std::nullopt;
+   std::error_code ec;
+-  const auto p = std::filesystem::u8path(utf8_path);
+-  const bool is_file = std::filesystem::is_regular_file(p, ec);
++  std::filesystem::path path = std::filesystem::absolute(detail::Utf8Path(utf8_path), ec);
++  if (ec) return std::nullopt;
++  if (!std::filesystem::exists(path, ec)) {
++    path = path.parent_path();
++    if (!std::filesystem::exists(path, ec)) return std::nullopt;
++  }
++  const bool is_file = std::filesystem::is_regular_file(path, ec);
++  OpenCommand command;
+ #if defined(_WIN32)
+   if (is_file) {
+-    const std::wstring args = L"/select,\"" + p.wstring() + L"\"";
+-    ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
++    command.program = "explorer.exe";
++    command.parameters = "/select,\"" + detail::ToUtf8(path) + "\"";
+   } else {
+-    ShellExecuteW(nullptr, L"open", p.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
++    command.program = detail::ToUtf8(path);
+   }
++#elif defined(__APPLE__)
++  command.program = "open";
++  if (is_file) command.args.push_back("-R");
++  command.args.push_back(detail::ToUtf8(path));
+ #else
+-  const std::string target = is_file ? p.parent_path().u8string() : utf8_path;
+-#if defined(__APPLE__)
+-  const std::string cmd = (is_file ? "open -R " + ShellQuote(utf8_path) : "open " + ShellQuote(target)) + " &";
+-#else
+-  const std::string cmd = "xdg-open " + ShellQuote(target) + " >/dev/null 2>&1 &";
++  command.program = "xdg-open";
++  command.args = {detail::ToUtf8(is_file ? path.parent_path() : path)};
+ #endif
+-  if (std::system(cmd.c_str()) != 0) {
+-  }
++  return command;
++}
++
++namespace {
++OpenCommandHook g_open_hook = nullptr;
++
++#if !defined(_WIN32)
++// Started without a shell, with no input or output; the wait only reaps the process.
++void RunDetached(const OpenCommand& command) {
++  std::vector<char*> argv;
++  argv.push_back(const_cast<char*>(command.program.c_str()));
++  for (const std::string& arg : command.args) argv.push_back(const_cast<char*>(arg.c_str()));
++  argv.push_back(nullptr);
++  posix_spawn_file_actions_t actions;
++  if (posix_spawn_file_actions_init(&actions) != 0) return;
++  posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
++  posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
++  posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
++  pid_t pid = 0;
++  const int started = posix_spawnp(&pid, argv[0], &actions, nullptr, argv.data(), environ);
++  posix_spawn_file_actions_destroy(&actions);
++  if (started != 0) return;
++  std::thread([pid] {
++    int status = 0;
++    waitpid(pid, &status, 0);
++  }).detach();
++}
+ #endif
++}  // namespace
++
++OpenCommandHook SetOpenCommandHook(OpenCommandHook hook) {
++  const OpenCommandHook previous = g_open_hook;
++  g_open_hook = hook;
++  return previous;
+ }
+ 
+-void OpenUrl(const std::string& url) {
++void RunOpenCommand(const OpenCommand& command) {
++  if (g_open_hook) {
++    g_open_hook(command);
++    return;
++  }
+ #if defined(_WIN32)
+-  ShellExecuteW(nullptr, L"open", Widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
++  const std::wstring parameters = Widen(command.parameters);
++  ShellExecuteW(nullptr, L"open", Widen(command.program).c_str(), parameters.empty() ? nullptr : parameters.c_str(),
++                nullptr, SW_SHOWNORMAL);
+ #else
+-#if defined(__APPLE__)
+-  const std::string cmd = "open " + ShellQuote(url) + " &";
+-#else
+-  const std::string cmd = "xdg-open " + ShellQuote(url) + " >/dev/null 2>&1 &";
+-#endif
+-  if (std::system(cmd.c_str()) != 0) {
+-  }
++  RunDetached(command);
+ #endif
+ }
+ 
++void OpenInFileManager(const std::string& utf8_path) {
++  if (const auto command = BuildOpenInFileManagerCommand(utf8_path)) RunOpenCommand(*command);
++}
++
++void OpenUrl(const std::string& url) {
++  if (const auto command = BuildOpenUrlCommand(url)) RunOpenCommand(*command);
++}
++
+ bool ShiftHeld() {
+ #if defined(_WIN32)
+   return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;

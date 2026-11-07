@@ -5,6 +5,10 @@ el_chavo_kart_manifest.toml text eol=lf
 patches/rexglue-sdk/* text eol=lf
 
 *.sh text eol=lf
+
+# Linux packaging runs on Linux; line endings must stay LF.
+packaging/linux/* text eol=lf
+patches/appimage-runtime/* text eol=lf
 *.png binary
 *.ico binary
 

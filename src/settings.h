@@ -47,8 +47,10 @@ class GameSettings;
 // Allowing tearing is VSync Off. Each platform's presenter has its own setting for it.
 #if defined(_WIN32)
 inline constexpr char kTearingSetting[] = "d3d12_allow_variable_refresh_rate_and_tearing";
+inline constexpr char kRenderTargetPathSetting[] = "render_target_path_d3d12";
 #else
 inline constexpr char kTearingSetting[] = "vulkan_allow_present_mode_immediate";
+inline constexpr char kRenderTargetPathSetting[] = "render_target_path_vulkan";
 #endif
 
 // The player's settings file, loaded over the shipped el_chavo_kart.toml.

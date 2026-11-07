@@ -13,6 +13,9 @@ picks on a real panel, every seat loads the host's race and owns its own kart, a
 (see "Racing" in `docs/online-ui.md`; not yet tried on real PCs). Not done yet: carrying the rest of the race's state over the
 gameplay socket.
 
+Windows and Linux use the same service, protocol and player pool, and write the same bytes (`tests/wire-vectors.txt`,
+[linux.md](linux.md#online-play)).
+
 ## Playing (launcher)
 
 1. Launcher > **Online** > **Online play** On. The rest of the page appears only then.

@@ -66,8 +66,13 @@ void TestF2TogglesTheCounter() {
   Check(!Contains(Source("window_host.cpp"), "RegisterBind"), "the window host takes no bind");
 
   const std::string host = Source("window_host.cpp");
-  Check(Contains(host, "e.virtual_key() == rex::ui::VirtualKey::kF2 || e.virtual_key() == rex::ui::VirtualKey::kF3"),
-        "holding F2 or F3 does not strobe a toggle");
+  for (const char* key : {"kF2", "kF3", "kF7"}) {
+    Check(Contains(host, std::string("e.virtual_key() == rex::ui::VirtualKey::") + key),
+          std::string("holding ") + key + " does not strobe a toggle");
+  }
+  Check(host.find("if (e.prev_state()) {\n      // ReXGlue's binds fire on every repeat") != std::string::npos ||
+            host.find("if (e.prev_state()) {\r\n      // ReXGlue's binds fire on every repeat") != std::string::npos,
+        "the repeat is swallowed before the bind sees it");
 }
 
 void TestF3TogglesPing() {

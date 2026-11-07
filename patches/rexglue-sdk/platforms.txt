@@ -1,0 +1,16 @@
+# How the platform-specific patches pair up. A patch without .windows or .linux applies on both platforms and needs no
+# line. Column 1 is a .windows patch, or - for a Linux-only patch; column 2 is the patch that gives Linux the same
+# behaviour (a .linux patch, or a common one). tools/test.sh and tools/test.ps1 fail on a platform patch not listed here.
+0004-windows-high-resolution-sleep.windows.patch 0046-posix-wait-multiple-contention.linux.patch
+0006-d3d12-adapter-preference.windows.patch 0005-vulkan-device-preference.patch
+0030-d3d12-submissions-and-occlusion.windows.patch 0042-vulkan-submissions-and-occlusion.linux.patch
+0031-d3d12-render-target-transfers.windows.patch 0043-vulkan-render-target-transfers.linux.patch
+0032-d3d12-stencil-regions.windows.patch 0043-vulkan-render-target-transfers.linux.patch
+0033-d3d12-edram-dump-dirty-tiles.windows.patch 0044-vulkan-edram-dump-dirty-tiles.linux.patch
+0035-d3d12-resolve-copy-into-textures.windows.patch 0047-vulkan-resolve-copy-into-textures.linux.patch
+0037-d3d12-resolve-deferred-writeback.windows.patch 0048-vulkan-resolve-deferred-writeback.linux.patch
+0039-d3d12-internal-render-scale.windows.patch 0051-vulkan-internal-render-scale.linux.patch
+- 0045-linux-command-thread-wait.linux.patch
+- 0049-spirv-texture-exp-adjust.linux.patch
+- 0050-cache-vulkan-swapchain-paint-pipeline.linux.patch
+- 0052-sdl-video-failure-guidance.linux.patch

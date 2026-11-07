@@ -18,12 +18,16 @@ $AssetFiles = @('assets\launcher\header-art.png')
 # Names that mean game data, a package, saves, settings, caches, logs or updater leftovers.
 $ForbiddenNames = @('default.xex', 'default.xexp', 'game', 'game-folder.txt', 'game-install-temp', 'game-install-backup', 'user_data',
     'user_data.migrating', 'content', 'cache', 'logs', 'save', 'saves', 'dlc', 'screenshots', 'online-instances', 'settings.toml',
-    'settings.toml.bak', '475807D7', 'renderdoc', 'renderdoc.dll', 'vulkan-1.dll', '$SystemUpdate')
+    'settings.toml.bak', 'eck_online_identity.ini', '475807D7', 'renderdoc', 'renderdoc.dll', 'vulkan-1.dll', '$SystemUpdate')
 $ForbiddenPatterns = @('*.xex', '*.xexp', '*.iso', '*.xxx', '*.upk', '*.tfc', '*.fsbcache', '*.bik', '*.log', '*.dmp', '*.pdb', '*.debug',
     '*.xsh', '*.xpso', '*.bak', '*.tmp', '*.sav', '*.invalid', 'VkLayer_*', 'renderdoc*', 'TracyClient*', '*.pyc', '*.obj', '*.lib', '*.ilk', '*.orig', '*.rej', '*.rdc', 'Thumbs.db',
     'desktop.ini', '.git*', '*~', 'settings.toml.*', 'trg-update-*')
 $PackageMagic = @('LIVE', 'PIRS', 'CON ', 'XEX2')
 $Markers = @('DEBUG_SAULO')
+# Shapes of values that must never ship, matched and never printed.
+$SecretPatterns = @('ADMIN_TOKEN', 'CLOUDFLARE_API_TOKEN', 'CF_API_TOKEN', 'ghp_[A-Za-z0-9]{30,}', 'github_pat_[A-Za-z0-9_]{30,}',
+    'gho_[A-Za-z0-9]{30,}', '-----BEGIN [A-Z ]*PRIVATE KEY-----', 'AKIA[0-9A-Z]{16}', 'xox[baprs]-[A-Za-z0-9-]{10,}',
+    '"token" *: *"[0-9a-f]{64}"', 'player_id=[A-Z2-9]{4}-[A-Z2-9]{4}') | ForEach-Object { [regex]::new($_) }
 
 $Latin1 = [Text.Encoding]::GetEncoding(28591)
 function Get-Needles([string[]]$Text) {
@@ -66,6 +70,9 @@ function Test-ReleaseFolder([string]$Dir) {
             $stripped = $text.Replace([string][char]0, '')
             foreach ($regex in $LocalPathRegexes) {
                 if ($regex.IsMatch($stripped)) { $problems.Add("user or repository path in file: $relative"); break }
+            }
+            foreach ($pattern in $SecretPatterns) {
+                if ($pattern.IsMatch($text)) { $problems.Add("secret or token in file: $relative"); break }
             }
             foreach ($marker in $MarkerNeedles) {
                 if ($text.IndexOf($marker, [StringComparison]::Ordinal) -ge 0) { $problems.Add("debug marker in file: $relative"); break }

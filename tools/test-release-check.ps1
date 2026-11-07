@@ -59,6 +59,14 @@ $Cases = [ordered]@{
     'xex magic'          = @{ Path = 'rexruntime.dll'; Bytes = [Text.Encoding]::ASCII.GetBytes('XEX2....') }
     'package magic'      = @{ Path = 'rexruntime.dll'; Bytes = [Text.Encoding]::ASCII.GetBytes('LIVE....') }
     'debug marker'       = @{ Path = 'el_chavo_kart.toml'; Bytes = [Text.Encoding]::ASCII.GetBytes('DEBUG_SAULO: x') }
+    'admin token name'   = @{ Path = 'README.txt'; Bytes = [Text.Encoding]::ASCII.GetBytes('ADMIN_TOKEN=x') }
+    'cloudflare token'   = @{ Path = 'README.txt'; Bytes = [Text.Encoding]::ASCII.GetBytes('CLOUDFLARE_API_TOKEN') }
+    'github token'       = @{ Path = 'README.txt'; Bytes = [Text.Encoding]::ASCII.GetBytes('ghp_' + ('a' * 36)) }
+    'github fine token'  = @{ Path = 'README.txt'; Bytes = [Text.Encoding]::ASCII.GetBytes('github_pat_' + ('b' * 40)) }
+    'private key'        = @{ Path = 'README.txt'; Bytes = [Text.Encoding]::ASCII.GetBytes('-----BEGIN RSA PRIVATE KEY-----') }
+    'identity token'     = @{ Path = 'el_chavo_kart.toml'; Bytes = [Text.Encoding]::ASCII.GetBytes('"token":"' + ('a' * 64) + '"') }
+    'friend code'        = @{ Path = 'README.txt'; Bytes = [Text.Encoding]::ASCII.GetBytes('player_id=ABCD-2345') }
+    'identity file'      = @{ Path = 'eck_online_identity.ini' }
     'repository path'    = @{ Path = 'rexruntime.dll'; Bytes = [Text.Encoding]::ASCII.GetBytes("path $Root x") }
     'repository path 16' = @{ Path = 'rexgpu-xenos.dll'; Bytes = [Text.Encoding]::Unicode.GetBytes("path $Root x") }
     'analysis folder'    = @{ Path = 'analysis\default.image.bin' }

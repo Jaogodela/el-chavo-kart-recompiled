@@ -74,6 +74,14 @@ class ElChavoKartApp : public rex::ReXApp {
       rex::cvar::SetFlagFromCommandLine("log_file", eck::Utf8(*inherited));
       eck::InstallCrashReports();
     }
+    // ReXGlue writes its logs beside the executable, which is read-only inside an AppImage.
+    const bool appimage = port_folder != rex::filesystem::GetExecutableFolder();
+    if (appimage && rex::cvar::GetFlagByName("log_file").empty()) {
+      const std::filesystem::path logs = eck::LogsFolder(port_folder, paths.user_data_root, {}, appimage);
+      if (const std::filesystem::path file = eck::NextLogFile(logs, eck::kLogName); !file.empty()) {
+        rex::cvar::SetFlagByName("log_file", eck::Utf8(file));
+      }
+    }
   }
 
   bool SetupPresentation() override {

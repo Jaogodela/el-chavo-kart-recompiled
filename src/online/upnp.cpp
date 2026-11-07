@@ -250,6 +250,16 @@ uint32_t ExternalAddress(const Gateway& gateway) {
   return ParseIp(Tag(response, "NewExternalIPAddress"));
 }
 
+Status MapThrough(const Gateway& gateway, uint16_t port) {
+  std::string detail;
+  uint32_t lease = 60;
+  const uint16_t external = AddMapping(gateway, port, lease, detail);
+  if (!external) return {State::kFailed, {}, detail};
+  const uint32_t wan = ExternalAddress(gateway);
+  RemoveMapping(gateway, external);
+  return {State::kMapped, {wan, external}, "the router accepts port mappings"};
+}
+
 }  // namespace
 
 Status Probe(uint16_t port) {
@@ -257,12 +267,18 @@ Status Probe(uint16_t port) {
   Gateway gateway;
   std::string detail;
   if (!FindGateway(gateway, detail)) return {State::kFailed, {}, detail};
-  uint32_t lease = 60;
-  const uint16_t external = AddMapping(gateway, port, lease, detail);
-  if (!external) return {State::kFailed, {}, detail};
-  const uint32_t wan = ExternalAddress(gateway);
-  RemoveMapping(gateway, external);
-  return {State::kMapped, {wan, external}, "the router accepts port mappings"};
+  return MapThrough(gateway, port);
+}
+
+Status ProbeGateway(const std::string& description_url, uint32_t lan_ip, uint16_t port) {
+  if (!SocketsReady()) return {State::kFailed, {}, "no sockets"};
+  HttpUrl location;
+  Gateway gateway;
+  if (!ParseHttpUrl(description_url, location) || !Describe(location, gateway)) {
+    return {State::kFailed, {}, "no UPnP router answered"};
+  }
+  gateway.lan_ip = lan_ip;
+  return MapThrough(gateway, port);
 }
 
 }  // namespace eck::online::net::upnp

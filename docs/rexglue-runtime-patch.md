@@ -6,6 +6,11 @@ with the patches in `patches/rexglue-sdk`, applied in name order, and records th
 `tools/build-patched-rexruntime.ps1`, taken from Super Street Fighter II Turbo HD Remix Recompiled. Debug builds use the
 stock DLLs. The whole series was checked with `git apply` in order against a clean v0.10.0 tree.
 
+On Linux, `tools/build-patched-rexruntime.sh` does the same into `tools/rexglue/linux-amd64`. A patch named `.windows.patch`
+applies only on Windows and `.linux.patch` only on Linux; the others apply on both. Linux skips the hunks shared patches
+have in the D3D12 sources, which it does not build and which can depend on `.windows` patches. The two platforms have
+separate fingerprints, so a `.linux` patch never makes the Windows runtime stale.
+
 | Patch | From | Why |
 | --- | --- | --- |
 | 0001 physical-release-order | Hard Corps 0001 | Allocator race corrupting page state |
@@ -33,6 +38,18 @@ stock DLLs. The whole series was checked with `git apply` in order against a cle
 | 0023 object-lookup-already-locked | Marvel Ultimate Alliance 0116 | Object lookup without re-locking |
 | 0024 xam-zero-size-profile-settings | Marvel Ultimate Alliance 0142 | Empty profile setting writes |
 | 0025 disable-debug-and-settings-overlay-binds | Marvel Ultimate Alliance 0146 | F3 and F4 open no SDK overlay |
+
+| 0042 vulkan-submissions-and-occlusion (Linux) | Super Street Fighter II 0016 | Vulkan half of 0026 and 0030 |
+| 0043 vulkan-render-target-transfers (Linux) | Super Street Fighter II 0017 | Vulkan half of 0027, 0028, 0031 and 0032 |
+| 0044 vulkan-edram-dump-dirty-tiles (Linux) | Super Street Fighter II 0018 | Vulkan half of 0029 and 0033 |
+| 0045 linux-command-thread-wait (Linux) | Super Street Fighter II 0019 | Command thread wait on Linux |
+| 0046 posix-wait-multiple-contention (Linux) | Super Street Fighter II 0021 | Wait contention on Linux; counterpart of 0004 |
+| 0047 vulkan-resolve-copy-into-textures (Linux) | Super Street Fighter II 0024 | Vulkan half of 0034 and 0035 |
+| 0048 vulkan-resolve-deferred-writeback (Linux) | Super Street Fighter II 0032 | Vulkan half of 0036 and 0037 |
+| 0049 spirv-texture-exp-adjust (Linux) | Super Street Fighter II 0034 | Texture exponent adjust in the SPIR-V translator |
+| 0050 cache-vulkan-swapchain-paint-pipeline (Linux) | Super Street Fighter II 0035 | Presenter pipeline cache |
+| 0051 vulkan-internal-render-scale (Linux) | Super Street Fighter II 0038 | Vulkan half of 0038 and 0039 |
+| 0052 sdl-video-failure-guidance (Linux) | Super Street Fighter II 0047 | Guidance when SDL cannot open a display |
 
 The console bind (Backtick, the key that types an apostrophe on ABNT2 keyboards) is not patched out: the app removes it
 with `UnregisterBind` in `OnCreateDialogs`, together with the two binds above, so Debug builds on the stock DLLs lose

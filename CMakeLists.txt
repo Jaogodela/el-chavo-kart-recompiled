@@ -9,12 +9,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Where tools\codegen.ps1 unpacks the pinned SDK.
 if(WIN32)
-    list(APPEND ECK_SOURCES src/clipboard_win32.cpp src/online/websocket_win.cpp)
-else()
-    # libssl is loaded at run time by websocket_posix.cpp, so no OpenSSL is needed to build.
-    list(APPEND ECK_SOURCES src/clipboard_sdl.cpp src/online/websocket_posix.cpp)
-endif()
-if(WIN32)
     set(ECK_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tools/rexglue/win-amd64")
 else()
     set(ECK_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tools/rexglue/linux-amd64")
@@ -191,6 +185,7 @@ set(ECK_SOURCES
     src/diagnostics.cpp
     src/frame_counter.cpp
     src/frame_limiter.cpp
+    src/frame_rate_setting.cpp
     src/frame_wait.cpp
     src/friend_code_field.cpp
     src/game_files.cpp
@@ -220,6 +215,7 @@ set(ECK_SOURCES
     src/online_runtime.cpp
     src/ping_display.cpp
     src/platform.cpp
+    src/port_folder.cpp
     src/port_version.cpp
     src/pt_br_ui_text.cpp
     src/session_log.cpp
@@ -252,6 +248,18 @@ set(ECK_SOURCES
     src/online/upnp.cpp
     src/online/websocket.cpp
     src/online/websocket_frame.cpp
+    src/update_config.cpp
+    src/updater/github_release.cpp
+    src/updater/json.cpp
+    src/updater/sha256.cpp
+    src/updater/update_controller.cpp
+    src/updater/update_job.cpp
+    src/updater/update_paths.cpp
+    src/updater/update_platform.cpp
+    src/updater/update_ui.cpp
+    src/updater/update_zip.cpp
+    src/updater/version.cpp
+    src/updater/third_party/miniz/miniz.c
 )
 if(WIN32)
     list(APPEND ECK_SOURCES src/clipboard_win32.cpp src/online/websocket_win.cpp)
@@ -259,26 +267,12 @@ else()
     # libssl is loaded at run time by websocket_posix.cpp, so no OpenSSL is needed to build.
     list(APPEND ECK_SOURCES src/clipboard_sdl.cpp src/online/websocket_posix.cpp)
 endif()
+set_source_files_properties(src/updater/third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "-w")
+set_property(SOURCE src/update_config.cpp src/updater/github_release.cpp src/updater/json.cpp
+    src/updater/sha256.cpp src/updater/update_controller.cpp src/updater/update_job.cpp
+    src/updater/update_paths.cpp src/updater/update_platform.cpp src/updater/update_ui.cpp
+    src/updater/update_zip.cpp src/updater/version.cpp APPEND PROPERTY COMPILE_OPTIONS -Wall -Wextra)
 if(WIN32)
-    list(APPEND ECK_SOURCES
-        src/update_config.cpp
-        src/updater/github_release.cpp
-        src/updater/json.cpp
-        src/updater/sha256.cpp
-        src/updater/update_controller.cpp
-        src/updater/update_job.cpp
-        src/updater/update_paths.cpp
-        src/updater/update_platform.cpp
-        src/updater/update_ui.cpp
-        src/updater/update_zip.cpp
-        src/updater/version.cpp
-        src/updater/third_party/miniz/miniz.c
-    )
-    set_source_files_properties(src/updater/third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "-w")
-    set_property(SOURCE src/update_config.cpp src/updater/github_release.cpp src/updater/json.cpp
-        src/updater/sha256.cpp src/updater/update_controller.cpp src/updater/update_job.cpp
-        src/updater/update_paths.cpp src/updater/update_platform.cpp src/updater/update_ui.cpp
-        src/updater/update_zip.cpp src/updater/version.cpp APPEND PROPERTY COMPILE_OPTIONS -Wall -Wextra)
     # Resource 1 is the first icon in the executable: Explorer, and SDL's window class, use it.
     enable_language(RC)
     set(ECK_APP_RC "${CMAKE_CURRENT_BINARY_DIR}/el_chavo_kart.rc")
@@ -297,6 +291,11 @@ target_include_directories(el_chavo_kart PRIVATE src)
 
 rexglue_setup_host_target(el_chavo_kart GPU_PLUGINS xenos)
 target_link_libraries(el_chavo_kart PRIVATE trg::launcher)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    set(ECK_LINUX_LIBS Threads::Threads ${CMAKE_DL_LIBS})
+    target_link_libraries(el_chavo_kart PRIVATE ${ECK_LINUX_LIBS})
+endif()
 if(WIN32)
     target_link_libraries(el_chavo_kart PRIVATE shcore synchronization dxgi shell32 winhttp ws2_32 bcrypt)
 
@@ -333,6 +332,11 @@ else()
             "$<TARGET_FILE_DIR:el_chavo_kart>"
         VERBATIM
     )
+    foreach(_sdk_lib rexruntime rexruntimed rexruntimerd rexgpu-xenos rexgpu-xenosd rexgpu-xenosrd)
+        if(EXISTS "${ECK_SDK_DIR}/lib/lib${_sdk_lib}.so")
+            set_property(TARGET el_chavo_kart APPEND PROPERTY LINK_DEPENDS "${ECK_SDK_DIR}/lib/lib${_sdk_lib}.so")
+        endif()
+    endforeach()
 endif()
 
 get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -348,16 +352,22 @@ if(WIN32)
     set(ECK_REXGLUE_CHECK "${CMAKE_COMMAND}" -E env --unset=PSModulePath
         "${ECK_WINDOWS_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-patched-rexruntime.ps1" -Check -Config $<CONFIG>)
-    add_custom_target(eck_rexglue_check COMMAND ${ECK_REXGLUE_CHECK} VERBATIM)
-    add_dependencies(el_chavo_kart eck_rexglue_check)
-    add_custom_target(eck_rexglue_staging ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:rex::runtime>" "$<TARGET_FILE:rex::gpu-xenos>"
-            "$<TARGET_FILE_DIR:el_chavo_kart>"
-        COMMAND ${ECK_REXGLUE_CHECK} -Staged "$<TARGET_FILE_DIR:el_chavo_kart>"
-        VERBATIM
-    )
-    add_dependencies(eck_rexglue_staging el_chavo_kart)
+    set(ECK_REXGLUE_STAGED -Staged)
+else()
+    find_program(ECK_BASH bash REQUIRED)
+    set(ECK_REXGLUE_CHECK "${ECK_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-patched-rexruntime.sh"
+        --check "${ECK_SDK_DIR}" --config $<CONFIG>)
+    set(ECK_REXGLUE_STAGED --staged)
 endif()
+add_custom_target(eck_rexglue_check COMMAND ${ECK_REXGLUE_CHECK} VERBATIM)
+add_dependencies(el_chavo_kart eck_rexglue_check)
+add_custom_target(eck_rexglue_staging ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:rex::runtime>" "$<TARGET_FILE:rex::gpu-xenos>"
+        "$<TARGET_FILE_DIR:el_chavo_kart>"
+    COMMAND ${ECK_REXGLUE_CHECK} ${ECK_REXGLUE_STAGED} "$<TARGET_FILE_DIR:el_chavo_kart>"
+    VERBATIM
+)
+add_dependencies(eck_rexglue_staging el_chavo_kart)
 
 # ThinLTO in Release and RelWithDebInfo (the default of tools\build.ps1); the runtime and GPU plugin are prebuilt.
 # Debug compiles at -O0, which marks every function optnone, so LTO would optimize nothing there.
@@ -390,10 +400,20 @@ target_compile_definitions(el_chavo_kart PRIVATE
     ECK_TRG_VERSION="${ECK_TRG_VERSION}"
     ECK_BUILD_CONFIG="$<CONFIG>")
 
-# The runtime reads its cvars from <exe dir>/el_chavo_kart.toml.
+# The runtime reads its cvars from <exe dir>/el_chavo_kart.toml. Each platform's presenter names the tearing setting
+# differently, and the Vulkan one defaults to tearing allowed.
+set(ECK_SHIPPED_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/config/el_chavo_kart.toml")
+if(NOT WIN32)
+    file(READ "${ECK_SHIPPED_CONFIG}" _shipped_config)
+    string(REPLACE "d3d12_allow_variable_refresh_rate_and_tearing" "vulkan_allow_present_mode_immediate"
+        _shipped_config "${_shipped_config}")
+    set(ECK_SHIPPED_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/shipped-config/el_chavo_kart.toml")
+    file(CONFIGURE OUTPUT "${ECK_SHIPPED_CONFIG}" CONTENT "${_shipped_config}" @ONLY)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/config/el_chavo_kart.toml")
+endif()
 add_custom_command(TARGET el_chavo_kart POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/config/el_chavo_kart.toml"
+        "${ECK_SHIPPED_CONFIG}"
         "$<TARGET_FILE_DIR:el_chavo_kart>"
     VERBATIM
 )
@@ -409,6 +429,29 @@ add_custom_target(eck_launcher_assets ALL
 add_dependencies(el_chavo_kart eck_launcher_assets)
 
 include(cmake/eck_guest.cmake)
+
+# tools/test.sh: every production source of the program, compiled and linked without the recompiled game (its symbols
+# stay unresolved). Nothing runs it; it exists so the compile, the glibc versions and the library dependencies of the
+# real sources can be checked without a full build.
+if(UNIX AND NOT APPLE)
+    add_executable(el_chavo_kart_linux_production_check EXCLUDE_FROM_ALL ${ECK_SOURCES})
+    target_include_directories(el_chavo_kart_linux_production_check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src "${ECK_GUEST_DIR}")
+    target_compile_definitions(el_chavo_kart_linux_production_check PRIVATE
+        ECK_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+        ECK_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+        ECK_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+        ECK_TRG_VERSION="${ECK_TRG_VERSION}"
+        ECK_BUILD_CONFIG="$<CONFIG>")
+    target_link_libraries(el_chavo_kart_linux_production_check PRIVATE rex::runtime trg::launcher ${ECK_LINUX_LIBS})
+    target_link_options(el_chavo_kart_linux_production_check PRIVATE -Wl,--unresolved-symbols=ignore-all)
+    set_target_properties(el_chavo_kart_linux_production_check PROPERTIES INSTALL_RPATH "$ORIGIN" BUILD_WITH_INSTALL_RPATH ON)
+    add_custom_command(TARGET el_chavo_kart_linux_production_check POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:rex::runtime>"
+            "$<TARGET_FILE_DIR:el_chavo_kart_linux_production_check>"
+        VERBATIM
+    )
+endif()
 
 # The pure-logic tests (tests\CMakeLists.txt) are a separate CMake project with no ReXGlue SDK or TRG Launcher
 # dependency; tools\test.ps1 configures and builds it on its own.

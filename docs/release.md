@@ -31,6 +31,62 @@ outside the ZIP. `tools\test.ps1` runs the helper tests against it as well, and 
 `tools\test-release-check.ps1` (part of `tools\test.ps1`) runs the scanner against staged folders that each add one
 forbidden item.
 
+## Linux AppImage (experimental)
+
+    tools/package-linux.sh            # on Ubuntu 20.04 or WSL; incremental Release build, then package
+    tools/package-linux.sh --clean    # clean Release build first
+    tools/package-linux.sh --verify-only dist/ElChavoKart-v<version>-x86_64.AppImage
+
+It builds the patched ReXGlue Linux runtime when the patches changed, builds the `linux-amd64-release` preset, stages an
+allow-listed AppDir, checks RPATH, unresolved libraries, the glibc 2.31 baseline, local paths and forbidden files, builds the
+AppImage with the pinned runtime (`patches/appimage-runtime`), extracts it again and checks it, and writes
+`dist/ElChavoKart-v<version>-x86_64.AppImage` and `.sha256`. The program's debug information goes to
+`dist/ElChavoKart-v<version>-x86_64-symbols/`, outside the AppImage. See [linux.md](linux.md).
+
+The AppImage holds exactly the program, `librexruntime.so`, `librexgpu-xenos.so`, the conditional C++ runtime in `usr/lib`,
+`el_chavo_kart.toml`, the launcher art, the licenses, `README.txt` (`packaging/linux/README.txt`), `AppRun`, the desktop file
+and the icons. Nothing else: the rules of the Windows ZIP apply, and `tools/test.sh` proves them case by case.
+
+Before a release, run `.\tools\test.ps1 -RequireLinux` (see Complete validation).
+
+## Complete validation
+
+    .\tools\test.ps1 -RequireLinux
+
+This is the one command that says whether a release is ready. It ends with `ALL REQUIRED CHECKS PASSED` only when every
+group below ran and passed; a stage that cannot run fails the gate instead of being skipped. A plain `.\tools\test.ps1`
+is the faster developer run: it leaves out the scratch AppImage and the Windows compile, and ends as a partial run.
+
+It needs Windows with the Visual Studio Clang toolchain, Node.js 22 or newer, and a WSL distribution prepared by
+`tools/setup-linux-build-env.sh` (Ubuntu 20.04, glibc 2.31; `ECK_WSL_DISTRO` picks one). It starts neither the game nor the
+launcher, opens no window, browser or audio device, never contacts the production service, a STUN server or a real router,
+and does not touch `dist`: its scratch AppImage is built in a temporary folder.
+
+| Group | What runs |
+| --- | --- |
+| Windows | the console suites listed for Windows in `tests\required-suites.txt` (among them the commands behind `Open logs folder`, `Report a bug` and links, built by the real `trg::OpenUrl` and `trg::OpenInFileManager` and captured instead of run), the Worker tests, the production client against the Worker running locally, the platform-sensitive and changed sources compiled with no new warning (`tests\known-warnings.txt` lists the accepted ones), the code-generation and build-graph checks |
+| Linux | `tools/test.sh` in WSL: the Linux suites, the production sources, a local Worker with and without TLS, the real disc image installed with the production installer when `game\` holds one |
+| Settings | the production `GameSettings` on real temporary files on Windows and on Linux: save, reload, invalid or partly written `settings.toml` set aside as `settings.toml.invalid`, folders with spaces and accents, the Connection test result, the AppImage user-data location with nothing written into the mount; the save files through the runtime's virtual file system (create, write, reopen, overwrite in place, letter case, delete); the achievements through ReXGlue's manager (46, 1000 gamerscore, unlock, duplicate, reload) |
+| Worker | `npm test` in `server\eck-lobby` on Windows and on Linux, with the platform values and the dashboard schema |
+| Cross-platform | the wire vectors of both builds byte for byte and read by the Worker, and a race between the Windows and the Linux build through one Worker, in both directions: sign-in, friends, invite, room, Direct or Relay path, race configuration, snapshot, input, RTT, telemetry, leaving |
+| AppImage | a fixture AppImage in extract-and-run mode and with FUSE taken away (exit status, cleanup, original path), and a scratch AppImage built by `tools/package-linux.sh` and checked with `--verify-only` |
+| Updater, Installer | the update logic for both platforms (asset selection, checksums, replacement, rollback, awkward paths) and the installer on synthetic images and on the real one |
+| ReXGlue | both patch sets classified (`patches\rexglue-sdk\platforms.txt`), their stamps current, a stale, modified, stock or unstamped runtime refused, a stock GPU plugin refused, the Vulkan Internal render resolution decision (100%, 75% and 50% on the host render target path, 100% and a warning on any other) compiled from the header patch 0051 gives the GPU plugin, and that warning present in the built plugin |
+| glibc / ELF | the highest GLIBC of every shipped binary against 2.31, GLIBCXX and CXXABI against what the bundled libstdc++ provides, RUNPATH and the libraries every binary needs |
+| Packaging | the AppDir policy against a clean fixture and one forbidden item at a time, the pinned AppImage runtime, and the Windows release folder checker |
+| Privacy | secrets, tokens, identity files and friend codes refused in both packages |
+| Hygiene | conflict markers, game data, temporary files, `DEBUG_SAULO`, TODO, secret shapes and local paths in every release-facing file |
+
+Every suite is named in `tests\required-suites.txt`. The gate fails when a listed suite is missing, when a suite runs that is
+not listed, and when a test program is built and never executed. Counts are printed, not fixed: the suites may grow.
+
+Passing it does not replace trying the game. Vulkan rendering, controller hardware, audio, NAT traversal over the internet,
+a real router's UPnP and a Steam Deck are only proven by running the game on them.
+
+## Release notes
+
+`.github\release-notes-v<version>.md`. Its Checksums table is filled from the generated ZIP and AppImage.
+
 ## Publishing a release
 
 The updater accepts only the latest stable GitHub release of `saulob/el-chavo-kart-recompiled`, tagged `v<version>`
@@ -40,6 +96,8 @@ The updater accepts only the latest stable GitHub release of `saulob/el-chavo-ka
 | --- | --- |
 | `ElChavoKart-v<version>-windows-x64.zip` | the package above |
 | `ElChavoKart-v<version>-windows-x64.sha256` | `<sha256>  ElChavoKart-v<version>-windows-x64.zip` |
+| `ElChavoKart-v<version>-x86_64.AppImage` | the Linux AppImage |
+| `ElChavoKart-v<version>-x86_64.sha256` | `<sha256>  ElChavoKart-v<version>-x86_64.AppImage` |
 
 The SHA-256 is trusted from the GitHub asset digest first and from the `.sha256` asset otherwise. A release without one
 of them is never installed. Drafts and prereleases are ignored.
@@ -69,11 +127,14 @@ Config ownership: `el_chavo_kart.toml` beside the program is release-owned stati
 update. The player's choices live in `<user data>\settings.toml` (normally `user_data\settings.toml`) and are never
 replaced.
 
-Linux has no AppImage package for this project, so the launcher does not update itself there.
+On Linux the AppImage is the whole installation: the launcher downloads the new AppImage, checks its size and SHA-256 and
+replaces the file this run was started from, keeping its permissions, then starts it again; if it cannot be started, the
+previous AppImage is put back. See [linux.md](linux.md#launcher-updates).
 
 ## Testing the banner without a public release
 
-Windows only, from a disposable extraction of the package. The master switch makes the other variables effective;
+On Windows from a disposable extraction of the package, on Linux from a disposable copy of the AppImage. The master
+switch makes the other variables effective;
 without it they do nothing.
 
     $env:ECK_UPDATE_TEST = '1'

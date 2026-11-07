@@ -57,7 +57,8 @@ REXCVAR_DEFINE_BOOL(eck_msaa_compatibility, false, "El Chavo Kart",
                     "Draw the game's 2x MSAA render targets with 4x MSAA, for GPUs or drivers whose "
                     "native 2x MSAA misrenders (sets native_2x_msaa)");
 REXCVAR_DEFINE_STRING(eck_graphics_adapter, "", "El Chavo Kart",
-                      "Graphics card: the index d3d12_adapter takes, empty for the first usable card (applied at start)");
+                      "Graphics card: the index d3d12_adapter (Windows) or vulkan_device (Linux) takes, empty for the "
+                      "first usable card (applied at start)");
 REXCVAR_DEFINE_STRING(eck_player_1_name, "Player 1", "El Chavo Kart",
                       "Name shown for local player 1; save data is not affected");
 REXCVAR_DEFINE_STRING(eck_player_2_name, "Player 2", "El Chavo Kart",
@@ -184,9 +185,46 @@ std::optional<std::string> ConfigValue(const toml::table& table, std::string_vie
   return node->value_exact<std::string>();
 }
 
+// A player file that is not valid TOML is kept as settings.toml.invalid and replaced: LoadConfig applies none of
+// it, and every later save would only add lines to the broken file.
+bool MoveAsideIfInvalid(const std::filesystem::path& path) {
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(path, ec)) {
+    return false;
+  }
+  std::string text;
+  {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+      return false;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  std::string problem;
+  try {
+    (void)toml::parse(text);
+    return false;
+  } catch (const toml::parse_error& e) {
+    problem = std::string(e.description()) + " at line " + std::to_string(e.source().begin.line);
+  }
+  std::filesystem::path invalid = path;
+  invalid += ".invalid";
+  std::filesystem::remove(invalid, ec);
+  std::filesystem::rename(path, invalid, ec);
+  if (ec) {
+    REXLOG_ERROR("{} is not valid TOML ({}) and could not be set aside: {}", Utf8(path.filename()), problem,
+                 ec.message());
+    return false;
+  }
+  REXLOG_WARN("{} is not valid TOML ({}); kept as {} and started a new one", Utf8(path.filename()), problem,
+              Utf8(invalid.filename()));
+  return true;
+}
+
 trg::TextFileSettings OpenPlayerFile(const std::filesystem::path& path) {
   std::error_code ec;
   std::filesystem::create_directories(path.parent_path(), ec);
+  MoveAsideIfInvalid(path);
   if (!std::filesystem::exists(path, ec)) {
     std::ofstream(path) << "# El Chavo Kart player settings, written by the launcher.\n"
                            "# Loaded after el_chavo_kart.toml. Remove a line to use the shipped value.\n";
@@ -283,6 +321,9 @@ std::string GameStateName(GameFiles state) {
 void LoadPlayerSettings(const std::filesystem::path& path) {
   std::error_code ec;
   if (!std::filesystem::exists(path, ec)) {
+    return;
+  }
+  if (MoveAsideIfInvalid(path)) {
     return;
   }
   rex::cvar::LoadConfig(path);
@@ -475,12 +516,17 @@ void ApplyInternalRenderPath() {
 }
 
 void ApplyGraphicsAdapter() {
-#if defined(_WIN32)
   const std::string setting = REXCVAR_GET(eck_graphics_adapter);
+#if !defined(_WIN32)
+  // Until a card is chosen in the launcher the loader's and Mesa's own device selection stands.
+  if (!ParseGraphicsAdapter(setting)) {
+    return;
+  }
+#endif
   const std::vector<GraphicsAdapter> adapters = ListGraphicsAdapters();
   const std::optional<int> index = ResolveGraphicsAdapter(setting, adapters);
   if (!index) {
-    REXLOG_WARN("No usable Direct3D 12 graphics card found");
+    REXLOG_WARN("No usable {} graphics card found", GraphicsBackendName());
     return;
   }
   const auto chosen = std::find_if(adapters.begin(), adapters.end(),
@@ -491,9 +537,8 @@ void ApplyGraphicsAdapter() {
     REXLOG_INFO("Graphics card: {}", chosen->name);
   }
   g_graphics_adapter_stale = GraphicsAdapterSettingIsStale(setting, adapters);
-  rex::cvar::SetFlagByName("d3d12_adapter", std::to_string(*index));
+  rex::cvar::SetFlagByName(kBackendAdapterCvar, std::to_string(*index));
   rex::cvar::SetFlagByName("eck_graphics_adapter", std::to_string(*index));
-#endif
 }
 
 void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& display, int monitor,
@@ -549,7 +594,7 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   diagnostics.system.logical_processors = LogicalProcessorCount();
 
   const GraphicsAdapterDetails adapter =
-      EffectiveGraphicsAdapter(std::atoi(CvarText("d3d12_adapter", "-1").c_str()));
+      EffectiveGraphicsAdapter(std::atoi(CvarText(kBackendAdapterCvar, "-1").c_str()));
   diagnostics.gpu.resolved = adapter.name;
   diagnostics.gpu.adapter = adapter.index;
   diagnostics.gpu.vendor_id = adapter.vendor_id;
@@ -595,7 +640,7 @@ void LogStartupDiagnostics(const GameSettings& settings, const MonitorInfo& disp
   diagnostics.graphics.msaa = settings.GetBool("eck_msaa_compatibility", false) ? "4x compatibility" : "2x native";
   diagnostics.graphics.anti_aliasing = diagnostics.launcher_graphics.anti_aliasing;
   diagnostics.graphics.texture_filtering = diagnostics.launcher_graphics.texture_filtering;
-  diagnostics.graphics.render_target_path = CvarText("render_target_path_d3d12", "default");
+  diagnostics.graphics.render_target_path = CvarText(kRenderTargetPathSetting, "default");
 
   diagnostics.input.keyboard_mode = settings.GetBool("mnk_mode", true) ? "On" : "Off";
   diagnostics.input.controller = window.controller;

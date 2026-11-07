@@ -2,7 +2,7 @@
 
 # El Chavo Kart - PC Port
 
-### El Chavo Kart (Chaves Kart), the Xbox 360 kart racer, recompiled to run natively on Windows, with the TRG launcher and Brazilian Portuguese support
+### El Chavo Kart (Chaves Kart), the Xbox 360 kart racer, recompiled to run natively on Windows, and experimentally on Linux and Steam Deck, with the TRG launcher and Brazilian Portuguese support
 
 <sub>The original Xbox 360 game code, statically recompiled to native PC code with the <a href="https://github.com/rexglue/rexglue-sdk">ReXGlue SDK</a>. <b>No game files included</b>: bring your own El Chavo Kart (USA) Xbox 360 disc image.</sub>
 
@@ -10,12 +10,15 @@
 
 ## Status
 
-**v0.1.0, the first public Windows release.** This is a native PC recompilation, not an emulator, and it needs your own
-copy of the game. The [known limitations](#known-limitations) list what is still open.
+**v0.1.0, the first public release**, as a Windows x64 ZIP and a Linux x86_64 AppImage. This is a native PC recompilation,
+not an emulator, and it needs your own copy of the game. Linux and Steam Deck are experimental: the AppImage is native, uses
+Vulkan and has the same launcher and game features as Windows, but it has not been validated on real hardware yet. The
+[known limitations](#known-limitations) list what is still open.
 
 ## Features
 
-- **Native static recompilation** of the game's own code with ReXGlue 0.10.0. Native Windows build.
+- **Native static recompilation** of the game's own code with ReXGlue 0.10.0. Native Windows build, plus an experimental
+  native Linux AppImage (Vulkan, no Proton or Wine).
 - **TRG launcher** in the style of the other ports: Play, Display, Graphics, Gameplay, Achievements, Online, Controls and
   About pages, keyboard and controller navigation, saved window placement, DPI-aware layout and fonts.
 - **Languages**: English is the default language. Português (Brasil) selects the game's own official Brazilian
@@ -40,7 +43,9 @@ copy of the game. The [known limitations](#known-limitations) list what is still
 
 ## What you need
 
-- Windows 10 or 11, 64-bit, and a GPU with Direct3D 12.
+- **Windows**: Windows 10 or 11, 64-bit, and a GPU with Direct3D 12.
+- **Linux and Steam Deck (experimental)**: 64-bit x86 with glibc 2.31 or newer (Ubuntu 20.04 or later) and a Vulkan driver.
+  See [docs/linux.md](docs/linux.md), which also covers running it as a Non-Steam Game.
 - Your own **El Chavo Kart (USA)** Xbox 360 disc image (`.iso`). The supported build is:
 
   | | |
@@ -53,9 +58,16 @@ copy of the game. The [known limitations](#known-limitations) list what is still
 
   Other dumps of the same disc work as long as their `default.xex` matches.
 
+## Linux AppImage (experimental)
+
+Download **ElChavoKart-v0.1.0-x86_64.AppImage**, make it executable (`chmod +x`) and run it from a folder you can write to.
+The launcher works as on Windows; `game`, `logs` and `user_data` go next to the AppImage, which also runs where FUSE is
+missing. Windows and Linux players play together through the same service. Everything else, including Steam Deck and
+how to build it, is in [docs/linux.md](docs/linux.md).
+
 ## Building it yourself
 
-Requirements:
+These steps build the Windows program; the Linux build is in [docs/linux.md](docs/linux.md#building-the-appimage). Requirements:
 
 - Visual Studio 2022 or newer with **Desktop development with C++** and **C++ Clang tools for Windows** (clang, lld,
   CMake and Ninja are taken from it)
@@ -80,7 +92,8 @@ runtime and the recompiled code are large); later runs are incremental. `tools\b
 Start `build\el_chavo_kart.exe`. The development build finds the game files through `build\game-folder.txt`; a packaged
 build looks for them in a `game` folder beside the program, and the launcher can install them there from your `.iso`.
 
-Lightweight, headless checks (no game files, no ReXGlue SDK, no GUI) live in `tools\test.ps1`: it builds and runs the
+Headless checks (no GUI, no game started) live in `tools\test.ps1`; `.\tools\test.ps1 -RequireLinux` is the complete
+Windows and Linux release gate ([docs/release.md](docs/release.md#complete-validation)). It builds and runs the
 console tests in `tests\`, validates the patch sets in `patches\rexglue-sdk` and `patches\trg-launcher`, checks
 `config\overrides.toml` against `config\discovered-functions.toml` for overlaps, reports `generated\default` freshness,
 and checks the source tree for tracked game data and hard-coded local paths. The online service has its own tests:

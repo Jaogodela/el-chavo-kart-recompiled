@@ -14,6 +14,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 #include "bug_report.h"
@@ -227,6 +231,66 @@ void TestRealCrash(const fs::path& dir, const char* self) {
   }
   Check(!Has(text, fs::absolute(self).parent_path().string()), "module paths did not reach the report");
 }
+#else
+enum class ChildAction { kSegfault, kAbort, kExit };
+
+// The handlers run in a child process: this one keeps its own signal state and its report is read from the log.
+int RunChild(const fs::path& log, ChildAction action) {
+  const pid_t child = fork();
+  if (child == 0) {
+    eck::SetCrashGameVersion("0.1.0");
+    eck::SetCrashSystemInfo("0.10.0", "Ubuntu 20.04.6 LTS", "Test CPU");
+    eck::CrashRuntimeState state;
+    state.gpu = "Test GPU";
+    state.selected_adapter = "Test GPU";
+    state.language = "en-US";
+    state.online = "disabled";
+    eck::SetCrashRuntimeState(state);
+    eck::InstallCrashReporting(log.c_str());
+    if (action == ChildAction::kSegfault) {
+      raise(SIGSEGV);
+    } else if (action == ChildAction::kAbort) {
+      std::abort();
+    }
+    std::_Exit(0);
+  }
+  int status = 0;
+  return child > 0 && waitpid(child, &status, 0) == child ? status : -1;
+}
+
+void TestRealSignals(const fs::path& dir) {
+  Check(!eck::CrashReportingInstalled(), "nothing is installed before the first call");
+
+  const fs::path segfault = dir / "segfault.log";
+  Write(segfault, "[info] session\n");
+  const int segfault_status = RunChild(segfault, ChildAction::kSegfault);
+  Check(WIFSIGNALED(segfault_status) && WTERMSIG(segfault_status) == SIGSEGV, "the process still dies by the signal");
+  const std::string text = ReadFile(segfault);
+  Check(Has(text, "[info] session"), "the block is appended to the session log");
+  Check(eck::LogContainsCrashReport(segfault), "the handler wrote a report");
+  for (const std::string_view field :
+       {"Linux fatal signal", "Signal: 11", "Exception code: 0xC0000005", "Version: 0.1.0", "ReXGlue SDK: 0.10.0",
+        "OS: Ubuntu 20.04.6 LTS", "CPU: Test CPU", "gpu=Test GPU", "selected_adapter=Test GPU", "language=en-US",
+        "online=disabled", "Build: ", "Stack trace: "}) {
+    Check(Has(text, field), "the Linux report states " + std::string(field));
+  }
+  Check(!Has(text, fs::current_path().string() + "/"), "module paths did not reach the report");
+
+  const fs::path aborted = dir / "abort.log";
+  Write(aborted, "[info] session\n");
+  const int abort_status = RunChild(aborted, ChildAction::kAbort);
+  Check(WIFSIGNALED(abort_status) && WTERMSIG(abort_status) == SIGABRT, "abort still ends the process");
+  Check(Has(ReadFile(aborted), "Signal: 6") && Has(ReadFile(aborted), "STATUS_FATAL_APP_EXIT"), "abort is reported");
+
+  const fs::path clean = dir / "clean.log";
+  Write(clean, "[info] session\n");
+  const int clean_status = RunChild(clean, ChildAction::kExit);
+  Check(WIFEXITED(clean_status) && WEXITSTATUS(clean_status) == 0, "a hard exit is not a crash");
+  Check(!eck::LogContainsCrashReport(clean), "a hard exit writes no report");
+
+  eck::InstallCrashReporting("");
+  Check(!eck::CrashReportingInstalled(), "an empty log path installs nothing");
+}
 #endif
 
 }  // namespace
@@ -238,6 +302,7 @@ int main(int argc, char** argv) {
   }
 #else
   (void)argc;
+  (void)argv;
 #endif
   const fs::path dir = fs::temp_directory_path() / "eck_crash_report_tests";
   std::error_code ec;
@@ -252,6 +317,8 @@ int main(int argc, char** argv) {
   TestBugReportUrl();
 #if defined(_WIN32)
   TestRealCrash(dir, argv[0]);
+#else
+  TestRealSignals(dir);
 #endif
 
   fs::remove_all(dir, ec);

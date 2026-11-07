@@ -1,0 +1,56 @@
+# The suites the complete release gate must run. tools/test.ps1 and tools/test.sh fail when one is missing from their own
+# run, when a suite they run is not listed here, and when a built test program is never executed.
+#   both          run on Windows and on Linux
+#   windows       Windows only: its code does not exist on Linux
+#   linux         Linux only: it needs the Linux runtime or Linux system calls
+#   service       needs a running Worker; the gate starts one on each platform and runs it in a race between the two
+#   linux-service needs a Worker behind TLS and the system OpenSSL
+both eck_installer_tests
+both eck_ui_text_tests
+both eck_achievements_tests
+both eck_launcher_logic_tests
+both eck_crash_report_tests
+both eck_cursor_input_tests
+both eck_hotkey_tests
+both eck_graphics_adapter_tests
+both eck_game_window_tests
+both eck_frame_limiter_tests
+both eck_debug_telemetry_tests
+both eck_input_focus_tests
+both eck_main_menu_tests
+both eck_character_unlock_tests
+both eck_track_unlock_tests
+both eck_online_identity_tests
+both eck_online_protocol_tests
+both eck_online_peer_tests
+both eck_online_service_tests
+both eck_online_session_tests
+both eck_online_lobby_tests
+both eck_online_race_sync_tests
+both eck_online_launcher_tests
+both eck_online_race_tests
+both eck_online_race_telemetry_tests
+both eck_online_menu_tests
+both eck_online_probe_tests
+both eck_online_network_tests
+both eck_online_connection_tests
+both eck_online_upnp_tests
+both eck_update_tests
+both eck_relaunch_tests
+both eck_user_data_tests
+both eck_log_path_tests
+both eck_window_placement_tests
+both eck_dpi_tests
+both eck_wire_parity_tests
+both eck_settings_tests
+both eck_open_commands_tests
+both eck_save_files_tests
+both eck_achievement_store_tests
+windows eck_update_helper_tests
+linux eck_linux_appimage_tests
+linux eck_clipboard_sdl_tests
+linux eck_active_log_tests
+linux eck_vulkan_scale_tests
+linux eck_file_dialog_tests
+service eck_online_integration_tests
+linux-service eck_online_websocket_tls_tests

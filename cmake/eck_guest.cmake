@@ -26,10 +26,14 @@ target_link_libraries(el_chavo_kart PRIVATE el_chavo_kart_recomp)
 
 # Fails the build, before anything links, when generated\default no longer matches its inputs: tools\build.ps1
 # checks this too, but a direct `cmake --build` (an IDE, for example) must not silently compile a stale image.
-find_program(ECK_WINDOWS_POWERSHELL NAMES powershell REQUIRED)
-set(ECK_GUEST_CHECK "${CMAKE_COMMAND}" -E env --unset=PSModulePath
-    "${ECK_WINDOWS_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen.ps1" -Check)
+if(WIN32)
+    find_program(ECK_WINDOWS_POWERSHELL NAMES powershell REQUIRED)
+    set(ECK_GUEST_CHECK "${CMAKE_COMMAND}" -E env --unset=PSModulePath
+        "${ECK_WINDOWS_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen.ps1" -Check)
+else()
+    set(ECK_GUEST_CHECK "${ECK_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-guest-code.sh" "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
 add_custom_target(eck_guest_check COMMAND ${ECK_GUEST_CHECK} VERBATIM)
 add_dependencies(el_chavo_kart eck_guest_check)
 add_dependencies(el_chavo_kart_recomp eck_guest_check)

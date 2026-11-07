@@ -1,0 +1,7 @@
+# Compiler warnings in the program's own sources that predate the Linux work and are accepted for now: one per line,
+# "<platform>|<source file>|<warning flag>". The gate fails on any warning in src/ that is not listed here.
+windows|src/online_runtime.cpp|-Wdeprecated-declarations
+windows|src/online/local_addresses.cpp|-Wdeprecated-declarations
+windows|src/online/net_addr.cpp|-Wdeprecated-declarations
+windows|src/online/upnp.cpp|-Wdeprecated-declarations
+windows|src/window_host.cpp|-Wdeprecated-declarations

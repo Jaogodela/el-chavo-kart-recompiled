@@ -670,6 +670,50 @@ void TestAppImageTarget() {
   CHECK(!IsRunningAppImage(appimage, root / "not-a-mount", program));
 }
 
+void TestPlatformAssets() {
+  std::printf("each platform downloads its own release asset, and only that\n");
+  const std::string json = R"({
+    "tag_name": "v0.5.0", "draft": false, "prerelease": false, "html_url": "https://github.com/saulob/el-chavo-kart-recompiled/releases/tag/v0.5.0",
+    "body": "notes",
+    "assets": [
+      {"name": "ElChavoKart-v0.5.0-windows-x64.zip", "size": 10,
+       "browser_download_url": "https://github.com/saulob/el-chavo-kart-recompiled/releases/download/v0.5.0/ElChavoKart-v0.5.0-windows-x64.zip"},
+      {"name": "ElChavoKart-v0.5.0-windows-x64.sha256", "size": 20,
+       "browser_download_url": "https://github.com/saulob/el-chavo-kart-recompiled/releases/download/v0.5.0/ElChavoKart-v0.5.0-windows-x64.sha256"},
+      {"name": "ElChavoKart-v0.5.0-x86_64.AppImage", "size": 30,
+       "browser_download_url": "https://github.com/saulob/el-chavo-kart-recompiled/releases/download/v0.5.0/ElChavoKart-v0.5.0-x86_64.AppImage"},
+      {"name": "ElChavoKart-v0.5.0-x86_64.sha256", "size": 40,
+       "browser_download_url": "https://github.com/saulob/el-chavo-kart-recompiled/releases/download/v0.5.0/ElChavoKart-v0.5.0-x86_64.sha256"}
+    ]})";
+  const std::optional<Release> release = ParseRelease(json);
+  CHECK(release.has_value());
+  if (release) {
+    const ReleaseAsset* zip = FindAsset(*release, "ElChavoKart-v0.5.0-windows-x64.zip");
+    const ReleaseAsset* appimage = FindAsset(*release, "ElChavoKart-v0.5.0-x86_64.AppImage");
+    CHECK(zip != nullptr && zip->name.ends_with(".zip") && zip->size == 10);
+    CHECK(appimage != nullptr && appimage->name.ends_with(".AppImage") && appimage->size == 30);
+    CHECK(FindAsset(*release, "ElChavoKart-v0.5.0-x86_64.sha256") != nullptr);
+  }
+
+  std::ifstream file(std::filesystem::path(ECK_SOURCE_DIR) / "src" / "update_config.cpp", std::ios::binary);
+  std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  std::erase(source, '\r');
+  const size_t begin = source.find("#if defined(_WIN32)\n  config.package_kind = UpdatePackageKind::kZip;");
+  const size_t middle = source.find("#else\n  config.package_kind = UpdatePackageKind::kAppImage;", begin);
+  const size_t end = source.find("#endif", middle);
+  CHECK(begin != std::string::npos && middle != std::string::npos && end != std::string::npos);
+  const std::string windows = source.substr(begin, middle - begin);
+  const std::string linux_side = source.substr(middle, end - middle);
+  CHECK(windows.find("-windows-x64.zip\"") != std::string::npos);
+  CHECK(windows.find("-windows-x64.sha256\"") != std::string::npos);
+  CHECK(windows.find("AppImage\"") == std::string::npos);
+  CHECK(linux_side.find("-x86_64.AppImage\"") != std::string::npos);
+  CHECK(linux_side.find("-x86_64.sha256\"") != std::string::npos);
+  CHECK(linux_side.find(".zip") == std::string::npos);
+  CHECK(linux_side.find("trg::update::HasOriginalAppImage(appimage)") != std::string::npos);
+  CHECK(linux_side.find("config.restart_executable = appimage;") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -687,6 +731,7 @@ int main() {
   TestUrlPolicy();
   TestPaths();
   TestAppImageTarget();
+  TestPlatformAssets();
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

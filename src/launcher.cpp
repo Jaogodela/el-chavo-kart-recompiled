@@ -48,11 +48,9 @@
 #include "settings.h"
 #include "system_info.h"
 #include "ui_text.h"
-#include "window_host.h"
-#if defined(_WIN32)
 #include "update_config.h"
 #include "updater/update_ui.h"
-#endif
+#include "window_host.h"
 
 namespace eck {
 namespace {
@@ -82,7 +80,6 @@ const ImVec4 kActionLink = Rgb(0xFF, 0x70, 0x4A);
 const ImVec4 kLeaf = ImVec4(0.12f, 0.40f, 0.22f, 1.0f);
 
 constexpr const char* kAuthorUrl = "https://github.com/saulob";
-constexpr const char* kRepositoryUrl = "https://github.com/saulob/el-chavo-kart-recompiled";
 
 const char* TranslateLauncherText(const char* english) {
   return Tr(english);
@@ -325,7 +322,6 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     }
   }
 
-#if defined(_WIN32)
   void StartUpdateCheck() {
     updater_ = std::make_unique<trg::update::UpdateController>(MakeUpdateConfig(PortFolder()));
     updater_->StartCheck();
@@ -386,12 +382,6 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
       Finish(cb_.quit);
     }
   }
-#else
-  void StartUpdateCheck() {}
-  void PollUpdate() {}
-  void ReleaseUpdater() {}
-  void DrawUpdateBanner() {}
-#endif
 
   void* WindowHandle() const { return cb_.window_handle ? cb_.window_handle() : nullptr; }
 
@@ -606,6 +596,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     const std::string picked =
         trg::BrowseForFile(Tr("Select your El Chavo Kart Xbox 360 disc image"), {{Tr("Xbox 360 disc image"), "*.iso"}});
     if (picked.empty()) {
+      if (trg::FileDialogUnavailable()) {
+        launcher_->SetStatus("Could not open the file picker. Install xdg-desktop-portal, zenity, or kdialog.", 8.0);
+      }
       return;
     }
     install_failure_.clear();
@@ -750,7 +743,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     if (const std::optional<int> adapter =
             ResolveGraphicsAdapter(settings_.Get("eck_graphics_adapter"), graphics_adapters_)) {
       const std::string value = std::to_string(*adapter);
+#if defined(_WIN32)
       settings_.Set("eck_graphics_adapter", value);
+#endif
       std::vector<trg::Option> adapters;
       for (const auto& [option_value, label] : GraphicsAdapterOptions(graphics_adapters_)) {
         adapters.push_back({option_value, label});
@@ -1000,9 +995,9 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
 
   void ReportBug() {
     const std::filesystem::path folder = ReadyLogsFolder();
-    const std::filesystem::path log = BugReportLog(folder, paths_.active_log, kLogName);
-    trg::OpenInFileManager(Utf8(log.empty() ? folder : log));
-    trg::OpenUrl(BugReportUrl(kRepositoryUrl, PortVersion(), OsDescription()));
+    const BugReportPlan plan = PlanBugReport(folder, paths_.active_log, PortVersion(), OsDescription());
+    trg::OpenInFileManager(Utf8(plan.reveal));
+    trg::OpenUrl(plan.url);
   }
 
   LauncherPaths paths_;
@@ -1021,9 +1016,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   ImGuiBackendFlags saved_has_gamepad_ = 0;
   bool done_ = false;
   bool skip_finish_save_ = false;
-#if defined(_WIN32)
   std::unique_ptr<trg::update::UpdateController> updater_;
-#endif
   std::optional<WindowPlacement> startup_;
   PlacementTracker placement_;
   FullscreenGate fullscreen_gate_;

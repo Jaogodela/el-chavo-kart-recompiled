@@ -138,6 +138,76 @@ void TestLateFramesAndRateChange() {
   CHECK(!limiter.Next(144, At(10.0)));
 }
 
+// The limiter on a virtual clock, with each frame's own work taking a fraction of the period.
+void TestSimulationSpeedAtEveryRate() {
+  std::printf("simulation speed at every shipping choice\n");
+  for (const int choice : kFrameRates) {
+    const int rate = LimiterRate(choice);
+    const double period = 1.0 / rate;
+    for (const double load : {0.2, 0.9}) {
+      FrameLimiter limiter;
+      double now = 100.0;
+      int frames = 0;
+      double last_flip = -1.0;
+      double shortest = 1e9;
+      while (now < 110.0) {
+        now += load * period;
+        if (const auto deadline = limiter.Next(rate, At(now))) {
+          now = Seconds(*deadline - At(0.0));
+        }
+        if (last_flip >= 0.0) {
+          shortest = std::min(shortest, now - last_flip);
+        }
+        last_flip = now;
+        ++frames;
+      }
+      CHECK(frames >= 10 * rate - 2 && frames <= 10 * rate + 2);
+      CHECK(shortest >= period * 0.999);
+    }
+  }
+  CHECK(LimiterRate(30) * 10 == 300 && LimiterRate(kFrameRateUnlimited) * 10 == 3000);
+}
+
+void TestStallDoesNotSpeedTheGameUpAtAnyRate() {
+  std::printf("a stalled frame is not made up for at any shipping choice\n");
+  for (const int choice : kFrameRates) {
+    const int rate = LimiterRate(choice);
+    const double period = 1.0 / rate;
+    FrameLimiter limiter;
+    double now = 50.0;
+    limiter.Next(rate, At(now));
+    for (int i = 0; i < 20; ++i) {
+      now += 0.2 * period;
+      if (const auto deadline = limiter.Next(rate, At(now))) now = Seconds(*deadline - At(0.0));
+    }
+    now += 5.0;
+    CHECK(!limiter.Next(rate, At(now)));
+    double shortest = 1e9;
+    for (int i = 0; i < 30; ++i) {
+      const double before = now;
+      now += 0.2 * period;
+      if (const auto deadline = limiter.Next(rate, At(now))) now = Seconds(*deadline - At(0.0));
+      shortest = std::min(shortest, now - before);
+    }
+    CHECK(shortest >= period * 0.999);
+  }
+}
+
+void TestRateChangeBetweenEveryPair() {
+  std::printf("changing between any two shipping choices starts a new schedule\n");
+  for (const int from : kFrameRates) {
+    for (const int to : kFrameRates) {
+      if (LimiterRate(from) == LimiterRate(to)) continue;
+      FrameLimiter limiter;
+      limiter.Next(LimiterRate(from), At(1.0));
+      limiter.Next(LimiterRate(from), At(1.0 + 0.1 * Seconds(FramePeriod(LimiterRate(from)))));
+      CHECK(!limiter.Next(LimiterRate(to), At(2.0)));
+      const auto next = limiter.Next(LimiterRate(to), At(2.0 + 0.1 / LimiterRate(to)));
+      CHECK(next && std::fabs(Seconds(*next - At(2.0)) - 1.0 / LimiterRate(to)) < 1e-6);
+    }
+  }
+}
+
 void TestUnlimitedStillHoldsTheFloor() {
   std::printf("unlimited floor\n");
   FrameLimiter limiter;
@@ -178,7 +248,7 @@ void TestWiring() {
   CHECK(Has(limiter, "REX_HOOK_RAW(sub_82B583B0)"));
   CHECK(Has(limiter, "ctx.r3.u32 &= ~eck::kPresentIntervalMask"));
   CHECK(Has(limiter, "REX_HOOK_RAW(sub_825A4D70)"));
-  CHECK(Has(limiter, "REXCVAR_DEFINE_INT32(eck_frame_rate"));
+  CHECK(Has(ReadSource("frame_rate_setting.cpp"), "REXCVAR_DEFINE_INT32(eck_frame_rate"));
   CHECK(kPresentIntervalMask == 0xF00);
 
   const std::string host = ReadSource("window_host.cpp");
@@ -200,6 +270,9 @@ int main() {
   TestLocalInstancePacing();
   TestLimiterSchedule();
   TestLateFramesAndRateChange();
+  TestSimulationSpeedAtEveryRate();
+  TestStallDoesNotSpeedTheGameUpAtAnyRate();
+  TestRateChangeBetweenEveryPair();
   TestUnlimitedStillHoldsTheFloor();
   TestWait();
   TestWiring();

@@ -1,5 +1,8 @@
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -84,9 +87,10 @@ void TestChoiceReachesTheRuntime() {
   const std::string settings = Source("settings.cpp");
   const size_t apply = settings.find("void ApplyGraphicsAdapter()");
   Check(apply != std::string::npos, "the choice is applied at start");
-  Check(settings.find("rex::cvar::SetFlagByName(\"d3d12_adapter\", std::to_string(*index));", apply) !=
+  Check(settings.find("rex::cvar::SetFlagByName(kBackendAdapterCvar, std::to_string(*index));", apply) !=
             std::string::npos,
-        "the resolved index reaches d3d12_adapter");
+        "the resolved index reaches the renderer's adapter setting");
+  Check(Contains(Source("graphics_adapters.h"), "kBackendAdapterCvar[] = \"d3d12_adapter\";"), "d3d12_adapter on Windows");
   Check(Contains(Source("el_chavo_kart_app.h"), "eck::ApplyGraphicsAdapter();"), "the app applies it");
   Check(Contains(settings, "\"eck_graphics_adapter\",\n") || Contains(settings, "\"eck_graphics_adapter\",\r\n"),
         "the choice is saved with the window settings");
@@ -118,6 +122,62 @@ void TestPreferenceExportsRemain() {
   Check(Contains(Source("../CMakeLists.txt"), "src/platform.cpp"), "and is linked into the game");
 }
 
+#if defined(ECK_FAKE_VULKAN_LIBRARY)
+// The production enumeration (dlopen, vkGetInstanceProcAddr, instance, devices) against a stand-in driver. ReXGlue opens
+// vulkan_device = N as the Nth vkEnumeratePhysicalDevices entry, so the index is the driver's, not the sorted position.
+void TestVulkanEnumeration() {
+  const char* driver = ECK_FAKE_VULKAN_LIBRARY;
+  setenv("ECK_FAKE_VULKAN", "integrated:Intel UHD;cpu:llvmpipe;discrete:NVIDIA RTX;virtual:Hyper-V GPU", 1);
+  unsetenv("ECK_FAKE_VULKAN_FAIL");
+  const std::vector<GraphicsAdapter> adapters = eck::ListVulkanAdapters(driver);
+  std::string values;
+  for (const GraphicsAdapter& adapter : adapters) values += std::to_string(adapter.index) + "=" + adapter.name + ";";
+  Check(values == "2=NVIDIA RTX;0=Intel UHD;3=Hyper-V GPU;", "the dedicated GPU first, software rasterizers left out");
+  Check(eck::EffectiveVulkanAdapter(driver, -1).index == 2, "automatic reports the best device");
+  Check(eck::EffectiveVulkanAdapter(driver, 0).name == "Intel UHD", "an index names the driver's device");
+  Check(!eck::EffectiveVulkanAdapter(driver, 1).known, "the software rasterizer is no choice");
+  Check(!eck::EffectiveVulkanAdapter(driver, 9).known, "a missing device is unknown");
+
+  const auto options = GraphicsAdapterOptions(adapters);
+  Check(options.size() == 3 && options[0].first == "2" && options[0].second == "NVIDIA RTX", "launcher choices");
+  Check(ResolveGraphicsAdapter("", adapters) == 2, "no choice resolves to the best device");
+  Check(ResolveGraphicsAdapter("0", adapters) == 0, "a choice resolves to that device");
+  Check(ResolveGraphicsAdapter("1", adapters) == 2, "a stale choice resolves to the best device");
+
+  setenv("ECK_FAKE_VULKAN", "discrete:GeForce;discrete:GeForce", 1);
+  const auto twins = GraphicsAdapterOptions(eck::ListVulkanAdapters(driver));
+  Check(twins.size() == 2 && twins[0].second == "GeForce (0)" && twins[1].second == "GeForce (1)", "same names differ");
+
+  setenv("ECK_FAKE_VULKAN", "cpu:llvmpipe", 1);
+  Check(eck::ListVulkanAdapters(driver).empty(), "no hardware device");
+  Check(!eck::EffectiveVulkanAdapter(driver, -1).known, "automatic knows there is none");
+  setenv("ECK_FAKE_VULKAN", "discrete:NVIDIA RTX", 1);
+  setenv("ECK_FAKE_VULKAN_FAIL", "create", 1);
+  Check(eck::ListVulkanAdapters(driver).empty(), "an instance that cannot be created lists nothing");
+  unsetenv("ECK_FAKE_VULKAN_FAIL");
+  unsetenv("ECK_FAKE_VULKAN");
+  Check(eck::ListVulkanAdapters("libeck-no-such-vulkan.so.1").empty(), "no Vulkan loader lists nothing");
+  Check(eck::ListVulkanAdapters("libc.so.6").empty(), "a library that is no loader lists nothing");
+
+  const std::vector<GraphicsAdapter> real = eck::ListGraphicsAdapters();
+  std::set<int> seen;
+  for (const GraphicsAdapter& adapter : real) {
+    std::printf("  %d  %s\n", adapter.index, adapter.name.c_str());
+    Check(adapter.index >= 0 && !adapter.name.empty() && seen.insert(adapter.index).second, "the machine's own loader");
+  }
+  Check(eck::EffectiveGraphicsAdapter(-1).known == !real.empty(), "the machine's own automatic choice");
+
+  const std::string settings = Source("settings.cpp");
+  Check(Contains(settings, "rex::cvar::SetFlagByName(kBackendAdapterCvar, std::to_string(*index));"), "the choice reaches ReXGlue");
+  Check(Contains(Source("graphics_adapters.h"), "kBackendAdapterCvar[] = \"vulkan_device\";"), "as vulkan_device on Linux");
+  Check(Contains(settings, "if (!ParseGraphicsAdapter(setting)) {"), "until a card is chosen the system's selection stands");
+  std::string launcher = Source("launcher.cpp");
+  std::erase(launcher, '\r');
+  Check(Contains(launcher, "#if defined(_WIN32)\n      settings_.Set(\"eck_graphics_adapter\", value);\n#endif"),
+        "opening the launcher does not turn the system's selection into a saved card");
+}
+#endif
+
 }  // namespace
 
 int main() {
@@ -128,5 +188,8 @@ int main() {
   TestChoiceReachesTheRuntime();
   TestNoAutomaticIsLeft();
   TestPreferenceExportsRemain();
+  #if defined(ECK_FAKE_VULKAN_LIBRARY)
+  TestVulkanEnumeration();
+#endif
   return online_test::Finish();
 }
