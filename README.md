@@ -12,6 +12,8 @@
 
 </div>
 
+<img width="1281" height="763" alt="2026-11-06_23-51" src="https://github.com/user-attachments/assets/64b41110-7884-45ad-95c9-67fa41656a7c" />
+
 ## Features
 
 - **Native static recompilation** of the game's own code with ReXGlue 0.10.0. It is not an emulator. Native **Windows x64** build, plus an experimental native **Linux x86_64 AppImage** that also runs on the **Steam Deck** (Vulkan, no Proton or Wine).
@@ -215,6 +217,12 @@ Online play is off by default.
 
 The race runs directly between the host and each friend over UDP; a friend the host cannot reach is relayed through the
 online service. **F3** shows the Ping while racing. See [docs/online.md](docs/online.md).
+
+## Screenshots
+
+<img width="1282" height="766" alt="2026-11-06_23-52" src="https://github.com/user-attachments/assets/91920cf0-bb8d-4e22-8fb0-9db603102a16" />
+
+<img width="1278" height="762" alt="2026-11-06_23-51_1" src="https://github.com/user-attachments/assets/b9ad0007-d53f-42ce-924f-759ec4744375" />
 
 ## Known limitations
 
