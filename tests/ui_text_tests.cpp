@@ -74,6 +74,24 @@ int main() {
   eck::SetActiveUiLanguage("es-MX");
   Check(std::strcmp(eck::Tr("Play"), "Play") == 0, "Spanish keeps the launcher in English");
 
+  const char* const sponsor_texts[] = {
+      "Sponsor on GitHub",
+      "This open source PC port is maintained and developed in my free time. If you enjoy the project and would like to "
+      "support its continued development, you can sponsor my work on GitHub.",
+      "Support is completely optional and helps support ongoing improvements and future projects."};
+  for (const char* language : {"en-US", "es-MX", "es-ES"}) {
+    eck::SetActiveUiLanguage(language);
+    for (const char* text : sponsor_texts) {
+      Check(std::strcmp(eck::Tr(text), text) == 0, std::string("Sponsor text stays English for ") + language);
+    }
+  }
+  eck::SetActiveUiLanguage("pt-BR");
+  Check(std::strcmp(eck::Tr(sponsor_texts[0]), "Patrocinar no GitHub") == 0, "the Sponsor button label is Portuguese");
+  Check(std::strncmp(eck::Tr(sponsor_texts[1]), "Este port para PC de c", 22) == 0, "the Sponsor message is Portuguese");
+  Check(std::strncmp(eck::Tr(sponsor_texts[2]), "O apoio ", 8) == 0, "the Sponsor note is Portuguese");
+  Check(std::strcmp(eck::Tr("github.com/sponsors/saulob"), "github.com/sponsors/saulob") == 0,
+        "the Sponsor link text is never translated");
+
   std::printf("%s\n", g_failures ? "FAILED" : "passed");
   return g_failures ? 1 : 0;
 }

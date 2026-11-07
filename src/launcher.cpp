@@ -80,6 +80,7 @@ const ImVec4 kActionLink = Rgb(0xFF, 0x70, 0x4A);
 const ImVec4 kLeaf = ImVec4(0.12f, 0.40f, 0.22f, 1.0f);
 
 constexpr const char* kAuthorUrl = "https://github.com/saulob";
+constexpr const char* kSponsorUrl = "https://github.com/sponsors/saulob";
 
 const char* TranslateLauncherText(const char* english) {
   return Tr(english);
@@ -111,13 +112,13 @@ trg::HeaderPainter LauncherHeader(ImTextureID art, float art_aspect) {
   };
 }
 
-// Optional: the header keeps its gradient when no art is installed.
-std::unique_ptr<rex::ui::ImmediateTexture> LoadHeaderArt(rex::ui::ImmediateDrawer* drawer) {
+// Optional: the launcher keeps working without its images.
+std::unique_ptr<rex::ui::ImmediateTexture> LoadLauncherImage(rex::ui::ImmediateDrawer* drawer, const char* file,
+                                                             bool whiten_transparent = false) {
   if (!drawer) {
     return nullptr;
   }
-  const std::filesystem::path path =
-      rex::filesystem::GetExecutableFolder() / "assets" / "launcher" / "header-art.png";
+  const std::filesystem::path path = rex::filesystem::GetExecutableFolder() / "assets" / "launcher" / file;
   std::ifstream in(path, std::ios::binary);
   if (!in) {
     return nullptr;
@@ -125,10 +126,16 @@ std::unique_ptr<rex::ui::ImmediateTexture> LoadHeaderArt(rex::ui::ImmediateDrawe
   const std::vector<uint8_t> encoded((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   int width = 0;
   int height = 0;
-  const std::vector<uint8_t> pixels = rex::ui::DecodeImageRGBA(encoded.data(), encoded.size(), width, height);
+  std::vector<uint8_t> pixels = rex::ui::DecodeImageRGBA(encoded.data(), encoded.size(), width, height);
   if (pixels.empty() || width <= 0 || height <= 0) {
-    REXLOG_WARN("Launcher header art could not be decoded: {}", Utf8(path.filename()));
+    REXLOG_WARN("Launcher image could not be decoded: {}", file);
     return nullptr;
+  }
+  if (whiten_transparent) {
+    // Transparent texels are white too, so linear filtering does not darken the icon edge.
+    for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+      if (pixels[i + 3] == 0) pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
+    }
   }
   return drawer->CreateTexture(uint32_t(width), uint32_t(height), rex::ui::ImmediateTextureFilter::kLinear, false,
                                pixels.data());
@@ -187,7 +194,8 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
         graphics_adapters_(ListGraphicsAdapters()) {
     trg::SetTranslator(&TranslateLauncherText);
     SetActiveUiLanguage(settings_.Get(kLanguageSetting, kDefaultLanguage));
-    header_art_ = LoadHeaderArt(paths_.immediate_drawer);
+    header_art_ = LoadLauncherImage(paths_.immediate_drawer, "header-art.png");
+    sponsor_icon_ = LoadLauncherImage(paths_.immediate_drawer, "sponsor-heart.png", true);
     ConfigureOnline(paths_.user_dir);
     online_page_.SetSaveNow([this](std::string_view key, const std::string& value) {
       return settings_.SaveNow({{std::string(key), value}});
@@ -505,6 +513,8 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
     c.branding.background = LauncherHeader(header_art_ ? reinterpret_cast<ImTextureID>(header_art_.get())
                                                        : ImTextureID{},
                                            art_aspect);
+    c.sponsor = {"Sponsor on GitHub", kSponsorUrl,
+                 sponsor_icon_ ? reinterpret_cast<ImTextureID>(sponsor_icon_.get()) : ImTextureID{}};
     c.pages = {
         {"Play", "Check the game files and start playing.", [this](trg::Ui& ui) { PagePlay(ui); },
          [this] { return game_files_ != GameFiles::kReady; }},
@@ -944,6 +954,10 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   }
 
   void PageAbout(trg::Ui& ui) {
+    ui.SponsorCard(
+        "This open source PC port is maintained and developed in my free time. If you enjoy the project and would "
+        "like to support its continued development, you can sponsor my work on GitHub.",
+        "Support is completely optional and helps support ongoing improvements and future projects.");
     ui.Paragraph(
         "El Chavo Kart for Xbox 360, statically recompiled to run natively on PC with the ReXGlue SDK. No game code "
         "or assets are included: the game runs from your own game files.");
@@ -1007,6 +1021,7 @@ class LauncherDialog final : public rex::ui::ImGuiDialog {
   std::vector<MonitorInfo> monitors_;
   std::vector<GraphicsAdapter> graphics_adapters_;
   std::unique_ptr<rex::ui::ImmediateTexture> header_art_;
+  std::unique_ptr<rex::ui::ImmediateTexture> sponsor_icon_;
   std::unique_ptr<trg::Launcher> launcher_;
   ImGuiGamepad gamepad_;
   bool nav_taken_ = false;

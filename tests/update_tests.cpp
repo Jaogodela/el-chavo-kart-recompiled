@@ -512,12 +512,17 @@ void TestPackagingNames() {
   CHECK(config.find("\"0.1.0\"") == std::string::npos);
 
   const std::string release_check = ReadFile(root / "tools" / "check-release-folder.ps1");
-  CHECK(launcher.find("rex::filesystem::GetExecutableFolder() / \"assets\" / \"launcher\" / \"header-art.png\"") !=
+  CHECK(launcher.find("rex::filesystem::GetExecutableFolder() / \"assets\" / \"launcher\" / file") !=
         std::string::npos);
-  CHECK(cmake.find("$<TARGET_FILE_DIR:el_chavo_kart>/assets/launcher/header-art.png") != std::string::npos);
-  CHECK(windows_package.find("assets\\launcher\\header-art.png") != std::string::npos);
-  CHECK(release_check.find("assets\\launcher\\header-art.png") != std::string::npos);
-  CHECK(!ReadFile(root / "assets" / "launcher" / "header-art.png").empty());
+  CHECK(launcher.find("LoadLauncherImage(paths_.immediate_drawer, \"header-art.png\")") != std::string::npos);
+  CHECK(launcher.find("LoadLauncherImage(paths_.immediate_drawer, \"sponsor-heart.png\", true)") !=
+        std::string::npos);
+  for (const char* asset : {"header-art.png", "sponsor-heart.png"}) {
+    CHECK(cmake.find(std::string("$<TARGET_FILE_DIR:el_chavo_kart>/assets/launcher/") + asset) != std::string::npos);
+    CHECK(windows_package.find(std::string("assets\\launcher\\") + asset) != std::string::npos);
+    CHECK(release_check.find(std::string("assets\\launcher\\") + asset) != std::string::npos);
+    CHECK(!ReadFile(root / "assets" / "launcher" / asset).empty());
+  }
 
   for (const char* leaf : {"install_transaction.cpp", "update_job.cpp", "helper_main.cpp"}) {
     const std::string source = ReadFile(root / "src" / "updater" / leaf);

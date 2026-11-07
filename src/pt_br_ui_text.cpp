@@ -213,6 +213,9 @@ Use item (X)	Usar item (X)
 Look back (Y)	Olhar para trás (Y)
 Return to track (Back)	Voltar à pista (Back)
 Pause / Start	Pausar / Start
+Sponsor on GitHub	Patrocinar no GitHub
+This open source PC port is maintained and developed in my free time. If you enjoy the project and would like to support its continued development, you can sponsor my work on GitHub.	Este port para PC de código aberto é mantido e desenvolvido no meu tempo livre. Se você gosta do projeto e quer apoiar seu desenvolvimento contínuo, pode patrocinar meu trabalho pelo GitHub.
+Support is completely optional and helps support ongoing improvements and future projects.	O apoio é totalmente opcional e ajuda no desenvolvimento de melhorias e novos projetos.
 El Chavo Kart for Xbox 360, statically recompiled to run natively on PC with the ReXGlue SDK. No game code or assets are included: the game runs from your own game files.	El Chavo Kart (Chaves Kart) para Xbox 360, recompilado estaticamente para rodar de forma nativa no PC com o ReXGlue SDK. Nenhum código ou recurso do jogo está incluído: o jogo roda a partir dos seus próprios arquivos.
 Your launcher choices, as plain text. Loaded after el_chavo_kart.toml.	Suas escolhas do launcher, em texto simples. Carregado depois de el_chavo_kart.toml.
 El Chavo Kart (USA), Xbox 360 disc, title 475807D7, game version 0.0.0.3	El Chavo Kart (USA), disco de Xbox 360, título 475807D7, versão do jogo 0.0.0.3

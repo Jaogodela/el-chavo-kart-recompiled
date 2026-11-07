@@ -720,7 +720,7 @@ STUB
   clang-20 -shared -fPIC -O1 -Wl,-rpath,'$ORIGIN' "$fix/lib.c" -o "$bin/librexruntime.so" || return 1
   clang-20 -shared -fPIC -O1 -Wl,-rpath,'$ORIGIN' "$fix/lib.c" -o "$bin/librexgpu-xenos.so" || return 1
   cp "$BUILD/shipped-config/$BIN_NAME.toml" "$bin/$BIN_NAME.toml"
-  cp "$SRC/assets/launcher/header-art.png" "$bin/assets/launcher/header-art.png"
+  cp "$SRC/assets/launcher/header-art.png" "$SRC/assets/launcher/sponsor-heart.png" "$bin/assets/launcher/"
   stage_appdir "$appdir" "$bin" "$fix/symbols" "$SRC" 0.0.0
 }
 

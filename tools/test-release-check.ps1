@@ -49,6 +49,7 @@ $Cases = [ordered]@{
     'missing readme'     = @{ Path = 'README.txt'; Delete = $true }
     'missing updater'    = @{ Path = 'trg-updater.exe'; Delete = $true }
     'missing header art' = @{ Path = 'assets\launcher\header-art.png'; Delete = $true }
+    'missing sponsor heart' = @{ Path = 'assets\launcher\sponsor-heart.png'; Delete = $true }
     'updater workspace'  = @{ Path = 'trg-update-1234\job.txt' }
     'updater log'        = @{ Path = 'trg-updater.log' }
     'extra asset'        = @{ Path = 'assets\launcher\other.png' }
@@ -82,7 +83,9 @@ try {
             Set-Content -LiteralPath (Join-Path $stage $leaf) -Value 'placeholder'
         }
         New-Item -ItemType Directory -Force (Join-Path $stage 'assets\launcher') | Out-Null
-        Set-Content -LiteralPath (Join-Path $stage 'assets\launcher\header-art.png') -Value 'placeholder'
+        foreach ($leaf in 'header-art.png', 'sponsor-heart.png') {
+            Set-Content -LiteralPath (Join-Path $stage "assets\launcher\$leaf") -Value 'placeholder'
+        }
         New-Item -ItemType Directory -Force (Join-Path $stage 'licenses') | Out-Null
         foreach ($leaf in 'ReXGlue-LICENSE.txt', 'THIRD-PARTY-LICENSES.txt') {
             Set-Content -LiteralPath (Join-Path $stage "licenses\$leaf") -Value 'placeholder'

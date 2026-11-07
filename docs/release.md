@@ -18,7 +18,7 @@ again.
 
 The ZIP holds one folder, `ElChavoKart-v<version>-windows-x64`, with `el_chavo_kart.exe`, `trg-updater.exe`,
 `rexruntime.dll`, `rexgpu-xenos.dll`, `el_chavo_kart.toml`, `README.txt`, `LICENSE`,
-`licenses\ReXGlue-LICENSE.txt`, `licenses\THIRD-PARTY-LICENSES.txt` and `assets\launcher\header-art.png`. Nothing else:
+`licenses\ReXGlue-LICENSE.txt`, `licenses\THIRD-PARTY-LICENSES.txt`, `assets\launcher\header-art.png` and `assets\launcher\sponsor-heart.png`. Nothing else:
 no game files, `default.xex` or `default.xexp` in any casing or any other `*.xex` or `*.xexp`, disc images,
 `user_data`, logs, dumps, symbols, RenderDoc or Vulkan layers, updater workspaces or `trg-updater.log`, developer paths
 or `DEBUG_SAULO` text.

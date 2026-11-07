@@ -249,6 +249,14 @@ A VirusTotal scan is an additional check, not a guarantee of safety, so please a
 | `el_chavo_kart.exe` (inside the ZIP) | `a4b3009140d91e754f171208f446891bea6248e6a25009b56ec3c840afd94222` | [VirusTotal](https://www.virustotal.com/gui/file/a4b3009140d91e754f171208f446891bea6248e6a25009b56ec3c840afd94222?nocache=1) |
 | `trg-updater.exe` (inside the ZIP) | `66ea40c270ad67907f8fdef4cbbc046aa110803a4ab1cadab00661a662d4329a` | [VirusTotal](https://www.virustotal.com/gui/file/66ea40c270ad67907f8fdef4cbbc046aa110803a4ab1cadab00661a662d4329a?nocache=1) |
 
+## Sponsoring
+
+Chaves Kart (El Chavo Kart) Recompiled is maintained and developed in my free time. If you enjoy the project or find it useful, consider supporting its continued development.
+
+<p align="center">
+<a href="https://github.com/sponsors/saulob" target="_blank"><img src="https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors"></a>
+</p>
+
 ## Credits
 
 - [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), the static recompilation toolkit and runtime

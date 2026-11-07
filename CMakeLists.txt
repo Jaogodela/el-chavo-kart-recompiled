@@ -424,6 +424,9 @@ add_custom_target(eck_launcher_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/launcher/header-art.png"
         "$<TARGET_FILE_DIR:el_chavo_kart>/assets/launcher/header-art.png"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/launcher/sponsor-heart.png"
+        "$<TARGET_FILE_DIR:el_chavo_kart>/assets/launcher/sponsor-heart.png"
     VERBATIM
 )
 add_dependencies(el_chavo_kart eck_launcher_assets)

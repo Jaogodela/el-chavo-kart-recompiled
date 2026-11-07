@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path $PSScriptRoot -Parent
 $RequiredFiles = @('el_chavo_kart.exe', 'trg-updater.exe', 'rexruntime.dll', 'rexgpu-xenos.dll', 'el_chavo_kart.toml', 'README.txt', 'LICENSE')
 $LicenseFiles = @('ReXGlue-LICENSE.txt', 'THIRD-PARTY-LICENSES.txt')
-$AssetFiles = @('assets\launcher\header-art.png')
+$AssetFiles = @('assets\launcher\header-art.png', 'assets\launcher\sponsor-heart.png')
 # Names that mean game data, a package, saves, settings, caches, logs or updater leftovers.
 $ForbiddenNames = @('default.xex', 'default.xexp', 'game', 'game-folder.txt', 'game-install-temp', 'game-install-backup', 'user_data',
     'user_data.migrating', 'content', 'cache', 'logs', 'save', 'saves', 'dlc', 'screenshots', 'online-instances', 'settings.toml',

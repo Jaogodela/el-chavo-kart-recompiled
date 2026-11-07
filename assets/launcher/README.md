@@ -37,3 +37,14 @@ title space is part of the art. Keep the left 55% empty.
 
 The `wash` gradient fades to transparent at the left edge: windows wider than the art show the launcher gradient
 there. The launcher also darkens the title side and fades the bottom 35% of the header, so keep details above y=130.
+
+# Sponsor heart
+
+`sponsor-heart.svg` is the source of truth for the heart in the Sponsor on GitHub buttons (CC0, see
+`packaging/licenses/THIRD-PARTY-LICENSES.txt`). `sponsor-heart.png` is the runtime asset, a white 64x64 rendering of it
+with a transparent background. Do not edit it by hand; regenerate it after every SVG change, from the repository root
+with rsvg-convert:
+
+```sh
+rsvg-convert -w 64 -h 64 -f png -o assets/launcher/sponsor-heart.png assets/launcher/sponsor-heart.svg
+```
