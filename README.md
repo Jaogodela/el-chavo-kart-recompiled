@@ -1,6 +1,6 @@
 <div align="center">
 
-# El Chavo Kart Recompiled
+# Chaves Kart (El Chavo Kart) Recompiled
 
 ### Chaves Kart (El Chavo Kart) for Xbox 360 running natively on Windows, and experimentally on Linux and Steam Deck, through static recompilation, with the TRG launcher, modern PC options and online multiplayer
 
