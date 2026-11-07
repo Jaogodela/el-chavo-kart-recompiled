@@ -2,7 +2,7 @@
 
 # Chaves Kart (El Chavo Kart) Recompiled
 
-### Chaves Kart (El Chavo Kart) for Xbox 360 running natively on Windows, and experimentally on Linux and Steam Deck, through static recompilation, with the TRG launcher, modern PC options and online multiplayer
+### Chaves Kart (El Chavo Kart) for Xbox 360 running natively on Windows, and experimentally on Linux and Steam Deck, through static recompilation, with the TRG launcher, modern PC options and exclusive online multiplayer added by this port
 
 [![Latest release](https://img.shields.io/github/v/release/saulob/el-chavo-kart-recompiled?style=for-the-badge&label=release&color=99db2e&labelColor=07101f&include_prereleases)](https://github.com/saulob/el-chavo-kart-recompiled/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/saulob/el-chavo-kart-recompiled/total?style=for-the-badge&color=2e7d32&labelColor=07101f)](https://github.com/saulob/el-chavo-kart-recompiled/releases)
@@ -33,8 +33,7 @@
   time. Rates above 60 are new and still being validated. **F2** shows the frame counter and **F3** the Ping display.
 - **Gameplay options**: skip the intro, unlock secret characters and unlock race tracks (the save is not changed).
 - **Local multiplayer**: the game's own 1 to 4 player split screen; players 2 to 4 each need a controller.
-- **Online multiplayer** for up to 4 players: friends, friend codes, invites, direct UDP with a relay fallback, STUN, UPnP
-  and a connection test. Off by default, and Windows and Linux players play together. See [Online play](#online-play).
+- **Exclusive online multiplayer added by this port** for up to 4 players. The original Xbox 360 game only supports local multiplayer; this recompilation adds online play with friends, friend codes, invites, direct UDP with a relay fallback, STUN, UPnP and a connection test. Off by default, and Windows and Linux players play together. See [Online play](#online-play).
 - **Controller and keyboard**: Xbox and SDL-compatible controllers work without setup; the keyboard drives the same
   pad with a kart layout, every key remappable in the launcher.
 - **Local saves and 46 achievements (1000G)**: no Xbox Live needed. The achievements come from the game's own data in
@@ -207,7 +206,9 @@ Nothing is uploaded; check the log and attach it yourself.
 
 ## Online play
 
-Online play is off by default.
+**Online multiplayer is an exclusive feature added by this recompilation.** The original Xbox 360 game only supports local multiplayer for up to 4 players and has no original online mode.
+
+This port adds online multiplayer for up to 4 players while preserving the original Free Race flow. Online play is off by default.
 
 1. On the launcher's **Online** page, turn **Online play** on and choose an online name.
 2. Run the **Connection test**. Play waits until one test has finished, whatever its result.
@@ -216,7 +217,9 @@ Online play is off by default.
    to 4 players in all.
 
 The race runs directly between the host and each friend over UDP; a friend the host cannot reach is relayed through the
-online service. **F3** shows the Ping while racing. See [docs/online.md](docs/online.md).
+online service. **F3** shows the Ping while racing.
+
+Because this online mode did not exist in the original Xbox 360 release, the networking, friends, invites, Direct UDP, Relay fallback, STUN, UPnP, Connection test and Windows/Linux cross-play are all additions provided by this recompilation. See [docs/online.md](docs/online.md).
 
 ## Screenshots
 
@@ -226,7 +229,7 @@ online service. **F3** shows the Ping while racing. See [docs/online.md](docs/on
 
 ## Known limitations
 
-- Online play is new. The host simulates the race; items and their effects, laps, placement, the finish and the return
+- **Online multiplayer is exclusive to this recompilation and is still new.** The original Xbox 360 game only supports local multiplayer. The host simulates the online race; items and their effects, laps, placement, the finish and the return
   from the race are not synchronized between players.
 - Spanish (España) relies on the game reading the console country through ReXGlue's `user_country`; if the log shows
   the Spanish text from Latin America instead, that is the cause.
