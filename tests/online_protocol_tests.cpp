@@ -49,7 +49,9 @@ void TestEncoders() {
   Check(root && root->IsObject(), "hello is JSON");
   Check(root->Find("op")->AsString() == "hello" && root->Find("proto")->AsInt64() == 1, "hello op and proto");
   Check(root->Find("game")->AsString() == "el-chavo-kart-pc", "hello game id");
-  Check(root->Find("image")->AsString() == "eck-usa-1db4e96b" && root->Find("build")->AsInt64() == 1, "hello image and build");
+  // The value itself is pinned by tests/wire-vectors.txt, which the service's tests read too.
+  Check(root->Find("image")->AsString() == "eck-usa-1db4e96b" && root->Find("build")->AsInt64() == online::kBuildNumber,
+        "hello image and build");
   Check(root->Find("presence")->AsBool() && root->Find("relay")->AsBool(), "hello flags");
 
   const auto op = [](const std::string& text) {

@@ -11,6 +11,7 @@
 
 #include "guest_memory.h"
 #include "online_guest_reader.h"
+#include "online_kart_write.h"
 #include "online_probe_layout.h"
 #include "online_runtime.h"
 
@@ -35,11 +36,28 @@ void Copy3(const Guest& g, uint32_t address, float (&out)[3]) {
 void StoreFloat(uint8_t* base, uint32_t address, float value) { StoreBE32(base, address, std::bit_cast<uint32_t>(value)); }
 
 bool Finite(const race::KartSample& kart) {
-  bool ok = std::isfinite(kart.speed);
+  bool ok = std::isfinite(kart.speed) && std::isfinite(kart.distance) && std::isfinite(kart.racing_time);
   for (const float v : kart.position) ok = ok && std::isfinite(v);
   for (const float v : kart.velocity) ok = ok && std::isfinite(v);
   for (const float v : kart.quat) ok = ok && std::isfinite(v);
   return ok;
+}
+
+// The game's counter, as the byte the datagram carries. A field that does not hold what this layout expects is clamped,
+// never trusted: the host decides the race, and one wrong offset must not put a kart on lap 3 billion.
+uint8_t Counter(const Guest& g, uint32_t address) {
+  const int32_t value = g.I32(address);
+  return uint8_t(std::clamp(value, 0, 255));
+}
+
+// Reads the race the kart is having, as the host's snapshot carries it onward.
+void ReadProgress(const Guest& g, uint32_t pawn, race::KartSample& kart) {
+  kart.lap = Counter(g, pawn + layout::kKartCompletedLaps);
+  kart.distance = g.F32(pawn + layout::kKartDistanceInRace);
+  kart.place = Counter(g, pawn + layout::kKartRacePosition);
+  kart.finish_place = Counter(g, pawn + layout::kKartRaceFinishPosition);
+  kart.racing_time = g.F32(pawn + layout::kKartRacingTime);
+  kart.finished = (g.P(pawn + layout::kKartFlags2) >> layout::kKartRaceFinishedBit) & 1;
 }
 
 using Pawns = std::array<uint32_t, race::kMaxKarts>;
@@ -63,6 +81,7 @@ bool ReadKarts(const Guest& g, int total, Pawns& pawns, race_sync::KartFrames& k
       for (uint32_t i = 0; i < 4; ++i) kart.quat[i] = g.F32(pawn + layout::kKartMovementQuat + 4 * i);
       Copy3(g, pawn + layout::kActorVelocity, kart.velocity);
       kart.speed = g.F32(pawn + layout::kKartSpeed);
+      ReadProgress(g, pawn, kart);
       if (!Finite(kart)) break;
       karts[size_t(slot)] = kart;
       pawns[size_t(slot)] = pawn;
@@ -97,6 +116,8 @@ void ApplyWrite(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race_sync::
   }
   for (uint32_t i = 0; i < 3; ++i) StoreFloat(base, pawn + layout::kActorVelocity + 4 * i, write.state.velocity[i]);
   StoreFloat(base, pawn + layout::kKartSpeed, write.state.speed);
+  // Laps, place, distance and the finish flag: the host owns the race, so this PC never counts them on a remote kart.
+  race_sync::WriteProgress(base, pawn, write.state);
 }
 
 race_sync::SyncConfig ConfigOf(const lobby::CanonicalRace& race, int seat, int own_pad) {

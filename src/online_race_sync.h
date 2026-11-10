@@ -236,6 +236,14 @@ inline KartSample Blend(const KartSample& a, const KartSample& b, float t) {
   const float sign = dot < 0 ? -1.0f : 1.0f;
   for (int i = 0; i < 4; ++i) out.quat[i] = a.quat[i] + (b.quat[i] * sign - a.quat[i]) * t;
   NormalizeQuat(out.quat);
+  // Progression is a step, not a value that interpolates: it is the newer sample's, so a lap the host has already counted
+  // can never be undone by a receiver's blend.
+  out.lap = b.lap;
+  out.distance = b.distance;
+  out.place = b.place;
+  out.finish_place = b.finish_place;
+  out.racing_time = b.racing_time;
+  out.finished = b.finished;
   return out;
 }
 

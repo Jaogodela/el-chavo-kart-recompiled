@@ -132,6 +132,12 @@ race::SnapshotMsg SampleSnapshot(int karts) {
     kart.position[2] = 0.125f;
     kart.velocity[0] = float(i);
     kart.speed = 42.0f + float(i);
+    kart.lap = uint8_t(1 + i);
+    kart.distance = 1234.5f * float(i + 1);
+    kart.place = uint8_t(1 + i);
+    kart.finished = i % 2 == 0;
+    kart.finish_place = kart.finished ? uint8_t(1 + i) : 0;
+    kart.racing_time = 12.25f * float(i + 1);
     snapshot.karts.push_back(kart);
   }
   return snapshot;

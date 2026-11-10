@@ -77,5 +77,5 @@ test('every client build reports what the service expects', () => {
   assert.ok(SUPPORTED_IMAGES.includes(hello.image));
   assert.equal(hello.platform, 'Linux');
   const [version, build, image, game] = Buffer.from(vectors.get('constants.protocol'), 'hex').toString().split('/');
-  assert.deepEqual([Number(version), Number(build), image, game], [1, 1, 'eck-usa-1db4e96b', 'el-chavo-kart-pc']);
+  assert.deepEqual([Number(version), Number(build), image, game], [1, 2, 'eck-usa-1db4e96b', 'el-chavo-kart-pc']);
 });

@@ -204,8 +204,11 @@ assumes the same simulation runs twice. Everything travels on the session's Dire
 - **Guest to host, 30 Hz:** the raw pad (`InputMsg`). All driving reaches the game through `XamInputGetState`, so the host answers
   that call for the seat's pad with the guest's buttons, triggers and sticks, and the kart drives as a local one does. Start and
   Back stay on the guest. After 0.25 s without input the pad goes neutral.
-- **Host to guests, 20 Hz:** every kart by slot (`SnapshotMsg`): position, `KartMovementQuat`, velocity and `KartSpeed`. `idPawn` is
-  the URL slot on every PC.
+- **Host to guests, 20 Hz:** every kart by slot (`SnapshotMsg`): position, `KartMovementQuat`, velocity, `KartSpeed`, and that
+  kart's race — `CompletedLaps`, `DistanceInRace`, `RacePosition`, `RaceFinishPosition`, `racingTime` and `bIsRaceFinished`.
+  `idPawn` is the URL slot on every PC. The guest writes them onto the kart, so laps, the position list, the finish and the results
+  are the host's on every PC; the game's own ordering agrees because the distance it sorts by is carried too. A kart whose own
+  fields do not look like this layout is not written at all (`src/online_kart_write.h`), so a wrong offset cannot spread.
 - **Remote karts on a guest:** drawn 100 ms in the host's past between two snapshots, by time and not by frames, moved with
   `UWorld::FarMoveActor` (`0x825D4E10`, noCheck), which is how UE3 places a replicated actor. Heading and speed are written too.
 - **The guest's own kart:** drives at once. A snapshot says which input it had, and is compared with where this kart was when that
@@ -216,8 +219,8 @@ assumes the same simulation runs twice. Everything travels on the session's Dire
   On the begin, the same press reaches its game through its own pad until its `RaceState` moves. The host's Start waits for every
   guest's karts, 20 s at most.
 
-Not synchronized: items and their effects, lap, placement, finish and the return from the race. Steering and drift animation of a
-remote kart are not carried either. A host pause stops the race for everyone; a guest cannot pause, and has the multiplayer menu
+Not synchronized: items and their effects, and the return from the race. Steering and drift animation of a remote kart are not
+carried either. A host pause stops the race for everyone; a guest cannot pause, and has the multiplayer menu
 instead (see "Leaving").
 
 ## Reserved keys (`src/main_menu.h`)

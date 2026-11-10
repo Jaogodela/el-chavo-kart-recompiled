@@ -16,9 +16,9 @@ inline constexpr int kMaxHumans = 4;
 inline constexpr int kMaxKarts = 8;  // "Race against 7 competitors"
 inline constexpr uint8_t kMagic0 = 'E';
 inline constexpr uint8_t kMagic1 = 'R';
-inline constexpr uint8_t kVersion = 2;
+inline constexpr uint8_t kVersion = 3;
 inline constexpr size_t kHeaderSize = 4;
-inline constexpr size_t kMaxDatagram = 320;
+inline constexpr size_t kMaxDatagram = 512;
 
 inline constexpr double kLoadTimeoutSeconds = 45.0;
 inline constexpr double kCountdownSeconds = 3.0;
@@ -138,6 +138,14 @@ struct KartSample {
   float quat[4]{0, 0, 0, 1};
   float velocity[3]{};
   float speed = 0;
+  // The race the host says this kart is having: the game's own counters, so a guest's HUD, ordering and results are the
+  // host's. A guest writes them onto a remote kart and never computes them itself.
+  uint8_t lap = 0;             // CompletedLaps
+  float distance = 0;          // DistanceInRace: what the game orders karts by
+  uint8_t place = 0;           // RacePosition
+  uint8_t finish_place = 0;    // RaceFinishPosition, 0 while the kart has not finished
+  float racing_time = 0;       // racingTime
+  bool finished = false;       // bIsRaceFinished
   bool operator==(const KartSample&) const = default;
 };
 

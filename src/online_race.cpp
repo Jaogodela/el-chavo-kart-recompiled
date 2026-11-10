@@ -181,6 +181,12 @@ struct Encoder {
       for (float v : kart.quat) w.I16(ClampToI16(v * kQuatScale));
       for (float v : kart.velocity) w.I16(ClampToI16(v));
       w.I16(ClampToI16(kart.speed));
+      w.U8(kart.lap);
+      w.F32(kart.distance);
+      w.U8(kart.place);
+      w.U8(kart.finish_place);
+      w.F32(kart.racing_time);
+      w.U8(kart.finished ? 1 : 0);
     }
   }
 };
@@ -345,6 +351,16 @@ std::optional<Message> Decode(const uint8_t* data, size_t size) {
         for (float& v : kart.quat) v = float(r.I16()) / kQuatScale;
         for (float& v : kart.velocity) v = float(r.I16());
         kart.speed = float(r.I16());
+        kart.lap = r.U8();
+        kart.distance = r.F32();
+        kart.place = r.U8();
+        kart.finish_place = r.U8();
+        kart.racing_time = r.F32();
+        const uint8_t finished = r.U8();
+        if (!std::isfinite(kart.distance) || kart.distance < 0.0f) return std::nullopt;
+        if (!std::isfinite(kart.racing_time) || kart.racing_time < 0.0f) return std::nullopt;
+        if (kart.place > kMaxKarts || kart.finish_place > kMaxKarts || finished > 1) return std::nullopt;
+        kart.finished = finished == 1;
         if (kart.slot >= kMaxKarts || (slots >> kart.slot) & 1) return std::nullopt;
         slots |= 1u << kart.slot;
         m.karts.push_back(kart);

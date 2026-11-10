@@ -10,8 +10,9 @@ through the service. The wire format is [`server/eck-lobby/PROTOCOL.md`](../serv
 Implemented and tested headlessly: the client stack in `src/online`, the launcher **Online** page, the connection test and
 the invite-only flow of `docs/online-ui.md`, end to end with 2, 3 and 4 players. A guest travels to the host's character screen, each seat
 picks on a real panel, every seat loads the host's race and owns its own kart, and the host simulates the race for everybody
-(see "Racing" in `docs/online-ui.md`; not yet tried on real PCs). Not done yet: carrying the rest of the race's state over the
-gameplay socket.
+(see "Racing" in `docs/online-ui.md`; not yet tried on real PCs). The host's race progression — laps, place in the race, the
+distance the game orders by, the race clock and the finish — travels in every snapshot, so a guest's HUD, positions and
+results are the host's. Not done yet: items and their effects.
 
 Windows and Linux use the same service, protocol and player pool, and write the same bytes (`tests/wire-vectors.txt`,
 [linux.md](linux.md#online-play)).

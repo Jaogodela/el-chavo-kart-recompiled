@@ -15,12 +15,15 @@
 
 #include "online/game_socket.h"
 #include "online/relay_frame.h"
+#include "online_kart_write.h"
 #include "online_race_sync.h"
 
 using namespace eck;
 using namespace eck::race_sync;
 
 namespace {
+
+namespace layout = eck::online_probe::layout;
 
 int g_failures = 0;
 int g_checks = 0;
@@ -163,6 +166,12 @@ struct Pair {
           if (!write.position_only) {
             std::copy(write.state.velocity, write.state.velocity + 3, kart.velocity);
             kart.speed = write.state.speed;
+            kart.lap = write.state.lap;
+            kart.distance = write.state.distance;
+            kart.place = write.state.place;
+            kart.finish_place = write.state.finish_place;
+            kart.racing_time = write.state.racing_time;
+            kart.finished = write.state.finished;
           }
         }
       }
@@ -254,10 +263,18 @@ void TestSnapshotPacket() {
     kart.position[0] = 100.5f * float(slot);
     kart.velocity[1] = -300;
     kart.speed = 5860;
+    kart.lap = uint8_t(slot);
+    kart.distance = 250.5f * float(slot);
+    kart.place = uint8_t(race::kMaxKarts - slot);
+    kart.finish_place = 0;
+    kart.racing_time = 60.0f + float(slot);
+    kart.finished = slot == 0;
     snapshot.karts.push_back(kart);
   }
   Check(RoundTrips(snapshot), "a full race fits one datagram");
-  Check(race::Encode(snapshot).size() <= race::kMaxDatagram && race::Encode(snapshot).size() < 300, "well under the relay's frame");
+  // Eight karts with their progress, still far below the relay's 1472-byte payload and the smallest MTU in use.
+  Check(race::Encode(snapshot).size() <= race::kMaxDatagram && race::Encode(snapshot).size() < 600,
+        "well under the relay's frame");
 
   std::vector<uint8_t> bad = race::Encode(snapshot);
   const size_t position = race::Encode(SnapshotMsg{}).size() + 1;
@@ -961,6 +978,76 @@ std::string SourceOf(const char* name) {
   return std::string(std::istreambuf_iterator<char>(file), {});
 }
 
+// Laps, place, distance and the finish are the host's, and reach a guest on the kart it drives beside them.
+void TestProgressSync() {
+  Pair race;
+  race.host_state = race.guest_state = 2;
+  for (int slot = 0; slot < race::kMaxKarts; ++slot) {
+    race.host_karts[size_t(slot)]->lap = uint8_t(slot % 3);
+    race.host_karts[size_t(slot)]->distance = 1000.0f * float(slot + 1);
+    race.host_karts[size_t(slot)]->place = uint8_t(slot + 1);
+    race.host_karts[size_t(slot)]->racing_time = 30.0f + float(slot);
+  }
+  race.Run(1.0);
+  // Seat 1's own slot is slot 1; every other slot is the host's and is written from its snapshot.
+  Check(race.guest_karts[0]->lap == 0 && race.guest_karts[0]->place == 1, "the host's lap and place reach the guest");
+  Check(race.guest_karts[2]->lap == 2 && race.guest_karts[2]->place == 3, "each kart keeps its own");
+  Check(std::fabs(race.guest_karts[2]->distance - 3000.0f) < 1.0f, "the distance the game orders by arrives too");
+  Check(std::fabs(race.guest_karts[3]->racing_time - 33.0f) < 0.05f, "and the race clock");
+  Check(!race.guest_karts[3]->finished, "nobody has finished");
+
+  race.host_karts[3]->finished = true;
+  race.host_karts[3]->finish_place = 1;
+  race.host_karts[3]->racing_time = 95.5f;
+  race.Run(0.6);
+  Check(race.guest_karts[3]->finished && race.guest_karts[3]->finish_place == 1, "a finish is the host's to declare");
+  Check(std::fabs(race.guest_karts[3]->racing_time - 95.5f) < 0.05f, "with the time it happened");
+}
+
+// The write into guest memory, without a guest: a buffer stands in for the game's own fields.
+void TestProgressWrite() {
+  std::vector<uint8_t> memory(0x1000, 0);
+  const uint32_t kart = 0x100;
+  // What the game itself would have there before the host's answer arrives.
+  eck::StoreBE32(memory.data(), kart + layout::kKartCompletedLaps, 1);
+  eck::StoreBE32(memory.data(), kart + layout::kKartRacePosition, 4);
+  eck::StoreBE32(memory.data(), kart + layout::kKartRaceFinishPosition, 0);
+  StoreFloatBE(memory.data(), kart + layout::kKartDistanceInRace, 10.0f);
+  StoreFloatBE(memory.data(), kart + layout::kKartRacingTime, 5.0f);
+  eck::StoreBE32(memory.data(), kart + layout::kKartFlags2, 1u << 3);  // bGhostMode, a flag that must survive
+
+  KartSample state;
+  state.lap = 3;
+  state.distance = 4200.5f;
+  state.place = 2;
+  state.finish_place = 0;
+  state.racing_time = 88.25f;
+  state.finished = true;
+  Check(WriteProgress(memory.data(), kart, state), "a kart that looks right is written");
+  Check(eck::LoadBE32(memory.data(), kart + layout::kKartCompletedLaps) == 3, "the lap is the host's");
+  Check(eck::LoadBE32(memory.data(), kart + layout::kKartRacePosition) == 2, "so is the place");
+  Check(std::fabs(LoadFloatBE(memory.data(), kart + layout::kKartDistanceInRace) - 4200.5f) < 0.01f,
+        "and the distance");
+  Check(std::fabs(LoadFloatBE(memory.data(), kart + layout::kKartRacingTime) - 88.25f) < 0.01f, "and the clock");
+  const uint32_t flags = eck::LoadBE32(memory.data(), kart + layout::kKartFlags2);
+  Check((flags >> layout::kKartRaceFinishedBit) & 1, "the finish flag is set");
+  Check((flags >> 3) & 1, "and the kart's other flags are left alone");
+
+  // A field that holds something else is not this layout: nothing is written, so a wrong offset cannot spread.
+  eck::StoreBE32(memory.data(), kart + layout::kKartCompletedLaps, 0xDEADBEEFu);
+  KartSample other = state;
+  other.lap = 9;
+  other.place = 1;
+  Check(!WriteProgress(memory.data(), kart, other), "a field that is not this layout refuses the write");
+  Check(eck::LoadBE32(memory.data(), kart + layout::kKartRacePosition) == 2, "and nothing is touched");
+
+  eck::StoreBE32(memory.data(), kart + layout::kKartCompletedLaps, 3);
+  KartSample insane = state;
+  insane.distance = std::nanf("");
+  Check(!WriteProgress(memory.data(), kart, insane), "a distance that is not a number is refused");
+  Check(eck::LoadBE32(memory.data(), kart + layout::kKartCompletedLaps) == 3, "and the lap it did not write is untouched");
+}
+
 void TestNoMovementOnTheService() {
   const std::string guest = SourceOf("src/online_race_sync_guest.cpp");
   const std::string hub = SourceOf("server/eck-lobby/src/hub.js");
@@ -994,6 +1081,8 @@ int main() {
   TestRtt();
   TestDirectTransport();
   TestRelayTransport();
+  TestProgressSync();
+  TestProgressWrite();
   TestNoMovementOnTheService();
   std::printf("%d checks, %d failed\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
