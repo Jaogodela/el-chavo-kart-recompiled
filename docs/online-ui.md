@@ -247,6 +247,24 @@ four.
 `gameplay snapshot_rx`, `remote seat=0 state_applied`), and `[ONLINE-NET]` one summary per second with packets, bytes,
 drops and each peer's transport, last sequences, age and round trip.
 
+### The item probe (`ECK_ITEM_PROBE=1`)
+
+Items are not synchronized yet, because the fields `AKartPawn` keeps them in are not named by the layout. Nothing is guessed:
+with `ECK_ITEM_PROBE=1` in the environment, the probe watches the kart's unaccounted memory — the words after `idPawn`
+(`0x860`) up to the end of the object (`0x958`), plus `0x200` bytes of the character info the kart points at — and prints only
+the words that changed, at the debug probes' 2 Hz.
+
+```
+[ONLINE-RACE] item_base kart=0x2A1B3C40 nonzero= +0x868=0x00000000 +0x8F0=0x00000001
+[ONLINE-RACE] item_scan kart=0x2A1B3C40 changed=+0x8F0 0x00000001>0x00000003
+[ONLINE-RACE] item_scan char_info=0x2A1D0010 changed=+0x44 0x00000000>0x00000001
+```
+
+`item_base` is the first sight of a kart, so a later change has something to change from. Take one race with the probe on and
+do three things in order: drive through an item box, hold the item, and use it. The offsets that move at each step are the
+item state; they become constants in `src/online_probe_layout.h` and then a message of their own. Offsets are relative to the
+kart, which is the number a header constant takes.
+
 ```
 [ONLINE] character_select entered online_play=on
 [ONLINE] invite shortcut available remaining=3

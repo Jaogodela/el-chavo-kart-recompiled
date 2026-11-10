@@ -19,6 +19,7 @@
 #include "online_probe_layout.h"
 #include "online_race_url.h"
 #include "online_runtime.h"
+#include "online_word_diff.h"
 
 // Diagnostics for the online race work.
 
@@ -28,6 +29,11 @@ namespace {
 
 namespace lay = layout;
 using online_guest::Guest;
+
+// The item probe watches memory the layout does not name yet, so it is opt-in and separate from the debug probes.
+constexpr char kItemProbeEnv[] = "ECK_ITEM_PROBE";
+// How much of the character info object the item probe watches. A guess, bounded by the reader's own checks.
+constexpr uint32_t kCharInfoSpan = 0x200;
 
 std::atomic<uint64_t> g_ue3[size_t(Ue3Api::kCount)];
 std::atomic<uint32_t> g_phase{0xFFFFFFFFu};  // connection | room state << 8 | (seat + 1) << 16
@@ -169,6 +175,46 @@ void SampleKart(const Guest& g, const PawnView& view, const char* role, double n
   Race(text);
 }
 
+// What a kart carries after driving through an item box. The layout names fields up to `idPawn`; everything past it, and
+// the character info the kart points at, is unaccounted for, so it is watched instead of guessed: the offsets that move
+// when a box is taken and an item is used name the item state. Only the words that changed are printed, so a race is
+// readable. Offsets are relative to the kart, which is what a header constant would be.
+void ScanItemCandidates(const Guest& g, const PawnView& view) {
+  static race_sync::WordWatch kart_watch;
+  static race_sync::WordWatch info_watch;
+  static int lines = 0;
+  if (lines >= 200) return;
+
+  const uint32_t tail = view.pawn + lay::kKartIdPawn + 4;
+  const uint32_t end = view.pawn + lay::kKartSize;
+  // A kart whose memory is already gone says nothing.
+  if (!g.Ok(tail, 4)) return;
+  const auto read = [&g](uint32_t at) { return g.P(at); };
+
+  // The first sight of a kart prints the words that are already set, so a later change has something to change from.
+  OnChange("item_base" + std::to_string(view.pawn), "item_base kart=" + Hex(view.pawn) + " nonzero=" +
+                                                        race_sync::DescribeNonZero(tail, end, view.pawn, read));
+
+  race_sync::WordWatch::Change changes[10];
+  bool truncated = false;
+  const size_t count = kart_watch.Scan(tail, end, read, changes, sizeof changes / sizeof changes[0], &truncated);
+  if (count > 0 || truncated) {
+    ++lines;
+    Race(race_sync::DescribeChanges("item_scan kart=" + Hex(view.pawn), view.pawn, changes, count, truncated));
+  }
+
+  // An item may hang off the character info instead of the kart itself.
+  const uint32_t info = g.P(view.pawn + lay::kKartCharInfo);
+  if (info == 0 || !g.Ok(info, 4)) return;
+  race_sync::WordWatch::Change info_changes[6];
+  bool info_truncated = false;
+  const size_t info_count = info_watch.Scan(info, info + kCharInfoSpan, read, info_changes,
+                                            sizeof info_changes / sizeof info_changes[0], &info_truncated);
+  if (info_count == 0 && !info_truncated) return;
+  ++lines;
+  Race(race_sync::DescribeChanges("item_scan char_info=" + Hex(info), info, info_changes, info_count, info_truncated));
+}
+
 void Poll(double now) {
   const Guest g;
   std::vector<PawnView> pawns;
@@ -215,6 +261,8 @@ void Poll(double now) {
   }
   if (local != nullptr) SampleKart(g, *local, "local", now);
   if (remote != nullptr) SampleKart(g, *remote, "remote_designated", now);
+  static const bool item_probe = online_guest::EnvOn(std::getenv(kItemProbeEnv));
+  if (item_probe && local != nullptr) ScanItemCandidates(g, *local);
 }
 
 }  // namespace

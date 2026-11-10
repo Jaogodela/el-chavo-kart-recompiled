@@ -17,6 +17,7 @@
 #include "online/relay_frame.h"
 #include "online_kart_write.h"
 #include "online_race_sync.h"
+#include "online_word_diff.h"
 
 using namespace eck;
 using namespace eck::race_sync;
@@ -1048,6 +1049,52 @@ void TestProgressWrite() {
   Check(eck::LoadBE32(memory.data(), kart + layout::kKartCompletedLaps) == 3, "and the lap it did not write is untouched");
 }
 
+// The item probe's change detector, without a guest: a buffer stands in for the memory it watches.
+void TestWordWatch() {
+  std::vector<uint8_t> memory(0x100, 0);
+  eck::StoreBE32(memory.data(), 0x20, 7);
+  eck::StoreBE32(memory.data(), 0x24, 9);
+  const auto read = [&memory](uint32_t at) { return eck::LoadBE32(memory.data(), at); };
+  WordWatch watch;
+  WordWatch::Change changes[4];
+  bool truncated = false;
+  Check(watch.Scan(0x20, 0x30, read, changes, 4, &truncated) == 0 && !truncated,
+        "the first scan only records the range");
+  Check(watch.Scan(0x20, 0x30, read, changes, 4, &truncated) == 0, "nothing moved, nothing reported");
+
+  eck::StoreBE32(memory.data(), 0x28, 0xDEADBEEF);
+  eck::StoreBE32(memory.data(), 0x24, 10);
+  Check(watch.Scan(0x20, 0x30, read, changes, 4, &truncated) == 2, "both words that moved are reported");
+  Check(changes[0].offset == 0x24 && changes[0].before == 9 && changes[0].after == 10,
+        "with the value each had and has");
+  Check(changes[1].offset == 0x28 && changes[1].after == 0xDEADBEEF, "in ascending offset order");
+  Check(watch.Scan(0x20, 0x30, read, changes, 4, &truncated) == 0, "and only once");
+
+  // More changes than fit: the rest stays recorded for the next scan instead of being lost.
+  eck::StoreBE32(memory.data(), 0x20, 1);
+  eck::StoreBE32(memory.data(), 0x24, 2);
+  eck::StoreBE32(memory.data(), 0x28, 3);
+  Check(watch.Scan(0x20, 0x30, read, changes, 2, &truncated) == 2 && truncated,
+        "a scan that cannot hold every change says so");
+  Check(watch.Scan(0x20, 0x30, read, changes, 4, &truncated) == 1, "and the last one arrives on the next");
+  Check(changes[0].offset == 0x28 && changes[0].after == 3, "which is the one that did not fit");
+  Check(watch.Scan(0x10, 0x30, read, changes, 4, &truncated) == 0 && !truncated, "a different range starts over");
+
+  // The line the probe prints, built the same way the tests read it.
+  const WordWatch::Change sample[2] = {{0x24, 9, 10}, {0x28, 0, 0xDEADBEEF}};
+  Check(DescribeChanges("item_scan kart=0x10", 0x20, sample, 2, false) ==
+            "item_scan kart=0x10 changed=+0x4 0x00000009>0x0000000A,+0x8 0x00000000>0xDEADBEEF",
+        "the probe line names each offset, what it held and what it holds");
+  Check(DescribeChanges("item_scan kart=0x10", 0x20, sample, 2, true).ends_with(",..."),
+        "and says when it could not fit them all");
+
+  std::vector<uint8_t> words(0x40, 0);
+  eck::StoreBE32(words.data(), 0x08, 5);
+  const auto word = [&words](uint32_t at) { return eck::LoadBE32(words.data(), at); };
+  Check(DescribeNonZero(0x00, 0x10, 0x00, word) == " +0x8=0x00000005",
+        "the first sight of an object lists only the words that are set");
+}
+
 void TestNoMovementOnTheService() {
   const std::string guest = SourceOf("src/online_race_sync_guest.cpp");
   const std::string hub = SourceOf("server/eck-lobby/src/hub.js");
@@ -1083,6 +1130,7 @@ int main() {
   TestRelayTransport();
   TestProgressSync();
   TestProgressWrite();
+  TestWordWatch();
   TestNoMovementOnTheService();
   std::printf("%d checks, %d failed\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
