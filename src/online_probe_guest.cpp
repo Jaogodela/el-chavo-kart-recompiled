@@ -207,9 +207,30 @@ void ScanItemCandidates(const Guest& g, const PawnView& view) {
          " nonzero=" + race_sync::DescribeNonZero(from, end, view.pawn, read));
   }
 
-  race_sync::WordWatch::Change changes[16];
+  // Room for every word of the range: physics moves dozens of floats per poll, and a short list (16) ends at the lowest
+  // offsets that moved, so an item field further up the kart was never seen.
+  static race_sync::WordWatch::Change changes[(lay::kKartSize - 0x400) / 4];
   bool truncated = false;
   const size_t count = watch.kart.Scan(from, end, read, changes, sizeof changes / sizeof changes[0], &truncated);
+  // A held item may be an object rather than an id: a word that goes 0 -> anything or anything -> 0. Physics floats rarely
+  // land on exactly zero, the driver inputs do (and are named in the layout, so they are left out).
+  {
+    std::vector<race_sync::WordWatch::Change> edges;
+    for (size_t i = 0; i < count; ++i) {
+      const uint32_t at = changes[i].offset - view.pawn;
+      if (at == lay::kKartAccelInput || at == lay::kKartBrakeInput || at == lay::kKartTurnAxisInput ||
+          at == lay::kKartSteering) {
+        continue;
+      }
+      if ((changes[i].before == 0) != (changes[i].after == 0)) edges.push_back(changes[i]);
+    }
+    static int edge_lines = 0;
+    if (!edges.empty() && edge_lines < 3000) {
+      ++edge_lines;
+      Race(race_sync::DescribeChanges("item_edge kart=" + Hex(view.pawn) + " id=" + std::to_string(g.I32(view.pawn + lay::kKartIdPawn)),
+                                      view.pawn, edges.data(), std::min<size_t>(edges.size(), 24), edges.size() > 24));
+    }
+  }
   // A pickup has a shape: a word that was zero becomes a small number (the item id). Nothing else on a kart does that,
   // which is what makes this readable where every float of the physics moves on its own.
   std::vector<race_sync::WordWatch::Change> kept;
