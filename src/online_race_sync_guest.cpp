@@ -160,6 +160,11 @@ void ApplyWorldPawn(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race::W
 
 // Heading and speed go in as well: the game turns them into the kart's mesh, wheels and engine sound on its next tick.
 void ApplyWrite(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race_sync::KartWrite& write) {
+  // The host marking a guest's reported finish on its copy: the kart stays where the host's game has it.
+  if (write.progress_only) {
+    race_sync::WriteProgress(base, pawn, write.state);
+    return;
+  }
   MoveKart(ctx, base, pawn, write.state.position);
   if (write.position_only) return;
   if (race_sync::HasHeading(write.state)) {

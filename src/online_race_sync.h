@@ -48,6 +48,13 @@ inline constexpr double kMinFinishSeconds = 10.0;
 inline constexpr float kRemoteSmoothPerSecond = 10.0f;
 // How far a remote kart's target may move in one frame beyond what its velocity explains before that is a discontinuity.
 inline constexpr float kRemoteJumpSlack = 150.0f;
+// A remote kart is rendered in the host's past (the interpolation delay, plus the wire), while this PC's own kart is in its
+// present: side by side, the other kart is drawn a few hundred units behind where it is, and a bump hits that ghost. Near
+// this PC's kart it is carried forward by its velocity to the present instead, fading out with distance so nothing jumps.
+inline constexpr float kNearKartDistance = 1500.0f;  // full lead inside this
+inline constexpr float kFarKartDistance = 3000.0f;   // none past this: interpolation alone, which never overshoots
+inline constexpr double kMaxLeadSeconds = 0.25;      // a long lead is a long straight line through a corner
+inline constexpr double kLeadSlewPerSecond = 0.1;    // the round trip moves the lead; it follows slowly so nothing steps back
 inline constexpr double kRttWindowSeconds = 2.0;
 inline constexpr int kRaceCinematic = 0;
 inline constexpr int kRaceInProgress = 2;
@@ -561,8 +568,16 @@ struct FrameIn {
 struct KartWrite {
   int slot = 0;
   bool position_only = false;
+  bool progress_only = false;  // host: only the race progression (the finish a guest reported), never the kart's place
   KartSample state;
 };
+
+// How much of the lead a remote kart at `distance` from this PC's own kart gets: 1 near, 0 far, linear between.
+inline float LeadWeight(float distance) {
+  if (distance <= kNearKartDistance) return 1.0f;
+  if (distance >= kFarKartDistance) return 0.0f;
+  return (kFarKartDistance - distance) / (kFarKartDistance - kNearKartDistance);
+}
 
 struct FrameOut {
   std::array<std::optional<PadState>, race::kMaxHumans> pads;  // by pad index: what this PC's remote karts read
@@ -727,6 +742,7 @@ class RaceSync {
       return;
     }
     Place(slot);
+    if (reported_ms_[size_t(slot)] == 0) reported_ms_[size_t(slot)] = finish.time_ms;
     NoteOnce(said_finish_rx_[size_t(finish.seat)], "finish_rx seat=" + std::to_string(finish.seat) +
                                                         " said_place=" + std::to_string(finish.place) +
                                                         " place=" + std::to_string(place_of_slot_[size_t(slot)]) +
@@ -906,9 +922,30 @@ class RaceSync {
       out.pads[size_t(pad)] = fresh ? HostSidePad(entry.pad, gate_.begun() && !out.post_race) : PadState{};
     }
     NoteFinishes(in);
+    MarkReportedFinishes(in, out);
     out.own = HostGatePad(gate_.begun(), all_loaded, in.now - started_);
     ApplyGatePress(in.now, in.race_state, out);
     if (snapshot_clock_.Due(in.now)) SendSnapshot(in, link);
+  }
+
+  // A guest's own game decides when its kart crossed; the host's copy of that kart is only simulated from its pad and can
+  // be behind, or stuck. Until the host's game has it finished too, the reported finish is written onto that copy, so the
+  // host's race ends on the guest's word and the host's results show the guest's time and place.
+  void MarkReportedFinishes(const FrameIn& in, FrameOut& out) {
+    for (int slot = 0; slot < config_.humans; ++slot) {
+      if (config_.seats[size_t(slot)] == config_.seat || reported_ms_[size_t(slot)] == 0) continue;
+      if (!in.karts[size_t(slot)] || in.karts[size_t(slot)]->finished) continue;
+      if (out.write_count >= int(out.writes.size())) break;
+      KartWrite& write = out.writes[size_t(out.write_count++)];
+      write.slot = slot;
+      write.progress_only = true;
+      write.state = *in.karts[size_t(slot)];
+      write.state.finished = true;
+      write.state.finish_place = place_of_slot_[size_t(slot)];
+      write.state.racing_time = float(reported_ms_[size_t(slot)]) / 1000.0f;
+      NoteOnce(said_finish_marked_[size_t(slot)], "finish marked on host copy slot=" + std::to_string(slot) +
+                                                       " place=" + std::to_string(write.state.finish_place));
+    }
   }
 
   void SendSnapshot(const FrameIn& in, PeerLink& link) {
@@ -1020,10 +1057,26 @@ class RaceSync {
     if (!host_now) return;
     const double render_time = *host_now - kInterpolationDelay;
     const int own = OwnSlot();
+    const KartSample* mine = own >= 0 && in.karts[size_t(own)] ? &*in.karts[size_t(own)] : nullptr;
+    // The present, for this PC's kart: the interpolation delay and a round trip (the host's copy of this kart runs a one-way
+    // trip behind its pad, and the snapshot takes another to come back).
+    const double wanted = std::min(kMaxLeadSeconds, kInterpolationDelay + rtt_[0].Ms(in.now).value_or(0) / 1000.0);
+    if (lead_ < 0) {
+      lead_ = wanted;
+    } else {
+      const double step = kLeadSlewPerSecond * std::max(in.dt, 0.0);
+      lead_ += std::clamp(wanted - lead_, -step, step);
+    }
+    const double lead = lead_;
+    const bool racing = host_state_ == kRaceInProgress && in.race_state == kRaceInProgress;
     for (int slot = 0; slot < config_.total; ++slot) {
       if (slot == own || !in.karts[size_t(slot)]) continue;
-      const std::optional<KartSample> kart = tracks_[size_t(slot)].Sample(render_time);
+      std::optional<KartSample> kart = tracks_[size_t(slot)].Sample(render_time);
       if (!kart) continue;
+      if (racing && mine) {
+        const float weight = LeadWeight(Distance3(kart->position, mine->position));
+        for (int i = 0; i < 3; ++i) kart->position[i] += kart->velocity[i] * float(lead) * weight;
+      }
       KartWrite& write = out.writes[size_t(out.write_count++)];
       write.slot = slot;
       write.state = *kart;
@@ -1102,6 +1155,7 @@ class RaceSync {
   HostClock clock_;
   std::array<KartTrack, race::kMaxKarts> tracks_{};
   std::array<RemoteSmoother, race::kMaxKarts> smoothers_{};
+  double lead_ = -1;  // seconds a nearby remote kart is carried forward, following the round trip slowly
   std::array<bool, race::kMaxKarts> said_remote_jump_{};
   std::array<WorldTrack, race::kMaxWorldPawns> world_tracks_{};
   Reconciler reconciler_;
@@ -1116,6 +1170,8 @@ class RaceSync {
   FinishEdge own_finish_;                                    // guest: its own kart's crossing, what it reports
   std::array<bool, race::kMaxHumans> said_finish_rx_{};
   std::array<bool, race::kMaxHumans> said_finish_refused_{};
+  std::array<uint32_t, race::kMaxKarts> reported_ms_{};  // host: a guest's reported race time, by its kart slot
+  std::array<bool, race::kMaxKarts> said_finish_marked_{};
   uint8_t finish_order_ = 0;  // how many karts the host has seen cross the line
   int host_state_ = 0;
   bool said_post_race_ = false;

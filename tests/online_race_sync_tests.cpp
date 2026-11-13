@@ -135,6 +135,10 @@ struct Pair {
   int host_frames = 0;
   int guest_frames = 0;
 
+  // The guest's own kart is parked well off the host's: these races are about how a far kart is drawn. A kart beside the
+  // guest's own is carried forward to the present (TestNearKartLead).
+  Pair() { host_karts[1]->position[1] = guest_karts[1]->position[1] = 100000; }
+
   void Run(double seconds) {
     const double end = net.now + seconds;
     while (net.now < end) {
@@ -641,6 +645,76 @@ void TestRemoteGapIsSmoothed() {
   const RemoteSmoother::Result late = smoother.Step(kart, 1.0 / 60);
   Check(late.jump == RemoteSmoother::Jump::kSmoothed && late.position[0] < kart.position[0] - 300,
         "a sudden 500 is absorbed, not shown");
+}
+
+// The host's copy of a guest's kart is simulated from the pad and can be behind or stuck: the guest's reported finish is
+// written onto it (race progression only, never the position) until the host's own game has it finished too.
+void TestReportedFinishMarksHostCopy() {
+  Pair race;
+  race.host_state = race.guest_state = 2;
+  for (int slot = 0; slot < 8; ++slot) race.host_karts[size_t(slot)]->racing_time = 40.0f;
+  race.guest_karts[1]->racing_time = 40.0f;
+  race.Run(0.5);
+  auto marked = [&race]() -> const KartWrite* {
+    for (int i = 0; i < race.host_out.write_count; ++i) {
+      if (race.host_out.writes[size_t(i)].slot == 1) return &race.host_out.writes[size_t(i)];
+    }
+    return nullptr;
+  };
+  Check(marked() == nullptr, "nothing is written on the host while the guest races");
+  race.guest_karts[1]->finished = true;
+  race.guest_karts[1]->racing_time = 61.25f;
+  race.Run(0.3);
+  const KartWrite* write = marked();
+  Check(write && write->progress_only, "the guest's finish is written onto the host's copy of its kart");
+  Check(write && write->state.finished && write->state.finish_place == 1, "finished, in the host's order");
+  Check(write && std::fabs(write->state.racing_time - 61.25f) < 0.01f, "with the guest's own time");
+  Check(write && write->state.position[0] == race.host_karts[1]->position[0], "and the kart left where the host has it");
+  race.host_karts[1]->finished = true;  // the host's game took it
+  race.Run(0.1);
+  Check(marked() == nullptr, "once the host's game has it finished, nothing more is written");
+}
+
+// Side by side, the guest used to draw the host's kart a few hundred units behind, and a bump hit that ghost. Near the
+// guest's own kart a remote kart is carried to the present; far away it is interpolated as before.
+void TestNearKartLead() {
+  Pair race;
+  race.host_karts[1]->position[1] = race.guest_karts[1]->position[1] = 200;
+  race.host_state = race.guest_state = 2;
+  race.host_kart_speed = 3000;
+  float worst_gap = 0;
+  for (int i = 0; i < 120; ++i) {
+    // Side by side on the host: the host's kart and its copy of the guest's. The copy runs a one-way trip behind the
+    // guest's own kart (it is driven by the pad that crossed the wire), so the guest's own kart is that far ahead of it.
+    race.host_karts[1]->position[0] = race.host_karts[0]->position[0];
+    race.host_karts[1]->velocity[0] = 3000;
+    race.guest_karts[1]->position[0] = race.host_karts[0]->position[0] + 3000.0f * float(race.net.delay);
+    race.guest_karts[1]->velocity[0] = 3000;
+    race.Run(1.0 / 60);
+    if (i >= 60) {
+      worst_gap = std::max(worst_gap, std::fabs(race.guest_karts[0]->position[0] - race.guest_karts[1]->position[0]));
+      if (i == 119) std::printf("  side by side: remote drawn %+.0f units from the guest's own kart (plain interpolation: %+.0f)\n",
+                                race.guest_karts[0]->position[0] - race.guest_karts[1]->position[0],
+                                -3000.0f * float(kInterpolationDelay + 2 * race.net.delay));
+    }
+  }
+  const float ghost = 3000.0f * float(kInterpolationDelay + 2 * race.net.delay);
+  Check(worst_gap < 150.0f, "a kart beside the guest's is drawn beside it, not a ghost behind");
+  Check(ghost > 300.0f, "where the plain interpolation would have drawn it hundreds of units back");
+
+  // The guest stops; the host's kart pulls away and goes back to plain interpolation without a step back.
+  float last = race.guest_karts[0]->position[0];
+  float back = 0;
+  for (int i = 0; i < 120; ++i) {
+    race.guest_karts[1]->velocity[0] = 0;
+    race.host_karts[1]->velocity[0] = 0;
+    race.Run(1.0 / 60);
+    back = std::max(back, last - race.guest_karts[0]->position[0]);
+    last = race.guest_karts[0]->position[0];
+  }
+  Check(back < 1, "pulling away, the lead fades without pulling the kart backwards");
+  Check(RemoteError(race) < 120, "and far away it is interpolated as before");
+  Check(LeadWeight(0) == 1.0f && LeadWeight(kFarKartDistance) == 0.0f && LeadWeight(2250) == 0.5f, "the lead fades linearly");
 }
 
 // A respawn is a step on every PC: no blend through the walls between the two places.
@@ -1538,6 +1612,8 @@ int main() {
   TestRemoteGapIsSmoothed();
   TestRemoteRespawnIsAStep();
   TestClockSettlesBeforeTheGreenLight();
+  TestReportedFinishMarksHostCopy();
+  TestNearKartLead();
   std::printf("%d checks, %d failed\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }
