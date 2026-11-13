@@ -48,7 +48,8 @@ set up: launch the game and turn Online play on. The service and how it is deplo
 [`server/eck-lobby/README.md`](../server/eck-lobby/README.md).
 
 Developer overrides: `ECK_LOBBY` (another service, `ws://` or `wss://`), `ECK_STUN` (`host:port,host:port` or `off`), `ECK_UPNP`
-(`0` to turn UPnP off) and `ECK_ONLINE_PORT` (one fixed gameplay UDP port).
+(`0` to turn UPnP off), `ECK_ONLINE_PORT` (one fixed gameplay UDP port) and `ECK_FORCE_RELAY` (`1`: never take a direct
+path, so two PCs on one LAN or one machine play through the service's relay the way a strict NAT would).
 
 ## Identity
 
