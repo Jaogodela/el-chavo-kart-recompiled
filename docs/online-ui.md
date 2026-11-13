@@ -306,6 +306,8 @@ kart, which is the number a header constant takes.
 [ONLINE-LIFECYCLE] local_leave requested seat=<n> source=<guest_menu|host_menu|race_return|window_close|watchdog|menu>
 [ONLINE-LIFECYCLE] remote_leave seat=<n>
 [ONLINE-LIFECYCLE] guest_left seat=<n>
+[ONLINE-RACE] guest_quiet seat=<n> silent_ms=<ms>   (host, running race: no pad for 5 s; "Waiting for a player" banner)
+[ONLINE-RACE] guest_back seat=<n>
 [ONLINE-LIFECYCLE] host_left seat=0 reason=<reason>
 [ONLINE-LIFECYCLE] host_left seat=0 action=return_to_menu
 [ONLINE-LIFECYCLE] cleanup room=<id> session_generation=<n>
