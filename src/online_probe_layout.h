@@ -52,6 +52,10 @@ inline constexpr uint32_t kKartBoostBar = 0x654;
 inline constexpr uint32_t kKartBoosterSpeed = 0x65C;
 inline constexpr uint32_t kKartBoosterLevel = 0x664;
 inline constexpr uint32_t kKartCurrentPathNode = 0x684;
+// The item the kart is holding: 0 for none, then the item's own id. Found by ECK_ITEM_PROBE=1 in a real race — four
+// pickups in thirty seconds took it 0 -> 3, 0 -> 2, 0 -> 2, 0 -> 1, and no other word of the kart does that. The four
+// neighbours are floats (0x508 and 0x510 are), which is what makes a small integer here unmistakable.
+inline constexpr uint32_t kKartHeldItem = 0x50C;
 inline constexpr uint32_t kKartDistanceInRace = 0x708;
 inline constexpr uint32_t kKartRacePosition = 0x710;
 inline constexpr uint32_t kKartRaceFinishPosition = 0x718;

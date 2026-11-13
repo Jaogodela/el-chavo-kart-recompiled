@@ -780,6 +780,7 @@ export class Hub {
   }
 
   closeRoom(room, reason, actorCid = null) {
+    console.log("[hub] room closed id=" + room.id + " reason=" + reason + " state=" + room.state + " age_ms=" + (this.host.now() - room.created));
     const seats = this.seatRows(room.id);
     const inviteReason = reason === 'host_left' || reason === 'cancelled' ? reason : 'room_closed';
     for (const invite of this.host.sql.all('SELECT * FROM invites WHERE room = ?', room.id)) this.endInvite(invite, inviteReason);

@@ -223,6 +223,7 @@ set(ECK_SOURCES
     src/settings.cpp
     src/sha256.cpp
     src/system_info.cpp
+    src/test_control.cpp
     src/ui_text.cpp
     src/unlock_hook.cpp
     src/user_data.cpp

@@ -22,7 +22,9 @@
 #include "language_setting.h"
 #include "main_menu.h"
 #include "main_menu_swf.h"
+#include "online_character_select.h"
 #include "online_menu_overlay.h"
+#include "online_race_sync_guest.h"
 #include "open_file_policy.h"
 #include "sha256.h"
 
@@ -231,6 +233,12 @@ REX_EXTERN(__imp__sub_82C22F28);
 REX_HOOK_RAW(sub_82C22F28) {
   LogOnce("hook:open", "scaleform hook installed address=0x82C22F28 (open file)");
   const uint32_t url = ctx.r4.u32;
+  const std::string package = AsciiAt(base, url);
+  if (eck::GuestResultsHeld() && eck::menu::IsResultMovie(package)) {
+    LogOnce("hold-results", "scaleform skipped results while the host is still racing package=" + package);
+    ctx.r3.u32 = 0;
+    return;
+  }
   __imp__sub_82C22F28(ctx, base);
   const uint32_t file = ctx.r3.u32;
   InspectOpenedFile(ctx, base, url, file);

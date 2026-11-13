@@ -1,10 +1,12 @@
 #include "online_race_sync_guest.h"
 
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <rex/logging.h>
 #include <rex/ppc/func.h>
@@ -28,6 +30,8 @@ using online_guest::Guest;
 constexpr uint32_t kMoveFrame = 0x100;
 constexpr uint32_t kMoveVector = 0x60;
 constexpr double kSummarySeconds = 1.0;
+
+std::atomic<bool> g_hold_guest_results{false};
 
 void Copy3(const Guest& g, uint32_t address, float (&out)[3]) {
   for (uint32_t i = 0; i < 3; ++i) out[i] = g.F32(address + 4 * i);
@@ -57,10 +61,19 @@ void ReadProgress(const Guest& g, uint32_t pawn, race::KartSample& kart) {
   kart.place = Counter(g, pawn + layout::kKartRacePosition);
   kart.finish_place = Counter(g, pawn + layout::kKartRaceFinishPosition);
   kart.racing_time = g.F32(pawn + layout::kKartRacingTime);
+  kart.item = uint8_t(std::min<int32_t>(std::max<int32_t>(g.I32(pawn + layout::kKartHeldItem), 0), race::kMaxItemId));
   kart.finished = (g.P(pawn + layout::kKartFlags2) >> layout::kKartRaceFinishedBit) & 1;
 }
 
 using Pawns = std::array<uint32_t, race::kMaxKarts>;
+using WorldAddrs = std::array<uint32_t, race::kMaxWorldPawns>;
+
+bool KnownKart(const Pawns& karts, int total, uint32_t pawn) {
+  for (int slot = 0; slot < total; ++slot) {
+    if (karts[size_t(slot)] == pawn) return true;
+  }
+  return false;
+}
 
 // Kart slots are the URL's on every PC, so a pawn says which it is. Nothing here until the race's karts are all up.
 bool ReadKarts(const Guest& g, int total, Pawns& pawns, race_sync::KartFrames& karts) {
@@ -107,6 +120,44 @@ void MoveKart(PPCContext& ctx, uint8_t* base, uint32_t pawn, const float (&posit
   ctx.r1.u32 = saved_sp;
 }
 
+// Walkers stay on the track. The host's list order is the id every PC uses, so a bump is against the same body.
+void ReadWorldPawns(const Guest& g, const Pawns& karts, int total, std::vector<race::WorldPawnSample>& out,
+                    WorldAddrs& addrs) {
+  const uint32_t world = g.P(layout::kGWorld);
+  const uint32_t level = world ? g.P(world + layout::kWorldLevel) : 0;
+  const uint32_t actors = level ? g.P(level + layout::kLevelActors) : 0;
+  const uint32_t info = actors ? g.P(actors) : 0;
+  uint32_t pawn = info ? g.P(info + layout::kWorldPawnList) : 0;
+  int id = 0;
+  for (int guard = 0; pawn != 0 && guard < 64 && id < race::kMaxWorldPawns; ++guard) {
+    const uint32_t next = g.Ok(pawn, layout::kPawnNext + 4) ? g.P(pawn + layout::kPawnNext) : 0;
+    if (!KnownKart(karts, total, pawn) && g.Ok(pawn, layout::kActorLocation + 12)) {
+      race::WorldPawnSample sample;
+      sample.id = uint8_t(id);
+      Copy3(g, pawn + layout::kActorLocation, sample.position);
+      if (g.Ok(pawn, layout::kActorVelocity + 12)) Copy3(g, pawn + layout::kActorVelocity, sample.velocity);
+      sample.yaw = uint16_t(g.I32(pawn + layout::kActorRotation + 4));
+      bool finite = true;
+      for (float v : sample.position) finite = finite && std::isfinite(v);
+      for (float v : sample.velocity) finite = finite && std::isfinite(v);
+      if (finite) {
+        out.push_back(sample);
+        addrs[size_t(id)] = pawn;
+        ++id;
+      }
+    }
+    pawn = next;
+  }
+}
+
+void ApplyWorldPawn(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race::WorldPawnSample& sample, bool guest) {
+  MoveKart(ctx, base, pawn, sample.position);
+  for (uint32_t i = 0; i < 3; ++i) StoreFloat(base, pawn + layout::kActorVelocity + 4 * i, sample.velocity[i]);
+  StoreBE32(base, pawn + layout::kActorRotation + 4, sample.yaw);
+  // Guests do not walk them locally: the next tick would put a body where the host does not have one. Collision stays.
+  if (guest) base[pawn + layout::kActorPhysics] = 0;
+}
+
 // Heading and speed go in as well: the game turns them into the kart's mesh, wheels and engine sound on its next tick.
 void ApplyWrite(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race_sync::KartWrite& write) {
   MoveKart(ctx, base, pawn, write.state.position);
@@ -120,8 +171,9 @@ void ApplyWrite(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race_sync::
   race_sync::WriteProgress(base, pawn, write.state);
 }
 
-race_sync::SyncConfig ConfigOf(const lobby::CanonicalRace& race, int seat, int own_pad) {
+race_sync::SyncConfig ConfigOf(const lobby::CanonicalRace& race, int seat, int own_pad, int start_in_ms) {
   race_sync::SyncConfig config;
+  config.start_in_ms = start_in_ms;
   config.generation = uint32_t(race.generation);
   config.seat = seat;
   config.humans = race.humans;
@@ -159,6 +211,8 @@ struct Running {
   int own_pad = 0;
   double last_tick = 0;
   double next_summary = 0;
+  bool held_results = false;
+  bool said_world = false;
 };
 
 }  // namespace
@@ -171,17 +225,28 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
       bridge.SetRaceStatus({});
       REXLOG_INFO("[ONLINE-RACE] gameplay stopped");
     }
+    g_hold_guest_results.store(false);
     return false;
   }
+  // What the game thread was given, once per generation: a start that never fires is either not in the plan or not in the
+  // sync, and this says which.
+  static int said_generation = 0;
+  if (said_generation != plan.race->generation) {
+    said_generation = plan.race->generation;
+    REXLOG_INFO("[ONLINE-RACE] plan in_race={} seat={} start_in={} now={:.3f}", plan.in_race, plan.local_seat,
+                plan.start_in_ms, OnlineNowSeconds());
+  }
+
   // The game is gone for the length of the map load. The session is not, so the streams carry on from where they were.
   if (!running && !own_pad) return false;
   if (!running || running->sync.config().generation != uint32_t(plan.race->generation)) {
-    running = std::make_unique<Running>(ConfigOf(*plan.race, plan.local_seat, *own_pad), plan.routes);
+    running = std::make_unique<Running>(ConfigOf(*plan.race, plan.local_seat, *own_pad, plan.start_in_ms), plan.routes);
     running->own_pad = *own_pad;
     REXLOG_INFO("[ONLINE-RACE] gameplay started generation={} seat={} own_pad={}", plan.race->generation, plan.local_seat,
                 *own_pad);
   }
   running->link.SetRoutes(plan.routes);
+  running->sync.SetStartIn(plan.start_in_ms);
 
   const double now = OnlineNowSeconds();
   const Guest g;
@@ -191,11 +256,13 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
   running->last_tick = now;
   in.own_pad = bridge.own_pad();
   Pawns pawns{};
+  WorldAddrs world_addrs{};
   if (ReadKarts(g, plan.race->total, pawns, in.karts)) {
     const uint32_t world = g.P(layout::kGWorld);
     const uint32_t info = g.P(g.P(g.P(world + layout::kWorldLevel) + layout::kLevelActors));
     const uint32_t game = info ? g.P(info + layout::kWorldGame) : 0;
     if (game) in.race_state = g.U8(game + layout::kMainGameRaceState);
+    ReadWorldPawns(g, pawns, plan.race->total, in.world_pawns, world_addrs);
   }
 
   const race_sync::FrameOut out = running->sync.Tick(in, running->link);
@@ -204,7 +271,39 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
     if (pawns[size_t(write.slot)]) ApplyWrite(ctx, base, pawns[size_t(write.slot)], write);
   }
   const bool guest = plan.local_seat > 0;
-  bridge.SetRules(lobby::RacePadRules(running->own_pad, out, guest, in.race_state, plan.results_open));
+  if (guest) {
+    for (int i = 0; i < out.world_write_count; ++i) {
+      const race::WorldPawnSample& sample = out.world_writes[size_t(i)];
+      const uint32_t pawn = sample.id < race::kMaxWorldPawns ? world_addrs[sample.id] : 0;
+      if (pawn) ApplyWorldPawn(ctx, base, pawn, sample, true);
+    }
+    if (!running->said_world && out.world_write_count > 0) {
+      running->said_world = true;
+      REXLOG_INFO("[ONLINE-RACE] world pawns from host applied={}", out.world_write_count);
+    }
+  } else if (!running->said_world && !in.world_pawns.empty()) {
+    running->said_world = true;
+    REXLOG_INFO("[ONLINE-RACE] world pawns host_count={}", in.world_pawns.size());
+  }
+  const uint32_t world = g.P(layout::kGWorld);
+  const uint32_t info = world ? g.P(g.P(g.P(world + layout::kWorldLevel) + layout::kLevelActors)) : 0;
+  const uint32_t game = info ? g.P(info + layout::kWorldGame) : 0;
+  const bool hold = race_sync::ShouldHoldGuestResults(guest, out.post_race, in.race_state,
+                                                     running->held_results || out.own_finished_by_host);
+  if (hold != running->held_results) {
+    running->held_results = hold;
+    REXLOG_INFO("[ONLINE-RACE] guest results {} held_for={:.1f}s", hold ? "held" : "released", now - running->started);
+  }
+  g_hold_guest_results.store(hold);
+  if (game && g.Ok(game + layout::kMainGameRaceState, 1)) {
+    if (hold) {
+      base[game + layout::kMainGameRaceState] = uint8_t(race_sync::kRaceInProgress);
+    } else if (guest && out.post_race) {
+      base[game + layout::kMainGameRaceState] = uint8_t(race_sync::kRacePostRace);
+    }
+  }
+  bridge.SetRules(lobby::RacePadRules(running->own_pad, out, guest, hold ? race_sync::kRaceInProgress : in.race_state,
+                                      plan.results_open));
 
   lobby::Bridge::RaceStatus status;
   status.waiting_for_host = out.waiting_for_host;
@@ -222,5 +321,7 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
   }
   return true;
 }
+
+bool GuestResultsHeld() { return g_hold_guest_results.load(std::memory_order_relaxed); }
 
 }  // namespace eck

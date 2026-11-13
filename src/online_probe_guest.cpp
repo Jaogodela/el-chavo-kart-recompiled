@@ -175,44 +175,69 @@ void SampleKart(const Guest& g, const PawnView& view, const char* role, double n
   Race(text);
 }
 
-// What a kart carries after driving through an item box. The layout names fields up to `idPawn`; everything past it, and
-// the character info the kart points at, is unaccounted for, so it is watched instead of guessed: the offsets that move
-// when a box is taken and an item is used name the item state. Only the words that changed are printed, so a race is
-// readable. Offsets are relative to the kart, which is what a header constant would be.
-void ScanItemCandidates(const Guest& g, const PawnView& view) {
-  static race_sync::WordWatch kart_watch;
-  static race_sync::WordWatch info_watch;
-  static int lines = 0;
-  if (lines >= 200) return;
+// What a kart carries after driving through an item box, watched instead of guessed: every word of the kart and of the
+// character info it points at that changed since the last poll, minus the ones that always move. The offsets that only
+// move when a box is taken, or when an item is used, name the item state. Every kart is watched, so the bots pick the
+// boxes even when this PC's kart does not.
+struct ItemWatch {
+  race_sync::WordWatch kart;
+  race_sync::WordWatch info;
+  bool baselined = false;
+};
 
-  const uint32_t tail = view.pawn + lay::kKartIdPawn + 4;
+std::map<uint32_t, ItemWatch>& ItemWatches() {
+  static std::map<uint32_t, ItemWatch> watches;
+  return watches;
+}
+
+void ScanItemCandidates(const Guest& g, const PawnView& view) {
+  static int lines = 0;
+  if (lines >= 400) return;
+  // The words before `steering` are the actor's own (position, velocity, rotation): they always move.
+  const uint32_t from = view.pawn + 0x400;
   const uint32_t end = view.pawn + lay::kKartSize;
-  // A kart whose memory is already gone says nothing.
-  if (!g.Ok(tail, 4)) return;
+  if (!g.Ok(from, 4)) return;
   const auto read = [&g](uint32_t at) { return g.P(at); };
+  ItemWatch& watch = ItemWatches()[view.pawn];
 
   // The first sight of a kart prints the words that are already set, so a later change has something to change from.
-  OnChange("item_base" + std::to_string(view.pawn), "item_base kart=" + Hex(view.pawn) + " nonzero=" +
-                                                        race_sync::DescribeNonZero(tail, end, view.pawn, read));
+  if (!watch.baselined) {
+    watch.baselined = true;
+    Race("item_base kart=" + Hex(view.pawn) + " id=" + std::to_string(g.I32(view.pawn + lay::kKartIdPawn)) +
+         " nonzero=" + race_sync::DescribeNonZero(from, end, view.pawn, read));
+  }
 
-  race_sync::WordWatch::Change changes[10];
+  race_sync::WordWatch::Change changes[16];
   bool truncated = false;
-  const size_t count = kart_watch.Scan(tail, end, read, changes, sizeof changes / sizeof changes[0], &truncated);
-  if (count > 0 || truncated) {
+  const size_t count = watch.kart.Scan(from, end, read, changes, sizeof changes / sizeof changes[0], &truncated);
+  // A pickup has a shape: a word that was zero becomes a small number (the item id). Nothing else on a kart does that,
+  // which is what makes this readable where every float of the physics moves on its own.
+  std::vector<race_sync::WordWatch::Change> kept;
+  for (size_t i = 0; i < count; ++i) {
+    if (changes[i].before != 0 || changes[i].after == 0 || changes[i].after > 64) continue;
+    kept.push_back(changes[i]);
+  }
+  if (!kept.empty()) {
     ++lines;
-    Race(race_sync::DescribeChanges("item_scan kart=" + Hex(view.pawn), view.pawn, changes, count, truncated));
+    Race(race_sync::DescribeChanges("item_pick kart=" + Hex(view.pawn) + " id=" + std::to_string(g.I32(view.pawn + lay::kKartIdPawn)),
+                                    view.pawn, kept.data(), kept.size(), false));
   }
 
   // An item may hang off the character info instead of the kart itself.
   const uint32_t info = g.P(view.pawn + lay::kKartCharInfo);
   if (info == 0 || !g.Ok(info, 4)) return;
-  race_sync::WordWatch::Change info_changes[6];
+  race_sync::WordWatch::Change info_changes[8];
   bool info_truncated = false;
-  const size_t info_count = info_watch.Scan(info, info + kCharInfoSpan, read, info_changes,
+  const size_t info_count = watch.info.Scan(info, info + kCharInfoSpan, read, info_changes,
                                             sizeof info_changes / sizeof info_changes[0], &info_truncated);
-  if (info_count == 0 && !info_truncated) return;
+  std::vector<race_sync::WordWatch::Change> info_kept;
+  for (size_t i = 0; i < info_count; ++i) {
+    if (info_changes[i].before != 0 || info_changes[i].after == 0 || info_changes[i].after > 64) continue;
+    info_kept.push_back(info_changes[i]);
+  }
+  if (info_kept.empty()) return;
   ++lines;
-  Race(race_sync::DescribeChanges("item_scan char_info=" + Hex(info), info, info_changes, info_count, info_truncated));
+  Race(race_sync::DescribeChanges("item_pick char_info=" + Hex(info), info, info_kept.data(), info_kept.size(), false));
 }
 
 void Poll(double now) {
@@ -262,7 +287,10 @@ void Poll(double now) {
   if (local != nullptr) SampleKart(g, *local, "local", now);
   if (remote != nullptr) SampleKart(g, *remote, "remote_designated", now);
   static const bool item_probe = online_guest::EnvOn(std::getenv(kItemProbeEnv));
-  if (item_probe && local != nullptr) ScanItemCandidates(g, *local);
+  // Every kart, not only this PC's: a bot taking a box names the same fields.
+  if (item_probe) {
+    for (const PawnView& view : pawns) ScanItemCandidates(g, view);
+  }
 }
 
 }  // namespace
@@ -348,7 +376,9 @@ void SetRaceSeats(const std::array<int, 4>& seats) {
 }
 
 void PumpGuestProbes(double now_seconds) {
-  if (!DebugOn()) return;
+  // The item probe is its own switch: it needs the kart discovery of Poll, but not the debug lines that come with it.
+  static const bool item = online_guest::EnvOn(std::getenv(kItemProbeEnv));
+  if (!DebugOn() && !item) return;
   static double next = 0;
   if (now_seconds < next) return;
   next = now_seconds + 0.5;

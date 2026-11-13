@@ -34,8 +34,9 @@ inline bool PlausibleCount(uint32_t raw) { return raw <= 4096 || raw == 0xFFFFFF
 // False when the kart does not look like this layout, or when the values are not sane: nothing is written then.
 inline bool WriteProgress(uint8_t* base, uint32_t kart, const race::KartSample& state) {
   if (base == nullptr || kart == 0) return false;
-  if (!std::isfinite(state.distance) || state.distance < 0.0f) return false;
-  if (!std::isfinite(state.racing_time) || state.racing_time < 0.0f) return false;
+  // The grid sits behind the start line: DistanceInRace and racingTime are finite negatives until GO.
+  if (!std::isfinite(state.distance) || !std::isfinite(state.racing_time)) return false;
+  if (state.item > race::kMaxItemId) return false;
   namespace layout = online_probe::layout;
   if (!PlausibleCount(LoadBE32(base, kart + layout::kKartCompletedLaps))) return false;
   if (!PlausibleCount(LoadBE32(base, kart + layout::kKartRacePosition))) return false;
@@ -48,6 +49,9 @@ inline bool WriteProgress(uint8_t* base, uint32_t kart, const race::KartSample& 
   StoreBE32(base, kart + layout::kKartRaceFinishPosition, state.finish_place);
   StoreFloatBE(base, kart + layout::kKartDistanceInRace, state.distance);
   StoreFloatBE(base, kart + layout::kKartRacingTime, state.racing_time);
+  // The item in hand: the guest draws what the host gave it. The card in the HUD reads its own kart, so this is the only
+  // thing a guest has to be told for items to appear; using one already travels as the pad's X button.
+  StoreBE32(base, kart + layout::kKartHeldItem, state.item);
   uint32_t flags = LoadBE32(base, kart + layout::kKartFlags2);
   if (state.finished) {
     flags |= 1u << layout::kKartRaceFinishedBit;

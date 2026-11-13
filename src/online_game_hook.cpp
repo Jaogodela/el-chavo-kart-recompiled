@@ -19,6 +19,7 @@
 #include <rex/ppc/func.h>
 
 #include "guest_memory.h"
+#include "online/online_service.h"
 #include "online/peer_table.h"
 #include "online_game_guest.h"
 #include "online_guest_reader.h"
@@ -34,6 +35,7 @@
 #include "online_runtime.h"
 #include "online_setup_capture.h"
 #include "settings.h"
+#include "test_control.h"
 
 // The engine's free.
 REX_EXTERN(sub_822E80C8);
@@ -319,6 +321,28 @@ REX_HOOK_RAW(sub_830D9E00) {
   if (rule.source_pad >= 0) ctx.r3.u32 = uint32_t(rule.source_pad);
   __imp__sub_830D9E00(ctx, base);
   if (state == 0) return;
+  // A test drives with a pad of its own: it replaces what the computer reports for this seat's own pad, so the rest of this
+  // hook — the lobby's copy of the pad, the button gates — sees it as if the player had pressed it.
+  // A test's pad replaces what the computer reports for the pad the game is reading, whether or not Online play is on: at
+  // the title screen there is no lobby rule yet, and a test still has to press START to get anywhere.
+  if (!rule.virtual_pad) {
+    eck::race::PadState test_pad;
+    if (eck::test_control::PadOverride(test_pad)) {
+      eck::StoreBE<uint16_t>(base, state + kInputStateButtons, test_pad.buttons);
+      WriteInputAnalog(base, state, test_pad);
+      // A synthesized pad has no device behind it, so reading the seat's own pad fails and the game throws the buttons away
+      // as a disconnected controller. Only the seat's own pad is claimed: the other indices belong to the game, and claiming
+      // one of those hands the game a second controller it should not have.
+      if (rule.own_pad && ctx.r3.u32 != 0) {
+        static std::atomic<bool> told{};
+        if (!told.exchange(true)) {
+          REXLOG_INFO("[TEST-CONTROL] pad override claimed a pad the game read as absent user={} was={:#x}", user,
+                      ctx.r3.u32);
+        }
+        ctx.r3.u64 = 0;
+      }
+    }
+  }
   if (ctx.r3.u32 != 0) {
     if (rule.own_pad) eck::OnlineLobby().SetOwnPad({});
     if (rule.press == 0) return;
@@ -529,6 +553,10 @@ std::optional<int> OwnPanel() {
   return primary;
 }
 
+// A race travel is retried as well, for as long as a map takes to come up: one lost injection used to lose the race for
+// the whole session, and the guest went on to start a race of its own instead.
+constexpr int kRaceTravelTries = 90;
+
 // The saved panel of a run is not the one of the game that travels, so the primary pad is read at the moment of leaving.
 // False when there is no game to travel from: a map is loading.
 bool RunTravel(PPCContext& ctx, uint8_t* base, const eck::lobby::TravelRequest& travel) {
@@ -550,6 +578,145 @@ bool RunTravel(PPCContext& ctx, uint8_t* base, const eck::lobby::TravelRequest& 
   return true;
 }
 
+// ---- Test control (ECK_TEST_CONTROL=1) -------------------------------------------------------------------------------
+
+// The race the game is in and every kart in it, as one JSON line, so a test can wait for the right moment and check a
+// result without looking at a picture.
+std::string TestState(const Guest& g, const eck::lobby::Plan& plan) {
+  const uint32_t world = g.P(layout::kGWorld);
+  const uint32_t level = world ? g.P(world + layout::kWorldLevel) : 0;
+  const uint32_t actors = level ? g.P(level + layout::kLevelActors) : 0;
+  const uint32_t info = actors ? g.P(actors) : 0;
+  const uint32_t game = info ? g.P(info + layout::kWorldGame) : 0;
+  // The byte is only a race state when it is one: before a game exists the object can hold anything.
+  const int raw_state = game ? int(g.U8(game + layout::kMainGameRaceState)) : -1;
+  const int state = raw_state >= 0 && raw_state <= 4 ? raw_state : -1;
+  int found = 0;
+  std::string karts;
+  uint32_t pawn = info ? g.P(info + layout::kWorldPawnList) : 0;
+  for (int guard = 0; pawn != 0 && guard < 32; ++guard) {
+    if (!g.Ok(pawn, layout::kKartSize)) break;
+    const int slot = g.I32(pawn + layout::kKartIdPawn);
+    const bool ready = (g.P(pawn + layout::kKartFlags1) >> layout::kKartInitializedBit) & 1;
+    if (ready && slot >= 0 && slot < eck::race::kMaxKarts) {
+      if (found++) karts += ",";
+      karts += "{\"slot\":" + std::to_string(slot) + ",\"lap\":" +
+               std::to_string(g.I32(pawn + layout::kKartCompletedLaps)) + ",\"place\":" +
+               std::to_string(g.I32(pawn + layout::kKartRacePosition)) + ",\"item\":" +
+               std::to_string(g.I32(pawn + layout::kKartHeldItem)) + ",\"speed\":" +
+               std::to_string(int(g.F32(pawn + layout::kKartSpeed))) + ",\"distance\":" +
+               std::to_string(int(g.F32(pawn + layout::kKartDistanceInRace))) + "}";
+    }
+    pawn = g.P(pawn + layout::kPawnNext);
+  }
+  // The online side comes from the bridge, which the UI thread already published: reading the service here would make the
+  // game thread wait on it, and that is the one thing this port never does.
+  return "{\"race_state\":" + std::to_string(state) +
+         ",\"in_race\":" + (plan.in_race ? "true" : "false") +
+         ",\"local_seat\":" + std::to_string(plan.local_seat) +
+         ",\"session\":" + std::to_string(plan.session) + ",\"karts\":[" + karts + "]}";
+}
+
+// What needs no guest work, on the UI thread: the pad, a picture, the online side, help. This runs every presented frame, so
+// the channel answers at the menu too, where the engine does not tick.
+void RunTestRequestUi(const eck::test_control::Request& request) {
+  using Command = eck::test_control::Command;
+  switch (request.command) {
+    case Command::kHelp:
+      eck::test_control::Answer(eck::test_control::HelpText());
+      eck::test_control::Answered();
+      return;
+    case Command::kPad:
+      eck::test_control::SetPad(request.pad);
+      eck::test_control::Answered();
+      return;
+    case Command::kReset:
+      eck::test_control::ClearPad();
+      eck::test_control::Answered();
+      return;
+    case Command::kShot:
+      if (eck::test_control::CaptureTo(request.text)) {
+        eck::test_control::Answer(request.text);
+        eck::test_control::Answered();
+      } else {
+        eck::test_control::Failed("no_window");
+      }
+      return;
+    case Command::kMatch: {
+      eck::online::OnlineService& service = eck::Online();
+      if (request.match == 0) {
+        // Without a room the invite is refused: it is the invite that creates the session, with the rules a guest is told
+        // to enter. A test uses the first competition and difficulty, which is a valid setup the guest can enter.
+        const eck::online::RoomRules rules{{"setup", eck::lobby::kSetupVersion}, {"game_type", 0}, {"mode", 0},
+                                           {"difficulty", 0}};
+        eck::test_control::Answer(service.SendInvite(request.text, rules) ? "invited" : "not_sent");
+      } else if (request.match == 1) {
+        const eck::online::Snapshot snapshot = service.snapshot();
+        if (snapshot.invites.empty()) {
+          eck::test_control::Failed("no_invite");
+          return;
+        }
+        eck::test_control::Answer(service.AcceptInvite(snapshot.invites.front().id) ? "accepted" : "not_accepted");
+      } else if (request.match == 3) {
+        eck::test_control::Answer(service.StartRace() ? "started" : "not_started");
+      } else {
+        eck::test_control::Answer(service.LeaveSession("test") ? "left" : "not_left");
+      }
+      eck::test_control::Answered();
+      return;
+    }
+    case Command::kFriend: {
+      // Both sides adding each other makes them friends at once, which is what a two-instance test needs without a UI.
+      eck::online::OnlineService& service = eck::Online();
+      const eck::online::FriendRequestResult result = service.AddFriend(request.text);
+      eck::test_control::Answer(result == eck::online::FriendRequestResult::kSent ? "sent" : "refused");
+      eck::test_control::Answered();
+      return;
+    }
+    case Command::kPick: {
+      const eck::online::PickState pick = request.pick == 2   ? eck::online::PickState::kConfirmed
+                                          : request.pick == 1 ? eck::online::PickState::kSelecting
+                                                              : eck::online::PickState::kNone;
+      eck::Online().SendPick(pick, request.character);
+      eck::test_control::Answered();
+      return;
+    }
+    default:
+      eck::test_control::Failed("wrong_thread");
+      return;
+  }
+}
+
+// What needs the guest, on the game thread: the state, and a console command, which is how a race starts.
+void RunTestRequestGuest(PPCContext& ctx, uint8_t* base, const eck::test_control::Request& request,
+                         const eck::lobby::Plan& plan) {
+  using Command = eck::test_control::Command;
+  switch (request.command) {
+    case Command::kState: {
+      const Guest g;
+      eck::test_control::Answer(TestState(g, plan));
+      eck::test_control::Answered();
+      return;
+    }
+    case Command::kConsole:
+    case Command::kRace: {
+      const uint32_t game = CurrentGame();
+      if (!game) {
+        eck::test_control::Failed("no_game");
+        return;
+      }
+      const std::string command = request.command == Command::kRace ? "open " + request.text : request.text;
+      REXLOG_INFO("[TEST-CONTROL] console {}", command);
+      RunConsoleCommand(ctx, base, game, command);
+      eck::test_control::Answered();
+      return;
+    }
+    default:
+      eck::test_control::Failed("wrong_thread");
+      return;
+  }
+}
+
 }  // namespace
 
 namespace eck {
@@ -557,9 +724,21 @@ namespace eck {
 void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
   if (!REXCVAR_GET(eck_online_enabled) || !GroupOk(kGroupRace, base)) return;
   lobby::Bridge& bridge = OnlineLobby();
+  static int race_travel_tries = 0;
   if (const lobby::TravelRequest travel = bridge.TakeTravel(); travel.kind != lobby::TravelKind::kNone) {
+    const bool race = travel.kind == lobby::TravelKind::kRace;
+    if (!race) race_travel_tries = 0;
     // Nothing else takes a player out of a race that is over, however late the game can act on it.
-    if (!RunTravel(ctx, base, travel) && travel.kind != lobby::TravelKind::kRace) bridge.RetryTravel(travel);
+    if (!RunTravel(ctx, base, travel)) {
+      if (!race || ++race_travel_tries <= kRaceTravelTries) {
+        bridge.RetryTravel(travel);
+      } else {
+        REXLOG_INFO("[ONLINE-RACE] race travel abandoned tries={}", race_travel_tries);
+        race_travel_tries = 0;
+      }
+    } else if (race) {
+      race_travel_tries = 0;
+    }
   }
   if (const std::string race = bridge.TakeReleasedRace(); !race.empty() && race.size() <= lobby::kMaxCommandChars) {
     REXLOG_INFO("[ONLINE-RACE] race released");
@@ -597,6 +776,40 @@ void OnlineEngineTick(PPCContext& ctx, uint8_t* base) {
     const uint64_t occupied = plan.remote[size_t(i)] ? 0x80 : 0;
     Log("lobby_panel" + std::to_string(i), room | occupied | uint64_t(panel.state) << 5 | uint64_t(panel.character),
         lobby::PanelLine(plan, *panels, i, *physical));
+  }
+}
+
+// A test's requests, and never more than a handful per frame. This runs every engine tick, so a test works with Online play
+// off as well: a local race is the cheapest thing to drive.
+void TestControlTick(PPCContext& ctx, uint8_t* base) {
+  if (!eck::test_control::Enabled()) return;
+  eck::test_control::Start(nullptr);
+  const lobby::Plan plan = OnlineLobby().plan();
+  for (int request = 0; request < 4; ++request) {
+    const eck::test_control::Request next = eck::test_control::TakeForGameThread();
+    if (next.command == eck::test_control::Command::kNone) break;
+    RunTestRequestGuest(ctx, base, next, plan);
+  }
+}
+
+void TestControlUiTick() {
+  if (!eck::test_control::Enabled()) return;
+  eck::test_control::Start(nullptr);
+  // A console command or the state needs a loaded map: with none, the engine never ticks and nothing would serve it, so it is
+  // answered after about two seconds instead of leaving the client to time out.
+  static int stalled = 0;
+  if (eck::test_control::HasPendingGuest()) {
+    if (++stalled > 120) {
+      stalled = 0;
+      eck::test_control::DropPendingGuest("no_map");
+    }
+  } else {
+    stalled = 0;
+  }
+  for (int request = 0; request < 4; ++request) {
+    const eck::test_control::Request next = eck::test_control::TakeForUiThread();
+    if (next.command == eck::test_control::Command::kNone) break;
+    RunTestRequestUi(next);
   }
 }
 
@@ -680,7 +893,10 @@ void PumpOnlineGameDebug() {
       }
     }
   }
-  if (on) online_probe::PumpGuestProbes(now);
+  // The probes decide for themselves whether they were asked for: the item probe is its own switch.
+  online_probe::PumpGuestProbes(now);
+  // The test channel's UI-side requests, so it answers at the menu as well as in a race.
+  TestControlUiTick();
 }
 
 }  // namespace eck

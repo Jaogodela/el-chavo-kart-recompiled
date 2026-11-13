@@ -246,6 +246,7 @@ struct Plan {
   int local_seat = -1;
   std::array<bool, kPanels> remote{};
   std::array<PanelTarget, kPanels> seats{};
+  int start_in_ms = 0;  // from the room: press Start this long after this PC first saw the delay, 0 for none
 };
 
 constexpr bool HasRemotePanels(const Plan& plan) {
@@ -260,6 +261,35 @@ constexpr bool IsRemotePanel(const Plan& plan, uint32_t panel) {
     if (panel != 0 && plan.panels[i] == panel) return plan.remote[size_t(kSeatOfPanel[i])];
   }
   return false;
+}
+
+// A race that was entered stands on its own: the service is matchmaking, and a sign-in that drops under a race must not
+// decide whether the race is happening. Only the game's own menus end it.
+inline constexpr bool RaceIsOn(bool room_racing, bool menu_seen, bool has_race) {
+  if (menu_seen) return false;
+  return room_racing || has_race;
+}
+
+// How long after the host publishes every PC presses Start, carried in the room's rules so nothing new is needed on the
+// wire. A room rule is an integer below 0x10000, so this is a delay and not an instant: each PC turns it into its own
+// deadline when it sees it, and the game's own 3-2-1 then runs at the same moment everywhere.
+inline constexpr std::string_view kStartInKey = "start_in";
+inline constexpr int kStartInMaxMs = 0xFFFF;
+
+inline online::RoomRules StartInRules(const online::RoomRules& rules, int delay_ms) {
+  online::RoomRules next;
+  for (const auto& [key, value] : rules) {
+    if (key != kStartInKey) next.emplace_back(key, value);
+  }
+  next.emplace_back(std::string(kStartInKey), std::clamp(delay_ms, 0, kStartInMaxMs));
+  return next;
+}
+
+inline std::optional<int> StartInOfRules(const online::RoomRules& rules) {
+  for (const auto& [key, value] : rules) {
+    if (key == kStartInKey && value > 0) return value;
+  }
+  return std::nullopt;
 }
 
 inline Plan MakePlan(const online::Snapshot& state, bool on_screen, const menu::PanelObjects& panels) {
@@ -431,7 +461,17 @@ class LobbyPads {
       const PanelView& view = panels[size_t(other)];
       if (other == panel || view.state == PickState::kNone || view.character != character) continue;
       const int seat = kSeatOfPanel[size_t(other)];
-      if (seat == plan.local_seat || plan.seats[size_t(seat)].character == character) return true;
+      const int my_seat = kSeatOfPanel[size_t(panel)];
+      // Two panels holding each other's character cannot be waited out: each one's target is on the other, and the game will
+      // not show a character twice, so both would stand still for ever. The lower seat moves first through a free character,
+      // which frees the other's, and the other waits its turn.
+      if (plan.seats[size_t(seat)].character == panels[size_t(panel)].character && seat > my_seat &&
+          plan.seats[size_t(my_seat)].character >= 0) {
+        return false;
+      }
+      // Any other open panel showing it holds it: the game hides a character that is already up, and a panel that moves onto
+      // it skips past and lands somewhere else, which is how two panels end up showing each other's character.
+      return true;
     }
     return false;
   }
@@ -685,7 +725,9 @@ class LobbyFlow {
       return LeftTheRace();
     }
     const bool left_screen = screen == menu::GameScreen::kMainMenu || screen == menu::GameScreen::kCompetition;
-    if (state.room && state.seat == 0 && (back_press || left_screen) && !race_starting) {
+    // A race on means the host is loading it, and a map load shows the menus for a moment: that is not the host walking out.
+    const bool race_on = state.room && state.room->state == online::RoomState::kRacing;
+    if (state.room && state.seat == 0 && (back_press || left_screen) && !race_starting && !race_on) {
       result.leave = true;
       result.note = "host left character select";
     }

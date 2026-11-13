@@ -169,6 +169,7 @@ struct Encoder {
     w.U32(m.race_id);
     w.U32(m.seq);
     w.U32(m.host_ms);
+    w.U32(m.gate_ms);
     w.U8(m.race_state);
     w.U8(m.begun ? 1 : 0);
     for (uint32_t ack : m.input_ack) w.U32(ack);
@@ -186,7 +187,16 @@ struct Encoder {
       w.U8(kart.place);
       w.U8(kart.finish_place);
       w.F32(kart.racing_time);
+      w.U8(kart.item);
       w.U8(kart.finished ? 1 : 0);
+    }
+    w.U8(uint32_t(std::min<size_t>(m.world_pawns.size(), kMaxWorldPawns)));
+    for (size_t i = 0; i < m.world_pawns.size() && i < kMaxWorldPawns; ++i) {
+      const WorldPawnSample& pawn = m.world_pawns[i];
+      w.U8(pawn.id);
+      for (float v : pawn.position) w.F32(v);
+      for (float v : pawn.velocity) w.I16(ClampToI16(v));
+      w.U16(pawn.yaw);
     }
   }
 };
@@ -336,6 +346,7 @@ std::optional<Message> Decode(const uint8_t* data, size_t size) {
       m.race_id = r.U32();
       m.seq = r.U32();
       m.host_ms = r.U32();
+      m.gate_ms = r.U32();
       m.race_state = r.U8();
       const uint8_t begun = r.U8();
       for (uint32_t& ack : m.input_ack) ack = r.U32();
@@ -356,14 +367,31 @@ std::optional<Message> Decode(const uint8_t* data, size_t size) {
         kart.place = r.U8();
         kart.finish_place = r.U8();
         kart.racing_time = r.F32();
+        kart.item = r.U8();
         const uint8_t finished = r.U8();
-        if (!std::isfinite(kart.distance) || kart.distance < 0.0f) return std::nullopt;
-        if (!std::isfinite(kart.racing_time) || kart.racing_time < 0.0f) return std::nullopt;
+        // Behind the start line DistanceInRace is negative; so is racingTime during the 3-2-1 on some tracks. A NaN is still
+        // garbage. Refusing the signed values used to drop every snapshot until the field went positive, which is the start
+        // the other PC never saw.
+        if (!std::isfinite(kart.distance) || !std::isfinite(kart.racing_time)) return std::nullopt;
         if (kart.place > kMaxKarts || kart.finish_place > kMaxKarts || finished > 1) return std::nullopt;
+        if (kart.item > kMaxItemId) return std::nullopt;
         kart.finished = finished == 1;
         if (kart.slot >= kMaxKarts || (slots >> kart.slot) & 1) return std::nullopt;
         slots |= 1u << kart.slot;
         m.karts.push_back(kart);
+      }
+      const uint8_t world_count = r.U8();
+      if (world_count > kMaxWorldPawns) return std::nullopt;
+      uint32_t world_ids = 0;
+      for (uint8_t i = 0; i < world_count; ++i) {
+        WorldPawnSample pawn;
+        pawn.id = r.U8();
+        for (float& v : pawn.position) v = r.Coord();
+        for (float& v : pawn.velocity) v = float(r.I16());
+        pawn.yaw = r.U16();
+        if (pawn.id >= kMaxWorldPawns || (world_ids >> pawn.id) & 1) return std::nullopt;
+        world_ids |= 1u << pawn.id;
+        m.world_pawns.push_back(pawn);
       }
       out = std::move(m);
       break;

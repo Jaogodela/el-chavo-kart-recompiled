@@ -47,6 +47,7 @@
 #include "session_log.h"
 #include "settings.h"
 #include "system_info.h"
+#include "test_control.h"
 #include "trg/game_helpers.h"
 #include "user_data.h"
 #include "window_host.h"
@@ -255,6 +256,7 @@ class ElChavoKartApp : public rex::ReXApp {
 #if defined(_WIN32)
     REXLOG_INFO("Scheduling: {}", trg::TuneProcessScheduling());
 #endif
+    eck::test_control::Start(window() ? window()->GetNativeWindowHandle() : nullptr);
     AttachWindowHost(window(), app_context(), [this] {
       rex::ui::ImGuiDrawer* drawer = imgui_drawer();
       return drawer && drawer->GetIO().WantCaptureMouse;

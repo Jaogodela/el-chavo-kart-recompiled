@@ -575,6 +575,7 @@ REX_HOOK_RAW(sub_825A4D98) {
     }
   }
   eck::OnlineEngineTick(ctx, base);
+  eck::TestControlTick(ctx, base);
 }
 
 REX_EXTERN(__imp__sub_825E91E0);

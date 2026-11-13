@@ -276,9 +276,21 @@ void TestSnapshotPacket() {
   // Eight karts with their progress, still far below the relay's 1472-byte payload and the smallest MTU in use.
   Check(race::Encode(snapshot).size() <= race::kMaxDatagram && race::Encode(snapshot).size() < 600,
         "well under the relay's frame");
+  SnapshotMsg with_walkers = snapshot;
+  for (int i = 0; i < race::kMaxWorldPawns; ++i) {
+    race::WorldPawnSample walker;
+    walker.id = uint8_t(i);
+    walker.position[0] = 100.0f * float(i);
+    walker.velocity[1] = 40;
+    walker.yaw = uint16_t(i * 1000);
+    with_walkers.world_pawns.push_back(walker);
+  }
+  Check(RoundTrips(with_walkers), "the host's pedestrians travel with the karts");
+  Check(race::Encode(with_walkers).size() <= race::kMaxDatagram, "a crowded sidewalk still fits");
 
   std::vector<uint8_t> bad = race::Encode(snapshot);
-  const size_t position = race::Encode(SnapshotMsg{}).size() + 1;
+  // Empty snapshot ends with world-pawn count 0; the first kart's slot sits where that count used to be the end.
+  const size_t position = race::Encode(SnapshotMsg{}).size() - 1 + 1;
   const float nan = std::nanf("");
   std::memcpy(bad.data() + position, &nan, sizeof nan);
   Check(!race::Decode(bad.data(), bad.size()), "a position that is not a number is malformed");
@@ -292,6 +304,15 @@ void TestSnapshotPacket() {
   const std::optional<race::Message> unset = race::Decode(bad.data(), bad.size());
   Check(unset.has_value(), "a kart with no heading yet does not cost the other seven their snapshot");
   Check(!HasHeading(std::get<SnapshotMsg>(*unset).karts[2]) && HasHeading(std::get<SnapshotMsg>(*unset).karts[3]), "and is not given one");
+
+  SnapshotMsg grid = snapshot;
+  grid.race_state = 1;
+  grid.karts[0].distance = -180.5f;
+  grid.karts[0].racing_time = -2.25f;
+  Check(RoundTrips(grid), "a kart behind the start line still reaches the other PC");
+  grid.karts[1].distance = std::nanf("");
+  const std::vector<uint8_t> nan_grid = race::Encode(grid);
+  Check(!race::Decode(nan_grid.data(), nan_grid.size()), "a distance that is not a number still drops the datagram");
 
   SnapshotGate gate;
   Check(gate.Check(snapshot, 0, kGeneration, 8) == Verdict::kAccepted, "the host's snapshot is taken");
@@ -385,6 +406,117 @@ void TestBeginEvent() {
   Check(fresh.Tick(in, link).waiting_for_host, "a stale begin is ignored");
   Check(!fresh.begun(), "the new race still waits");
   Check(fresh.traffic().rejected == 1, "and it is counted");
+}
+
+void TestSharedGatePressesStartAndA() {
+  Pair race;
+  race.host.SetStartIn(2000);
+  bool early_host = false;
+  bool early_guest = false;
+  for (int i = 0; i < 30; ++i) {
+    race.Run(0.05);
+    early_host = early_host || race.host_out.own.press != 0;
+    early_guest = early_guest || race.guest_out.own.press != 0;
+  }
+  Check(!early_host && !early_guest, "nobody mashes Start before the shared gate");
+
+  uint16_t host_seen = 0;
+  uint16_t guest_seen = 0;
+  bool host_release = false;
+  bool guest_release = false;
+  for (int i = 0; i < 50; ++i) {
+    race.Run(0.05);
+    host_seen = uint16_t(host_seen | race.host_out.own.press);
+    guest_seen = uint16_t(guest_seen | race.guest_out.own.press);
+    host_release = host_release || race.host_out.own.press == 0;
+    guest_release = guest_release || race.guest_out.own.press == 0;
+  }
+  Check(host_seen == (kPadStart | kPadA), "the host presses Start and A, so the tip leaves with the cinematic");
+  Check(guest_seen == (kPadStart | kPadA), "the guest presses the same buttons at that instant");
+  Check(host_release && guest_release, "and both release between pulses");
+}
+
+void TestHostArmsGateAfterGuestsLoad() {
+  Net net;
+  net.delay = 0;
+  NetLink host_link(net, 0);
+  SyncConfig cfg = ConfigFor(0);
+  cfg.start_in_ms = 2000;
+  RaceSync host(cfg);
+  FrameIn in;
+  in.race_state = 0;
+  in.karts = StillKarts(8);
+  bool early = false;
+  for (int i = 0; i < 50; ++i) {
+    in.now = net.now = i * 0.05;
+    early = early || host.Tick(in, host_link).own.press != 0;
+  }
+  Check(!early, "without a loaded guest the host stays on Press START");
+
+  InputMsg input;
+  input.race_id = kGeneration;
+  input.seat = 1;
+  input.seq = 1;
+  input.loaded = true;
+  net.Post(1, 0, race::Encode(input));
+  in.now = net.now = 2.6;
+  host.Tick(in, host_link);
+
+  uint16_t seen = 0;
+  for (int i = 0; i < 80; ++i) {
+    in.now = net.now = 2.6 + (i + 1) * 0.05;
+    seen = uint16_t(seen | host.Tick(in, host_link).own.press);
+  }
+  Check(seen == (kPadStart | kPadA), "once the guest is in the cinematic, Start and A fire together");
+}
+
+void TestGuestWaitsUntilHostReachesGate() {
+  Net net;
+  net.delay = 0;
+  NetLink guest_link(net, 1);
+  RaceSync guest(ConfigFor(1));
+  SnapshotMsg snap;
+  snap.race_id = kGeneration;
+  snap.seq = 1;
+  snap.host_ms = 1000;
+  snap.gate_ms = 3000;
+  snap.race_state = 0;
+  net.Post(0, 1, race::Encode(snap));
+  FrameIn in;
+  in.now = 10;
+  in.race_state = 0;
+  in.karts = StillKarts(8);
+  Check(guest.Tick(in, guest_link).own.press == 0, "a guest does not mash Start while the host clock is still before the gate");
+
+  snap.seq = 2;
+  snap.host_ms = 3000;
+  net.Post(0, 1, race::Encode(snap));
+  in.now = 10.05;
+  Check(guest.Tick(in, guest_link).own.press == (kPadStart | kPadA), "and presses Start and A once the host has reached it");
+}
+
+void TestGridFinishedFlagIsIgnored() {
+  Net net;
+  net.delay = 0;
+  NetLink guest_link(net, 1);
+  RaceSync guest(ConfigFor(1));
+  SnapshotMsg snap;
+  snap.race_id = kGeneration;
+  snap.seq = 1;
+  snap.race_state = 0;
+  snap.begun = false;
+  KartSample kart;
+  kart.slot = 1;
+  kart.finished = true;
+  snap.karts.push_back(kart);
+  net.Post(0, 1, race::Encode(snap));
+  FrameIn in;
+  in.now = 1;
+  in.race_state = 0;
+  in.karts = StillKarts(8);
+  const FrameOut out = guest.Tick(in, guest_link);
+  Check(!out.own_finished_by_host, "a finished bit on the grid does not hold the guest's results");
+  Check(!ShouldHoldGuestResults(true, out.post_race, 0, true), "and does not rewrite the cinematic into a race");
 }
 
 void TestInputReachesTheRightKart() {
@@ -521,7 +653,80 @@ void TestPostRace() {
   Check(guest_out.own.block & kPadA, "with its A closed");
   guest_in.race_state = 4;
   guest_in.now = 2.1;
-  Check(guest.Tick(guest_in, guest_link).post_race, "and on its own finish too");
+  Check(guest.Tick(guest_in, guest_link).post_race, "and stays post-race after its own HUD catches up");
+}
+
+void TestGuestFinishWaitsForHost() {
+  Net net;
+  NetLink host_link(net, 0);
+  NetLink guest_link(net, 1);
+  RaceSync host(ConfigFor(0));
+  RaceSync guest(ConfigFor(1));
+  FrameIn host_in;
+  host_in.now = net.now = 1;
+  host_in.race_state = 2;
+  host.Tick(host_in, host_link);
+
+  FrameIn guest_in;
+  guest_in.now = net.now = 1.05;
+  guest_in.race_state = 2;
+  guest.Tick(guest_in, guest_link);
+
+  guest_in.now = net.now = 2;
+  guest_in.race_state = 4;
+  const FrameOut early = guest.Tick(guest_in, guest_link);
+  Check(!early.post_race, "a guest that finished first does not open results");
+  Check(early.waiting_for_host, "it waits for the host");
+  Check((early.own.block & (kPadA | kPadB)) == (kPadA | kPadB), "and cannot walk the results screens");
+  Check(Noted(guest, "results before the host: local=4 host=2"), "and names the disagreement once");
+
+  host_in.now = net.now = 2.2;
+  host_in.race_state = 4;
+  host.Tick(host_in, host_link);
+  guest_in.now = net.now = 2.25;
+  const FrameOut later = guest.Tick(guest_in, guest_link);
+  Check(later.post_race && later.waiting_for_host, "once the host finishes, the guest follows");
+  Check(ShouldHoldGuestResults(true, false, 4), "a guest that finished first holds the results");
+  Check(ShouldHoldGuestResults(true, false, 2, true), "and stays held: the hold itself rewinds the state it was read from");
+  Check(!ShouldHoldGuestResults(true, true, 4, true), "and lets go when the host is done");
+  Check(!ShouldHoldGuestResults(false, false, 4, true), "the host never holds");
+  Check(!ShouldHoldGuestResults(true, false, 2), "a racing guest does not hold");
+  Check(!ShouldHoldGuestResults(true, false, 3), "nor a paused one");
+  Check(!ShouldHoldGuestResults(true, false, 0, true), "a finished flag on the grid does not skip the cinematic");
+  Check(!ShouldHoldGuestResults(true, false, 1, true), "nor the countdown");
+  Check(IsOnlineRaceKart(1, true, 2), "a ready human slot is a race kart");
+  Check(!IsOnlineRaceKart(9, true, 8), "and a walker is not");
+}
+
+void TestGuestWorldPawnsFollowHost() {
+  Net net;
+  NetLink host_link(net, 0);
+  NetLink guest_link(net, 1);
+  RaceSync host(ConfigFor(0));
+  RaceSync guest(ConfigFor(1));
+
+  FrameIn host_in;
+  host_in.now = net.now = 1;
+  host_in.race_state = 2;
+  host_in.karts = StillKarts(8);
+  race::WorldPawnSample walker;
+  walker.id = 0;
+  walker.position[0] = 1500;
+  walker.position[1] = 40;
+  walker.velocity[0] = 200;
+  walker.yaw = 4096;
+  host_in.world_pawns.push_back(walker);
+  host.Tick(host_in, host_link);
+
+  FrameIn guest_in;
+  guest_in.now = net.now = 1.15;
+  guest_in.race_state = 2;
+  guest_in.karts = StillKarts(8);
+  const FrameOut out = guest.Tick(guest_in, guest_link);
+  Check(out.world_write_count >= 1, "the guest places the host's pedestrians");
+  Check(out.world_write_count >= 1 && std::fabs(out.world_writes[0].position[0] - 1500) < 50,
+        "at the host's position, so a bump is the same bump");
+  Check(Noted(guest, "world pawns from host count=1"), "and names them once");
 }
 
 void TestOldSnapshot() {
@@ -554,8 +759,8 @@ void TestInterpolation() {
   track.Push(1.1, b);
   Check(std::fabs(track.Sample(1.05)->position[0] - 50) < 0.01f, "between two snapshots the kart is between them");
   Check(track.Sample(0.5)->position[0] == 0, "before the first it waits at the first");
-  Check(std::fabs(track.Sample(1.2)->position[0] - 200) < 0.01f, "past the last it carries on");
-  Check(std::fabs(track.Sample(5.0)->position[0] - 250) < 0.01f, "for a moment only");
+  Check(std::fabs(track.Sample(1.2)->position[0] - 160) < 0.01f, "past the last it carries on");
+  Check(std::fabs(track.Sample(5.0)->position[0] - 160) < 0.01f, "for a moment only");
   track.Push(1.05, a);
   Check(std::fabs(track.Sample(1.05)->position[0] - 50) < 0.01f, "a late snapshot changes nothing");
 
@@ -712,10 +917,23 @@ void TestOwnKart() {
   for (int i = 0; i < 300; ++i) total300 += blending300.Step(dt).offset[0];
   Check(std::fabs(total60 - total300) < 1, "at the same speed at any frame rate");
 
+  Reconciler bumped;
+  bumped.NoteOwn(5, mine);
+  host.position[0] = 1000 + kSnapDistance + 1;
+  Check(!bumped.OnHost(5, host, now), "a bump past the blend distance is still blended, not written in one step");
+  float closed = 0;
+  for (int i = 0; i < 15; ++i) closed += bumped.Step(1.0 / 60).offset[0];
+  Check(closed > (kSnapDistance + 1) * 0.9f && closed <= kSnapDistance + 1,
+        "and closed within a quarter second, at a rate that grows with the distance");
+
   Reconciler distant;
   distant.NoteOwn(5, mine);
+  host.position[0] = 1000 + kTeleportDistance + 1;
+  Check(distant.OnHost(5, host, now), "a divergence past the world is replaced");
+  Reconciler grid_slot;
+  grid_slot.NoteOwn(5, mine);
   host.position[0] = 1000 + kSnapDistance + 1;
-  Check(distant.OnHost(5, host, now), "a large divergence is replaced");
+  Check(grid_slot.OnHost(5, host, now, true), "before the race a far slot is placed, not blended");
 
   // Both karts drive the same line at the same speed, the host's one wire delay later: nothing is wrong with that.
   Pair same;
@@ -874,11 +1092,12 @@ void TestNoSnapsAtHealthyRates() {
     Check(race.guest.traffic().own_snaps == 0, "a host in step never snaps the guest back, at either guest rate");
     Check(race.guest.LastHeardAge(0, race.net.now) < 0.1, "and its snapshots stay fresh");
 
-    race.host_karts[1]->position[0] -= kSnapDistance * 3;
+    race.host_karts[1]->position[0] -= kTeleportDistance + 1;
     race.Run(0.2);
     Check(race.guest.traffic().own_snaps >= 1, "a real divergence still snaps: the threshold hides nothing");
   }
-  Check(kSnapDistance == 900.0f, "the threshold did not move to hide a late host");
+  Check(kSnapDistance == 900.0f, "the slow-blend threshold did not move to hide a late host");
+  Check(kTeleportDistance > kSnapDistance, "and the replacement distance sits past it");
 }
 
 void WaitFor(const std::function<bool()>& done) {
@@ -1047,6 +1266,14 @@ void TestProgressWrite() {
   insane.distance = std::nanf("");
   Check(!WriteProgress(memory.data(), kart, insane), "a distance that is not a number is refused");
   Check(eck::LoadBE32(memory.data(), kart + layout::kKartCompletedLaps) == 3, "and the lap it did not write is untouched");
+
+  KartSample grid = state;
+  grid.distance = -180.5f;
+  grid.racing_time = -2.25f;
+  grid.finished = false;
+  Check(WriteProgress(memory.data(), kart, grid), "a kart behind the start line is written");
+  Check(std::fabs(LoadFloatBE(memory.data(), kart + layout::kKartDistanceInRace) - -180.5f) < 0.01f,
+        "including the signed distance");
 }
 
 // The item probe's change detector, without a guest: a buffer stands in for the memory it watches.
@@ -1111,12 +1338,18 @@ int main() {
   TestSnapshotPacket();
   TestStartOwnership();
   TestBeginEvent();
+  TestSharedGatePressesStartAndA();
+  TestHostArmsGateAfterGuestsLoad();
+  TestGuestWaitsUntilHostReachesGate();
+  TestGridFinishedFlagIsIgnored();
   TestInputReachesTheRightKart();
   TestSpoofedSeat();
   TestOldRoomTraffic();
   TestLeftSeatIsNeutral();
   TestOldSnapshot();
   TestPostRace();
+  TestGuestFinishWaitsForHost();
+  TestGuestWorldPawnsFollowHost();
   TestInterpolation();
   TestFrameRates();
   TestStarvedHostFrames();

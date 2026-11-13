@@ -259,6 +259,19 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
   // The silence is only ever acted on in a race, and only together with what the service says.
   void WatchSession(const online::Snapshot& state) {
     if (g_menu_seen.load() || !state.room || state.room->state != online::RoomState::kRacing) return;
+    // A race this PC is already in is not given up because the host's heartbeat looks late: the karts run on the players' own
+    // path, and abandoning the session costs a race that had started. Only the game's own results screen ends it.
+    if (active_race_.has_value() && !results_open_) {
+      const lobby::RaceWatch watch = lobby::WatchRace(state, g_lobby.race_status().host_silence);
+      if (watch != lobby::RaceWatch::kFine) {
+        static bool told = false;
+        if (!told) {
+          told = true;
+          REXLOG_INFO("[ONLINE] race kept: watch says {}", int(watch));
+        }
+      }
+      return;
+    }
     const lobby::RaceWatch watch = lobby::WatchRace(state, g_lobby.race_status().host_silence);
     if (watch == lobby::RaceWatch::kFine) return;
     Online().AbandonSession(watch == lobby::RaceWatch::kHostLeft ? "host_left" : "connection_lost");
@@ -297,19 +310,60 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     if (const std::optional<std::string> command = g_lobby.TakeHostReturn()) HostReturning(state, *command);
     const lobby::FlowResult flow = flow_.Update(state, screen, g_menu_seen.load(), g_lobby.TakeBackPress(), host_race_.active());
     if (!flow.note.empty()) REXLOG_INFO("[ONLINE] {}", flow.note);
+    // A guest that is seated in a race the room already says is running, and that is not travelling to it, is the one state
+    // that leaves it racing alone. Say why, once per distinct answer, so the log names the gate instead of the symptom.
+    if (state.room && state.seat > 0 && state.room->state == online::RoomState::kRacing &&
+        flow.travel.kind == lobby::TravelKind::kNone) {
+      const std::string why = "in_menus=" + std::to_string(g_menu_seen.load()) + " screen=" + std::to_string(int(screen)) +
+                              " has_race=" + std::to_string(lobby::RaceOfRules(state.room->rules) ? 1 : 0) +
+                              " seat=" + std::to_string(state.seat);
+      static std::string told;
+      if (told != why) {
+        told = why;
+        REXLOG_INFO("[ONLINE-RACE] guest holding: {}", why);
+      }
+    }
     if (flow.leave) Leave(flow.source);
     if (flow.travel.kind != lobby::TravelKind::kNone) {
+      // A session that ends under a race that is still running does not take the race with it: the race is the players' own
+      // UDP path, and only the game's own results screen ends it.
+      const bool keep_racing = flow.travel.kind == lobby::TravelKind::kMainMenu && active_race_.has_value() && !results_open_;
       if (flow.travel.kind == lobby::TravelKind::kRace) EnterRace(flow.travel.race);
-      if (flow.travel.kind == lobby::TravelKind::kMainMenu) ReturnToMenu(state, now);
-      g_lobby.RequestTravel(flow.travel);
+      if (!keep_racing) {
+        if (flow.travel.kind == lobby::TravelKind::kMainMenu) ReturnToMenu(state, now);
+        g_lobby.RequestTravel(flow.travel);
+      } else {
+        REXLOG_INFO("[ONLINE] race kept: the session ended while it was running");
+      }
     }
     StartHeldRace(state, now);
     lobby::Plan plan = lobby::MakePlan(state, screen == menu::GameScreen::kCharacter, panels);
     plan.results_open = results_open_;
-    plan.in_race = state.room && state.room->state == online::RoomState::kRacing && !g_menu_seen.load();
+    plan.in_race = lobby::RaceIsOn(state.room && state.room->state == online::RoomState::kRacing, g_menu_seen.load(),
+                                   active_race_.has_value());
+    // The room says how long after the host published the start is; the race's own sync turns it into a deadline on the
+    // clock its frames use.
+    plan.start_in_ms = state.room ? lobby::StartInOfRules(state.room->rules).value_or(0) : 0;
+    if (plan.start_in_ms > 0 && plan.start_in_ms != start_in_ms_) {
+      start_in_ms_ = plan.start_in_ms;
+      REXLOG_INFO("[ONLINE-RACE] start in {} ms", start_in_ms_);
+    }
+    // A session that drops mid-race leaves the plan without a seat, and the seat is what tells the sync which kart on this
+    // PC is the player's: the one the race started with stands until the race is over.
+    if (plan.in_race && lobby::ValidSeat(plan.local_seat)) race_seat_ = plan.local_seat;
+    if (plan.in_race && !lobby::ValidSeat(plan.local_seat) && race_seat_ >= 0) plan.local_seat = race_seat_;
     if (plan.in_race) {
       plan.race = active_race_;
-      plan.routes = race_sync::RoutesOf(Online().GamePeers());
+      // The race runs on the players' own UDP path, so the routes it already has outlive a session that drops under it: a
+      // sign-in that reconnects mid-race comes back with a new generation and no room, and losing the routes there is what
+      // freezes every kart but the host's.
+      const race_sync::PeerRoutes routes = race_sync::RoutesOf(Online().GamePeers());
+      bool any = false;
+      for (const race_sync::PeerRoute& route : routes) {
+        if (route.seat >= 0) any = true;
+      }
+      if (any) race_routes_ = routes;
+      plan.routes = race_routes_;
       const lobby::Bridge::RaceStatus race = g_lobby.race_status();
       for (const online::PeerSnapshot& peer : state.peers) Online().SetPeerRtt(peer.seat, race.rtt_ms[size_t(peer.seat)]);
     }
@@ -322,6 +376,13 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     if (!state.room) pacer_.Reset();
     if (!state.room || !own) return;
     if (const std::optional<lobby::PanelView> due = pacer_.Due(now, *own)) {
+      // Entering the session reloads this PC's map, and the panels come up empty for a moment. That is not the player clearing
+      // the pick it already confirmed, and reporting it costs the host its race start: the host waits for every panel.
+      bool confirmed_here = false;
+      for (const online::Seat& seat : state.room->seats) {
+        if (seat.seat == state.seat && seat.pick == online::PickState::kConfirmed) confirmed_here = true;
+      }
+      if (confirmed_here && due->state != online::PickState::kConfirmed) return;
       REXLOG_INFO("[ONLINE] pick seat={} state={} character={}", state.seat, int(due->state), due->character);
       Online().SendPick(due->state, due->character);
     }
@@ -364,7 +425,7 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
   void StartHeldRace(const online::Snapshot& state, double now) {
     if (const std::optional<lobby::Bridge::HeldRace> held = g_lobby.TakeHeldRace()) BeginRace(*held, state, now);
     const lobby::RaceStep step = host_race_.Update(state, now);
-    if (step.publish && Online().PublishRace(lobby::RaceRules(lobby::BaseRules(state.room->rules), published_race_))) {
+    if (step.publish && Online().PublishRace(PublishingRules(*state.room))) {
       REXLOG_INFO("[ONLINE-RACE] race published generation={}", published_race_.generation);
       host_race_.NotePublished();
     }
@@ -375,6 +436,15 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
                               : lobby::RaceCommand(published_race_, 0, race_pad_));
     }
     if (step.abort) AbortRace(step.abort);
+  }
+
+  // What the room is told when the host publishes: the race, plus the instant every PC presses Start. The lead is the time
+  // the rules take to reach the other PCs and be converted, not the countdown: the game runs its own 3-2-1 from the press.
+  static constexpr int kStartDelayMs = 2000;
+
+  online::RoomRules PublishingRules(const online::RoomView& room) {
+    const online::RoomRules base = lobby::RaceRules(lobby::BaseRules(room.rules), published_race_);
+    return lobby::StartInRules(base, kStartDelayMs);
   }
 
   void BeginRace(const lobby::Bridge::HeldRace& held, const online::Snapshot& state, double now) {
@@ -477,6 +547,9 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
   double release_toast_at_ = 0;
   std::set<std::string> prompted_;
   menu::GameScreen last_screen_ = menu::GameScreen::kOther;
+  race_sync::PeerRoutes race_routes_{};  // the race's own path, kept across a session that drops
+  int race_seat_ = -1;                   // the seat this PC races as, kept across a session that drops
+  int start_in_ms_ = 0;                  // the room's start delay last logged
   int last_remaining_ = -1;
   std::string last_hidden_ = "none";
   double last_poll_ = 0;

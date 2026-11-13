@@ -14,11 +14,15 @@ namespace eck::race {
 
 inline constexpr int kMaxHumans = 4;
 inline constexpr int kMaxKarts = 8;  // "Race against 7 competitors"
+// The highest item id the game hands out. The probe saw 1 to 3 in one race; the datagram refuses anything past this, so a
+// kart can never be told to hold an id the game does not know.
+inline constexpr uint8_t kMaxItemId = 64;
 inline constexpr uint8_t kMagic0 = 'E';
 inline constexpr uint8_t kMagic1 = 'R';
-inline constexpr uint8_t kVersion = 3;
+inline constexpr uint8_t kVersion = 4;
 inline constexpr size_t kHeaderSize = 4;
-inline constexpr size_t kMaxDatagram = 512;
+inline constexpr size_t kMaxDatagram = 1024;
+inline constexpr int kMaxWorldPawns = 24;  // pedestrians and other walkers the host places on every PC
 
 inline constexpr double kLoadTimeoutSeconds = 45.0;
 inline constexpr double kCountdownSeconds = 3.0;
@@ -141,16 +145,29 @@ struct KartSample {
   // The race the host says this kart is having: the game's own counters, so a guest's HUD, ordering and results are the
   // host's. A guest writes them onto a remote kart and never computes them itself.
   uint8_t lap = 0;             // CompletedLaps
-  float distance = 0;          // DistanceInRace: what the game orders karts by
+  float distance = 0;          // DistanceInRace: what the game orders karts by; negative behind the start line
   uint8_t place = 0;           // RacePosition
   uint8_t finish_place = 0;    // RaceFinishPosition, 0 while the kart has not finished
   float racing_time = 0;       // racingTime
+  uint8_t item = 0;            // the id of the item in hand, 0 for none (kKartHeldItem)
   bool finished = false;       // bIsRaceFinished
   bool operator==(const KartSample&) const = default;
 };
 
+// A walker the host simulates. Guests put the same pawn here so a bump is the same bump, not a local accident.
+struct WorldPawnSample {
+  uint8_t id = 0;
+  float position[3]{};
+  float velocity[3]{};
+  uint16_t yaw = 0;  // Unreal rotator yaw, so the mesh faces the host's way
+  bool operator==(const WorldPawnSample&) const = default;
+};
+
 // The host's race, to every guest. `begun` repeats in every snapshot, so a lost one costs nothing.
 struct SnapshotMsg {
+  // The host's clock, in milliseconds, at which every PC presses Start; 0 when there is no shared start. It rides with the
+  // snapshot because that is where the host's clock already is, next to the estimate every PC turns it into its own time.
+  uint32_t gate_ms = 0;
   uint32_t race_id = 0;
   uint32_t seq = 0;
   uint32_t host_ms = 0;
@@ -159,6 +176,7 @@ struct SnapshotMsg {
   std::array<uint32_t, kMaxHumans> input_ack{};  // per seat: the newest input the host has applied
   std::array<uint8_t, kMaxHumans> input_age_ms{};  // and how long the kart has been running on it, capped at 255
   std::vector<KartSample> karts;
+  std::vector<WorldPawnSample> world_pawns;
   bool operator==(const SnapshotMsg&) const = default;
 };
 

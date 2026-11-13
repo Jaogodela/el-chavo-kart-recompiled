@@ -11,7 +11,7 @@ inline constexpr char kGameId[] = "el-chavo-kart-pc";
 inline constexpr char kImageId[] = "eck-usa-1db4e96b";
 // Both sides of a room must report the same image and build. Bumped whenever the gameplay datagrams change shape, so a
 // build that cannot talk to this one is refused with "Version mismatch" instead of freezing in silence.
-inline constexpr int kBuildNumber = 2;
+inline constexpr int kBuildNumber = 3;
 inline constexpr char kServiceEnvVar[] = "ECK_LOBBY";
 inline constexpr char kDefaultServiceUrl[] = "wss://eck-lobby.saulobenigno.workers.dev";
 inline constexpr char kTokenDomain[] = "eck-token:";
