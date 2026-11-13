@@ -300,11 +300,16 @@ try:
             try: os.killpg(gp.pid, signal.SIGKILL)
             except Exception: pass
             # The lobby holds a dropped seat for its grace (30 s) before the host hears the guest left.
+            quiet_at = 0
             for t in range(15):
                 time.sleep(3)
                 j = own(players[0]["ctrl"])
                 note(f"host apos kill t={3*(t+1)}s: " + (f"rs={j['race_state']} in_race={j['in_race']} session={j.get('session')}" if j else "no_state"))
-                if re.search(r"guest_left seat=", logtext(players[0])): note(f"host soube da saida (guest_left) t={3*(t+1)}s"); break
+                host_log = logtext(players[0]["name"])
+                if quiet_at and 3 * t == quiet_at: shot("guest-quiet-later")  # a slow renderer may not have drawn it yet
+                if not quiet_at and any("guest_quiet seat=" in l for l in host_log):
+                    quiet_at = 3 * (t + 1); note(f"host viu o convidado calado (guest_quiet) t<={quiet_at}s"); shot("guest-quiet")
+                if any("guest_left seat=" in l for l in host_log): note(f"host soube da saida (guest_left) t={3*(t+1)}s"); break
             else: note("host NAO recebeu guest_left em 45s")
             note("host vivo apos kill do convidado: " + ("sim" if procs[1].poll() is None else "NAO"))
         note(f"start spread (t=1): {spread1}   backwards: {sum(back.values())}")
