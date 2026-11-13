@@ -8,6 +8,10 @@
 #include <string_view>
 #include <thread>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
@@ -53,9 +57,18 @@ online::Identity ResolveIdentity() {
   return online::LoadOrCreateIdentity(g_user_dir);
 }
 
+// What friends see next to a name. Android and Apple are told apart from Linux now, so a port does not report itself as one.
 const char* PlatformName() {
 #if defined(_WIN32)
   return "Windows";
+#elif defined(__ANDROID__)
+  return "Android";
+#elif defined(__APPLE__)
+#if TARGET_OS_IOS
+  return "iOS";
+#else
+  return "macOS";
+#endif
 #else
   return "Linux";
 #endif
