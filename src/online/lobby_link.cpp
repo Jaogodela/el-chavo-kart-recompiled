@@ -1,5 +1,6 @@
 #include "online/lobby_link.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -15,8 +16,10 @@ namespace {
 constexpr int kConnectTimeoutMs = 8000;
 constexpr int kKeepaliveMs = 20000;
 constexpr int kSilenceMs = 45000;
-// Relay frames waiting for the socket; a link this far behind is not carrying a fight any more.
-constexpr size_t kMaxQueuedBinary = 512;
+// Relay frames waiting for the socket. Every frame is a snapshot or an input that the next one supersedes, so a link that
+// falls behind drops its oldest frame instead of queueing seconds of stale race (512 was ~8 s at a 4-player host's rate,
+// all of it delivered late) or refusing the newest, which the socket treats as a dead relay for the rest of the session.
+constexpr size_t kMaxQueuedBinary = 64;
 
 using Clock = std::chrono::steady_clock;
 
@@ -30,6 +33,7 @@ struct Shared {
   std::condition_variable wake;
   std::deque<Outgoing> outgoing;
   size_t queued_binary = 0;
+  uint64_t dropped_binary = 0;  // stale relay frames dropped for a newer one
   std::deque<ChannelEvent> incoming;
   std::shared_ptr<WebSocket> socket;
   bool stop = false;
@@ -131,7 +135,16 @@ class LobbyLink final : public LobbyChannel {
 
   bool SendBinary(std::vector<uint8_t>&& bytes) override {
     std::lock_guard<std::mutex> lock(shared_->mutex);
-    if (shared_->stop || !shared_->socket || shared_->queued_binary >= kMaxQueuedBinary) return false;
+    if (shared_->stop || !shared_->socket) return false;
+    if (shared_->queued_binary >= kMaxQueuedBinary) {
+      auto& queue = shared_->outgoing;
+      const auto oldest = std::find_if(queue.begin(), queue.end(), [](const Outgoing& m) { return m.binary; });
+      if (oldest != queue.end()) {
+        queue.erase(oldest);
+        --shared_->queued_binary;
+        ++shared_->dropped_binary;
+      }
+    }
     shared_->outgoing.push_back({std::string(bytes.begin(), bytes.end()), true});
     ++shared_->queued_binary;
     shared_->wake.notify_all();
