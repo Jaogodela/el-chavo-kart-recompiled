@@ -190,9 +190,9 @@ race_sync::SyncConfig ConfigOf(const lobby::CanonicalRace& race, int seat, int o
 void LogSummary(const race_sync::RaceSync& sync, const race_sync::PeerRoutes& routes, int race_state, double now) {
   const race_sync::Traffic& net = sync.traffic();
   REXLOG_INFO("[ONLINE-NET] gameplay tx_packets={} rx_packets={} tx_bytes={} rx_bytes={} dropped_old={} rejected={} "
-              "own_snaps={} race_state={} begun={}",
-              net.tx_packets, net.rx_packets, net.tx_bytes, net.rx_bytes, net.dropped_old, net.rejected, net.own_snaps, race_state,
-              sync.begun() ? "yes" : "no");
+              "own_snaps={} remote_jumps={} remote_teleports={} finish_refused={} race_state={} begun={}",
+              net.tx_packets, net.rx_packets, net.tx_bytes, net.rx_bytes, net.dropped_old, net.rejected, net.own_snaps,
+              net.remote_jumps, net.remote_teleports, net.finish_refused, race_state, sync.begun() ? "yes" : "no");
   for (const race_sync::PeerRoute& route : routes) {
     if (route.seat < 0) continue;
     REXLOG_INFO("[ONLINE-NET] peer seat={} transport={} last_input_seq={} last_snapshot_seq={} age_ms={} rtt_ms={}",

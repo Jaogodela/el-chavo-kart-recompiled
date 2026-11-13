@@ -519,6 +519,174 @@ void TestGridFinishedFlagIsIgnored() {
   Check(!ShouldHoldGuestResults(true, out.post_race, 0, true), "and does not rewrite the cinematic into a race");
 }
 
+float RemoteError(Pair& race);
+
+// The Nov 11 two-player review: the guest's results were held three seconds after GO and the host logged a finish nobody
+// made. The finished bit was already set on the grid (on the host's copy of the guest's kart and on the guest's own), and
+// it went round: host snapshot -> guest kart -> guest's Finish -> host's order -> "finished" in every snapshot after.
+void TestStaleFinishBitIsNotAFinish() {
+  Pair race;
+  race.host_karts[0]->finished = true;  // the host's own kart
+  race.host_karts[1]->finished = true;  // the host's copy of the guest's kart
+  race.host_karts[5]->finished = true;  // an AI kart
+  race.guest_karts[1]->finished = true;  // the guest's own kart
+  race.host_state = race.guest_state = 1;
+  race.Run(1.0);
+  race.host_state = race.guest_state = 2;
+  for (int slot = 0; slot < 8; ++slot) {
+    race.host_karts[size_t(slot)]->racing_time = 3.0f;
+  }
+  race.guest_karts[1]->racing_time = 3.0f;
+  race.Run(3.0);
+  bool heard = false;
+  for (const std::string& note : race.host.TakeNotes()) heard = heard || note.rfind("finish_rx", 0) == 0;
+  Check(!heard, "a finished bit left on the grid is not a finish the host hears");
+  Check(!race.guest_karts[0]->finished && race.guest_karts[0]->finish_place == 0,
+        "the host's own kart is not shown finished on the guest");
+  Check(!race.guest_karts[5]->finished, "nor an AI kart");
+  Check(!race.guest_out.own_finished_by_host, "the guest's kart is not finished by the host either");
+  Check(!ShouldHoldGuestResults(true, race.guest_out.post_race, 2, race.guest_out.own_finished_by_host),
+        "so the guest's results are not held three seconds after GO");
+  Check(race.host.traffic().finish_refused == 0, "and the guest never even said it");
+}
+
+// Places are the host's order of crossings, the AI counted, and a report from the guest is a crossing only once raced.
+void TestFinishOrder() {
+  Pair race;
+  race.host_state = race.guest_state = 2;
+  for (int slot = 0; slot < 8; ++slot) race.host_karts[size_t(slot)]->racing_time = 40.0f;
+  race.guest_karts[1]->racing_time = 40.0f;
+  race.Run(0.5);
+
+  race.host_karts[4]->finished = true;  // an AI kart crosses first
+  race.Run(0.3);
+  Check(race.guest_karts[4]->finished && race.guest_karts[4]->finish_place == 1, "the AI kart that crossed first is first");
+
+  race.guest_karts[1]->finished = true;  // then the guest, in its own game
+  race.guest_karts[1]->finish_place = 1;  // which thinks it won: the other humans are not racers there
+  race.guest_karts[1]->racing_time = 61.0f;
+  race.Run(0.3);
+  bool second = false;
+  for (const std::string& note : race.host.TakeNotes()) second = second || note.find("finish_rx seat=1 said_place=1 place=2") == 0;
+  Check(second, "the guest is second, after the AI kart, whatever it said of itself");
+
+  race.host_karts[0]->finished = true;  // then the host
+  race.Run(0.3);
+  Check(race.guest_karts[0]->finished && race.guest_karts[0]->finish_place == 3, "and the host third, on the guest's screen");
+  race.host_karts[1]->finished = true;  // the host's copy of the guest crosses later: the place is kept
+  race.Run(0.3);
+  Check(race.host.traffic().finish_refused == 0, "nothing refused in a clean race");
+
+  // A report that is not a crossing: too early in the race clock.
+  Pair early;
+  early.host_state = early.guest_state = 2;
+  early.Run(0.5);
+  race::Finish finish;
+  finish.race_id = kGeneration;
+  finish.seat = 1;
+  finish.time_ms = 2500;
+  finish.place = 1;
+  early.net.Post(1, 0, race::Encode(finish));
+  early.Run(0.3);
+  Check(early.host.traffic().finish_refused == 1, "a finish 2.5 s into the race is refused");
+  Check(!early.guest_out.own_finished_by_host, "and the guest is not made finished by it");
+  finish.time_ms = 65000;
+  early.net.Post(1, 0, race::Encode(finish));
+  early.Run(0.3);
+  Check(early.guest_out.own_finished_by_host, "a real one is taken, and comes back to the guest as the host's");
+}
+
+// A burst of lost snapshots longer than the extrapolation: the remote kart used to stop, then jump to where the host had
+// it when the next packet came. It now closes that gap over a few frames.
+void TestRemoteGapIsSmoothed() {
+  Pair race;
+  race.host_state = race.guest_state = 2;
+  race.host_kart_speed = 3000;
+  race.Run(1.0);
+  race.net.lose_every = 1;
+  race.Run(0.4);
+  race.net.lose_every = 0;
+  float worst = 0;
+  float back = 0;
+  float last = race.guest_karts[0]->position[0];
+  for (int i = 0; i < 60; ++i) {
+    race.Run(1.0 / 60);
+    const float step = race.guest_karts[0]->position[0] - last;
+    worst = std::max(worst, step);
+    back = std::max(back, -step);
+    last = race.guest_karts[0]->position[0];
+  }
+  Check(worst < 3000.0f / 60 + 200.0f, "after a 0.4 s hole the remote kart catches up without a teleport");
+  Check(back < 1, "and never steps backwards");
+  Check(race.guest.traffic().remote_jumps >= 1, "the jump it would have made is counted");
+  Check(race.guest.traffic().remote_teleports == 0, "and it was not a respawn");
+  race.Run(1.0);
+  Check(RemoteError(race) < 120, "a second later it is back where the host has it");
+
+  Pair steady;
+  steady.host_state = steady.guest_state = 2;
+  steady.host_kart_speed = 3000;
+  steady.Run(2.0);
+  Check(steady.guest.traffic().remote_jumps == 0 && steady.guest.traffic().remote_teleports == 0,
+        "a kart driving on a healthy link never counts a jump");
+
+  RemoteSmoother smoother;
+  KartSample kart;
+  kart.velocity[0] = 600;
+  for (int i = 0; i < 30; ++i) {
+    kart.position[0] += 10;
+    Check(smoother.Step(kart, 1.0 / 60).jump == RemoteSmoother::Jump::kNone || i == 0, "steady motion is not a jump");
+  }
+  kart.position[0] += 500;
+  const RemoteSmoother::Result late = smoother.Step(kart, 1.0 / 60);
+  Check(late.jump == RemoteSmoother::Jump::kSmoothed && late.position[0] < kart.position[0] - 300,
+        "a sudden 500 is absorbed, not shown");
+}
+
+// A respawn is a step on every PC: no blend through the walls between the two places.
+void TestRemoteRespawnIsAStep() {
+  KartTrack track;
+  KartSample a, b;
+  a.position[0] = 0;
+  b.position[0] = 20000;
+  track.Push(1.0, a);
+  track.Push(1.05, b);
+  Check(track.Sample(1.025)->position[0] == 0, "half way between a respawn the kart is still where it was");
+  Check(track.Sample(1.05)->position[0] == 20000, "and then it is where it went");
+
+  Pair race;
+  race.host_state = race.guest_state = 2;
+  race.host_kart_speed = 1000;
+  race.Run(1.0);
+  const float before = race.guest_karts[0]->position[0];
+  race.host_karts[0]->position[0] += 20000;
+  bool between = false;
+  for (int i = 0; i < 60; ++i) {
+    race.Run(1.0 / 60);
+    const float x = race.guest_karts[0]->position[0];
+    between = between || (x > before + 3000 && x < before + 17000);
+  }
+  Check(!between, "the guest never shows the respawned kart sliding between the two places");
+  Check(race.guest.traffic().remote_teleports >= 1, "the respawn is counted as a teleport");
+}
+
+// The first snapshot is often late (the guest is still loading). Before GO the host clock takes the estimate as it is.
+void TestClockSettlesBeforeTheGreenLight() {
+  HostClock early;
+  early.Note(0.0, 0.5);  // took 0.5 s to be read
+  early.HostNow(0.5, true);
+  early.Note(0.05, 0.07);  // the stream after it: 20 ms
+  const double free = *early.HostNow(0.07, true);
+  Check(std::fabs(free - 0.05) < 0.001, "before GO the clock is the best estimate at once");
+
+  HostClock racing;
+  racing.Note(0.0, 0.5);
+  racing.HostNow(0.5);
+  racing.Note(0.05, 0.07);
+  const double slewed = *racing.HostNow(0.57);
+  Check(slewed < 0.1 && slewed > 0.0, "while racing it still only slews, so nothing on screen jumps");
+}
+
 void TestInputReachesTheRightKart() {
   Pair race;
   race.host_state = 1;
@@ -1365,6 +1533,11 @@ int main() {
   TestProgressWrite();
   TestWordWatch();
   TestNoMovementOnTheService();
+  TestStaleFinishBitIsNotAFinish();
+  TestFinishOrder();
+  TestRemoteGapIsSmoothed();
+  TestRemoteRespawnIsAStep();
+  TestClockSettlesBeforeTheGreenLight();
   std::printf("%d checks, %d failed\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

@@ -40,6 +40,14 @@ inline constexpr float kTimingSlack = 0.03f;  // a frame on each PC: at speed, t
 inline constexpr float kBlendPerSecond = 5.0f;  // a small disagreement is closed slowly, under the kart's own motion
 inline constexpr float kFastBlendPerSecond = 10.0f;  // a bump that used to snap (900 u) closes over a few frames instead
 inline constexpr float kTeleportDistance = 3000.0f;  // past this the blend would slide the kart through the world
+// A finish is a crossing seen while racing. The finished bit can already be set on the grid (left over from the last race, or
+// copied from a host whose copy had it), and no track is shorter than this, so a "finish" before it is that leftover.
+inline constexpr double kMinFinishSeconds = 10.0;
+// A remote kart is shown at its snapshot position plus an offset that decays at this rate. A late packet, a bump the host
+// resolved differently or a clock correction moves the target at once; the kart closes that gap instead of jumping it.
+inline constexpr float kRemoteSmoothPerSecond = 10.0f;
+// How far a remote kart's target may move in one frame beyond what its velocity explains before that is a discontinuity.
+inline constexpr float kRemoteJumpSlack = 150.0f;
 inline constexpr double kRttWindowSeconds = 2.0;
 inline constexpr int kRaceCinematic = 0;
 inline constexpr int kRaceInProgress = 2;
@@ -162,6 +170,28 @@ class StartGate {
   bool begun_ = false;
 };
 
+// A kart's finish, believed only as a crossing: the kart has to be seen racing and not finished first, and the race clock
+// has to have run. Latched, so a finish survives the result screens rewriting the state it was read in.
+class FinishEdge {
+ public:
+  bool Note(bool begun, int race_state, const KartSample& kart) {
+    if (finished_) return true;
+    if (!begun || race_state < kRaceInProgress) return false;
+    if (!kart.finished) {
+      armed_ = true;
+      return false;
+    }
+    if (!armed_ || kart.racing_time < float(kMinFinishSeconds)) return false;
+    finished_ = true;
+    return true;
+  }
+  bool finished() const { return finished_; }
+
+ private:
+  bool armed_ = false;
+  bool finished_ = false;
+};
+
 struct GatePad {
   uint16_t block = 0;
   uint16_t press = 0;
@@ -205,12 +235,14 @@ class HostClock {
     count_ = std::min(count_ + 1, offsets_.size());
   }
 
-  // Called once per frame; `now` is this PC's own clock, which only moves forward.
-  std::optional<double> HostNow(double now) {
+  // Called once per frame; `now` is this PC's own clock, which only moves forward. `free` is before the green light: nothing
+  // moves yet, so the estimate is taken as it is. Otherwise a first snapshot that arrived late (the map load is a long frame)
+  // would leave every remote kart rendered that much in the past for the first seconds of the race, closing at 8% a second.
+  std::optional<double> HostNow(double now, bool free = false) {
     if (count_ == 0) return std::nullopt;
     double lowest = offsets_[0];
     for (size_t i = 1; i < count_; ++i) lowest = std::min(lowest, offsets_[i]);
-    if (!settled_) {
+    if (!settled_ || free) {
       settled_ = true;
       applied_ = lowest;
     } else {
@@ -246,6 +278,18 @@ inline void NormalizeQuat(float (&quat)[4]) {
   length = std::sqrt(length);
   if (length < 1e-6f) return;
   for (float& v : quat) v /= length;
+}
+
+inline float Distance3(const float (&a)[3], const float (&b)[3]) {
+  float length = 0;
+  for (int i = 0; i < 3; ++i) length += (a[i] - b[i]) * (a[i] - b[i]);
+  return std::sqrt(length);
+}
+
+inline float Length3(const float (&v)[3]) {
+  float length = 0;
+  for (float x : v) length += x * x;
+  return std::sqrt(length);
 }
 
 inline KartSample Blend(const KartSample& a, const KartSample& b, float t) {
@@ -291,7 +335,10 @@ class KartTrack {
     for (size_t i = 0; i + 1 < count_; ++i) {
       const Entry& a = At(i);
       const Entry& b = At(i + 1);
-      if (time <= b.time) return Blend(a.kart, b.kart, float((time - a.time) / (b.time - a.time)));
+      if (time > b.time) continue;
+      // A respawn or a reset is a step: blending across it slides the kart through walls and other karts on the way.
+      if (Distance3(a.kart.position, b.kart.position) >= kTeleportDistance) return time < b.time ? a.kart : b.kart;
+      return Blend(a.kart, b.kart, float((time - a.time) / (b.time - a.time)));
     }
     const Entry& last = At(count_ - 1);
     KartSample out = last.kart;
@@ -363,6 +410,54 @@ class WorldTrack {
   std::array<Entry, 8> entries_{};
   size_t first_ = 0;
   size_t count_ = 0;
+};
+
+// What a guest shows of one remote kart: the track's sample plus an offset that absorbs a discontinuity in it and decays.
+// A target that moved more than its velocity explains is a late packet arriving, a bump resolved differently on the host,
+// or a clock correction: the kart keeps its place on screen and closes the gap in a few frames, instead of teleporting.
+// A respawn (kTeleportDistance) is shown as it is.
+class RemoteSmoother {
+ public:
+  enum class Jump { kNone, kSmoothed, kTeleport };
+  struct Result {
+    float position[3]{};
+    Jump jump = Jump::kNone;
+    float size = 0;  // how far the target moved past its velocity
+  };
+
+  Result Step(const KartSample& target, double dt) {
+    Result out;
+    if (!has_) {
+      has_ = true;
+      std::copy(target.position, target.position + 3, last_);
+      std::copy(target.position, target.position + 3, out.position);
+      return out;
+    }
+    float unexplained[3];
+    for (int i = 0; i < 3; ++i) unexplained[i] = target.position[i] - (last_[i] + target.velocity[i] * float(dt));
+    const float size = Length3(unexplained);
+    const float slack = kRemoteJumpSlack + Length3(target.velocity) * kTimingSlack;
+    if (size >= kTeleportDistance) {
+      std::fill(offset_, offset_ + 3, 0.0f);
+      out.jump = Jump::kTeleport;
+      out.size = size;
+    } else if (size > slack) {
+      for (int i = 0; i < 3; ++i) offset_[i] -= unexplained[i];
+      out.jump = Jump::kSmoothed;
+      out.size = size;
+    }
+    const float keep = std::exp(-kRemoteSmoothPerSecond * float(dt));
+    for (float& v : offset_) v *= keep;
+    if (Length3(offset_) < 0.5f || Length3(offset_) >= kTeleportDistance) std::fill(offset_, offset_ + 3, 0.0f);
+    std::copy(target.position, target.position + 3, last_);
+    for (int i = 0; i < 3; ++i) out.position[i] = target.position[i] + offset_[i];
+    return out;
+  }
+
+ private:
+  bool has_ = false;
+  float last_[3]{};
+  float offset_[3]{};
 };
 
 enum class Correction { kNone, kNudge, kSnap };
@@ -505,6 +600,9 @@ struct Traffic {
   uint64_t dropped_old = 0;
   uint64_t rejected = 0;
   uint64_t own_snaps = 0;
+  uint64_t remote_jumps = 0;      // a remote kart's target moved past its velocity, and the jump was smoothed out
+  uint64_t remote_teleports = 0;  // and past kTeleportDistance: shown as a step (a respawn)
+  uint64_t finish_refused = 0;    // a finish report that was not a crossing (the grid's leftover flag, another race's)
 };
 
 // The established Direct or Relay path of each seat. Nothing else carries a kart.
@@ -608,27 +706,46 @@ class RaceSync {
       } else if (const SnapshotMsg* snapshot = std::get_if<SnapshotMsg>(&*message)) {
         if (!host()) TakeSnapshot(*snapshot, seat, in);
       } else if (const race::Finish* finish = std::get_if<race::Finish>(&*message)) {
-        if (host()) TakeFinish(*finish, seat);
+        if (host()) TakeFinish(*finish, seat, in);
       }
     }
   }
 
   // A guest's own game is the only thing that knows when its kart crossed the line, and the host's copy of that kart is
   // simulated from the pad. The report is kept and carried in the snapshot, so the finish every PC shows comes from one place.
-  void TakeFinish(const race::Finish& finish, int from_seat) {
-    if (!gate_.begun()) return;  // a leftover flag from the last race is not this one's crossing
+  void TakeFinish(const race::Finish& finish, int from_seat, const FrameIn& in) {
     if (finish.race_id != config_.generation || finish.seat != from_seat || int(finish.seat) == config_.seat) return;
-    if (size_t(finish.seat) >= finish_reports_.size()) return;
-    FinishReport& report = finish_reports_[size_t(finish.seat)];
-    if (!report.heard && finish_order_ < config_.total) {
-      // The place is the order the host heard the crossings in, not what each PC thought of itself: two karts cannot both be
-      // first, and the one that says so loudest is not the one that got there first.
-      report.heard = true;
-      report.place = uint8_t(++finish_order_);
+    const int slot = SlotOfSeat(finish.seat);
+    if (slot < 0) return;
+    // A leftover flag from the last race, or from the grid, is not this one's crossing: the host has to be racing, and the
+    // race clock that guest sent has to have run.
+    if (!gate_.begun() || in.race_state < kRaceInProgress || finish.time_ms < uint32_t(kMinFinishSeconds * 1000.0)) {
+      ++traffic_.finish_refused;
+      NoteOnce(said_finish_refused_[size_t(finish.seat)],
+               "finish refused seat=" + std::to_string(finish.seat) + " time_ms=" + std::to_string(finish.time_ms) +
+                   " host_state=" + std::to_string(in.race_state) + " begun=" + (gate_.begun() ? "yes" : "no"));
+      return;
     }
-    report.time_ms = finish.time_ms;
+    Place(slot);
     NoteOnce(said_finish_rx_[size_t(finish.seat)], "finish_rx seat=" + std::to_string(finish.seat) +
-                                                        " place=" + std::to_string(finish.place));
+                                                        " said_place=" + std::to_string(finish.place) +
+                                                        " place=" + std::to_string(place_of_slot_[size_t(slot)]) +
+                                                        " time_ms=" + std::to_string(finish.time_ms));
+  }
+
+  int SlotOfSeat(int seat) const {
+    for (int slot = 0; slot < config_.humans; ++slot) {
+      if (config_.seats[size_t(slot)] == seat) return slot;
+    }
+    return -1;
+  }
+
+  // The place is the order the host saw the crossings in, every kart counted (the AI too): two karts cannot both be first,
+  // and the one that says so loudest is not the one that got there first.
+  void Place(int slot) {
+    if (slot < 0 || slot >= config_.total || place_of_slot_[size_t(slot)] != 0) return;
+    if (finish_order_ >= config_.total) return;
+    place_of_slot_[size_t(slot)] = uint8_t(++finish_order_);
   }
 
   void Count(Verdict verdict) {
@@ -674,7 +791,7 @@ class RaceSync {
     clock_.Note(host_time, in.now);
     // The host's instant, once: the estimate is the one the karts are rendered against.
     if (gate_at_ <= 0 && snapshot.gate_ms != 0) {
-      if (const std::optional<double> host_now = clock_.HostNow(in.now)) {
+      if (const std::optional<double> host_now = clock_.HostNow(in.now, host_state_ < kRaceInProgress)) {
         gate_at_ = snapshot.gate_ms / 1000.0 + (in.now - *host_now);
         notes_.push_back("start instant received");
       }
@@ -753,14 +870,12 @@ class RaceSync {
   // On the host that is this PC's own clock; on a guest nothing is sent.
   uint32_t GateMsHost() const { return gate_at_ > 0 ? uint32_t(gate_at_ * 1000.0) : 0; }
 
-  // The host's own kart crosses the line in its own game: it takes its place the same way, in the one order.
-  void NoteOwnFinish(const FrameIn& in) {
-    const int own = OwnSlot();
-    if (own < 0 || !in.karts[size_t(own)] || !in.karts[size_t(own)]->finished) return;
-    FinishReport& mine = finish_reports_[size_t(config_.seat)];
-    if (!mine.heard && finish_order_ < config_.total) {
-      mine.heard = true;
-      mine.place = uint8_t(++finish_order_);
+  // Every kart the host's game sees cross the line (its own, the AI, and its copy of a guest's) takes its place in the one
+  // order. Only a crossing counts: a finished bit already set on the grid would otherwise make that kart first before GO.
+  void NoteFinishes(const FrameIn& in) {
+    for (int slot = 0; slot < config_.total; ++slot) {
+      if (!in.karts[size_t(slot)]) continue;
+      if (finish_edges_[size_t(slot)].Note(gate_.begun(), in.race_state, *in.karts[size_t(slot)])) Place(slot);
     }
   }
 
@@ -790,7 +905,7 @@ class RaceSync {
       const bool fresh = entry.heard > 0 && in.now - entry.heard <= kInputHoldSeconds;
       out.pads[size_t(pad)] = fresh ? HostSidePad(entry.pad, gate_.begun() && !out.post_race) : PadState{};
     }
-    NoteOwnFinish(in);
+    NoteFinishes(in);
     out.own = HostGatePad(gate_.begun(), all_loaded, in.now - started_);
     ApplyGatePress(in.now, in.race_state, out);
     if (snapshot_clock_.Due(in.now)) SendSnapshot(in, link);
@@ -808,14 +923,11 @@ class RaceSync {
     for (int slot = 0; slot < config_.total; ++slot) {
       if (!in.karts[size_t(slot)]) continue;
       KartSample kart = *in.karts[size_t(slot)];
-      if (slot < config_.humans) {
-        const size_t seat = size_t(config_.seats[size_t(slot)]);
-        if (seat < finish_reports_.size() && finish_reports_[seat].heard) {
-          kart.finished = true;
-          kart.finish_place = finish_reports_[seat].place;
-        }
-        seats += (seats.empty() ? "" : ",") + std::to_string(config_.seats[size_t(slot)]);
-      }
+      // The finish every PC shows is the host's order, and nothing else: a bit the game left set is not sent on.
+      const uint8_t place = place_of_slot_[size_t(slot)];
+      kart.finished = place != 0 || finish_edges_[size_t(slot)].finished();
+      kart.finish_place = kart.finished ? place : 0;
+      if (slot < config_.humans) seats += (seats.empty() ? "" : ",") + std::to_string(config_.seats[size_t(slot)]);
       snapshot.karts.push_back(kart);
     }
     snapshot.world_pawns = in.world_pawns;
@@ -886,8 +998,9 @@ class RaceSync {
     const int own = OwnSlot();
     if (own >= 0 && in.karts[size_t(own)]) {
       reconciler_.NoteOwn(input.seq, in.karts[size_t(own)]->position);
-      // Said until the race is over, so a lost datagram does not cost the finish.
-      if (gate_.begun() && in.race_state >= kRaceInProgress && in.karts[size_t(own)]->finished) {
+      // Said until the race is over, so a lost datagram does not cost the finish. Only a crossing is said: a bit that was
+      // already set when the race began is not this race's finish.
+      if (own_finish_.Note(gate_.begun(), in.race_state, *in.karts[size_t(own)])) {
         race::Finish finish;
         finish.race_id = config_.generation;
         finish.seat = uint8_t(config_.seat);
@@ -903,7 +1016,7 @@ class RaceSync {
   }
 
   void ApplyRemote(const FrameIn& in, FrameOut& out) {
-    const std::optional<double> host_now = clock_.HostNow(in.now);
+    const std::optional<double> host_now = clock_.HostNow(in.now, host_state_ < kRaceInProgress);
     if (!host_now) return;
     const double render_time = *host_now - kInterpolationDelay;
     const int own = OwnSlot();
@@ -914,6 +1027,15 @@ class RaceSync {
       KartWrite& write = out.writes[size_t(out.write_count++)];
       write.slot = slot;
       write.state = *kart;
+      const RemoteSmoother::Result shown = smoothers_[size_t(slot)].Step(*kart, in.dt);
+      std::copy(shown.position, shown.position + 3, write.state.position);
+      if (shown.jump != RemoteSmoother::Jump::kNone) {
+        const bool teleport = shown.jump == RemoteSmoother::Jump::kTeleport;
+        ++(teleport ? traffic_.remote_teleports : traffic_.remote_jumps);
+        NoteOnce(said_remote_jump_[size_t(slot)], std::string(teleport ? "remote teleport" : "remote jump smoothed") +
+                                                      " slot=" + std::to_string(slot) +
+                                                      " units=" + std::to_string(int(shown.size)));
+      }
       if (slot < config_.humans) NoteOnce(said_applied_[size_t(slot)], "remote seat=" + std::to_string(config_.seats[size_t(slot)]) + " state_applied");
     }
     for (int id = 0; id < race::kMaxWorldPawns; ++id) {
@@ -979,6 +1101,8 @@ class RaceSync {
   SnapshotGate snapshots_;
   HostClock clock_;
   std::array<KartTrack, race::kMaxKarts> tracks_{};
+  std::array<RemoteSmoother, race::kMaxKarts> smoothers_{};
+  std::array<bool, race::kMaxKarts> said_remote_jump_{};
   std::array<WorldTrack, race::kMaxWorldPawns> world_tracks_{};
   Reconciler reconciler_;
   KartSample own_host_;
@@ -987,13 +1111,11 @@ class RaceSync {
   bool own_fresh_ = false;
   bool own_seen_ = false;  // the host's copy of this kart has arrived at least once
   bool said_local_first_ = false;
-  struct FinishReport {
-    bool heard = false;
-    uint8_t place = 0;
-    uint32_t time_ms = 0;
-  };
-  std::array<FinishReport, race::kMaxHumans> finish_reports_{};  // by seat, what that guest said about its own finish
+  std::array<FinishEdge, race::kMaxKarts> finish_edges_{};  // host: each kart's crossing in this PC's game
+  std::array<uint8_t, race::kMaxKarts> place_of_slot_{};    // host: the order karts crossed in, 0 for not yet
+  FinishEdge own_finish_;                                    // guest: its own kart's crossing, what it reports
   std::array<bool, race::kMaxHumans> said_finish_rx_{};
+  std::array<bool, race::kMaxHumans> said_finish_refused_{};
   uint8_t finish_order_ = 0;  // how many karts the host has seen cross the line
   int host_state_ = 0;
   bool said_post_race_ = false;

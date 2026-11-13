@@ -368,7 +368,8 @@ print(json.dumps(out))
       $markers = @()
       foreach ($pattern in @("session ended", "results before the host", "guest results", "world pawns", "finish_rx",
                             "post_race", "url.map=", "race travel abandoned", "guest holding", "rejected=[1-9]",
-                            "dropped_old=[1-9]", "own_snaps=[1-9]", "race published", "invite received", "session joined",
+                            "dropped_old=[1-9]", "own_snaps=[1-9]", "remote jump smoothed", "remote teleport",
+                            "finish refused", "race published", "invite received", "session joined",
                             "scaleform skipped", "race_begin", "start instant", "datagram refused")) {
         $count = ($log | Select-String -Pattern $pattern).Count
         if ($count -gt 0) { $markers += "$pattern=$count" }
@@ -393,7 +394,8 @@ print(json.dumps(out))
       }
       foreach ($k in ($uniqWarn.Keys | Sort-Object)) { Note ("  WARN x$($uniqWarn[$k]): $k") }
       foreach ($pattern in @("results before the host", "guest results", "world pawns", "post_race", "scaleform skipped",
-                            "race_begin", "start instant", "datagram refused")) {
+                            "race_begin", "start instant", "datagram refused", "finish_rx", "finish refused",
+                            "remote jump smoothed", "remote teleport")) {
         foreach ($hit in @($log | Select-String -Pattern $pattern | Select-Object -First 8)) {
           Note ("  HIT $($p.Name): " + $hit.Line)
         }
