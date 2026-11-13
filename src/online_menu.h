@@ -22,6 +22,7 @@ inline constexpr OnlineString kMenuStrings[] = {
     {"Host left", "El host sali\xC3\xB3", "El host sali\xC3\xB3", "O host saiu"},
     {"Connected", "Conectado", "Conectado", "Conectado"},
     {"Reconnecting", "Reconectando", "Reconectando", "Reconectando"},
+    {"Waiting for a player", "Esperando a un jugador", "Esperando a un jugador", "Aguardando um jogador"},
     {"Resume", "Continuar", "Continuar", "Continuar"},
     {"Leave Multiplayer", "Salir del multijugador", "Salir del multijugador", "Sair do multiplayer"},
     {"This ends the race for everyone", "Esto termina la carrera para todos", "Esto termina la carrera para todos",

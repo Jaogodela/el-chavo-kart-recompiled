@@ -316,6 +316,8 @@ bool TickRaceSync(PPCContext& ctx, uint8_t* base, const lobby::Plan& plan, std::
   if (guest) {
     const double heard = running->sync.LastHeardAge(0, now);
     status.host_silence = heard >= 0 ? heard : now - running->started;
+  } else {
+    status.guest_quiet = running->sync.AnyGuestQuiet();
   }
   bridge.SetRaceStatus(status);
 

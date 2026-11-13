@@ -631,6 +631,7 @@ class Bridge {
     bool waiting_for_host = false;
     std::array<std::optional<int>, kPanels> rtt_ms{};
     std::optional<double> host_silence;  // on a guest in a race: seconds since the host's last snapshot
+    bool guest_quiet = false;             // on the host in a race: a guest's pad has gone quiet (a dropped player)
   };
   void SetRaceStatus(const RaceStatus& status) {
     std::lock_guard lock(mutex_);

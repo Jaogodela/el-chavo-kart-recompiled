@@ -798,6 +798,39 @@ void TestInputReachesTheRightKart() {
   Check(race.host_out.pads[1] && race.host_out.pads[1]->right_trigger == 255, "and has them back when it returns");
 }
 
+void TestQuietGuestIsSaid() {
+  auto noted_prefix = [](RaceSync& sync, const std::string& prefix) {
+    for (const std::string& seen : sync.TakeNotes()) {
+      if (seen.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
+  };
+  Pair race;
+  race.host_state = 1;
+  race.guest_pad.right_trigger = 255;
+  race.Run(1.0);
+  Check(race.host.begun() && !race.host.AnyGuestQuiet(), "a talking guest is not quiet");
+  race.host.TakeNotes();
+  race.net.lose_every = 1;  // the guest vanishes
+  race.Run(kGuestQuietSeconds - 1.0);
+  Check(!race.host.AnyGuestQuiet(), "a short gap is not a dropped player");
+  race.Run(1.5);
+  Check(race.host.GuestQuiet(1) && race.host.AnyGuestQuiet(), "a long one is, well before the lobby's 30 s seat grace");
+  Check(noted_prefix(race.host, "guest_quiet seat=1"), "and the host logs it once");
+  race.Run(2.0);
+  Check(!noted_prefix(race.host, "guest_quiet"), "only once");
+  race.net.lose_every = 0;
+  race.Run(0.3);
+  Check(!race.host.AnyGuestQuiet(), "a guest that comes back is not quiet");
+  Check(noted_prefix(race.host, "guest_back seat=1"), "and that is logged");
+  Check(!race.guest.GuestQuiet(0), "a guest never calls the host quiet");
+
+  Pair loading;
+  loading.net.lose_every = 1;
+  loading.Run(kGuestQuietSeconds + 2.0);
+  Check(!loading.host.AnyGuestQuiet(), "before the start a silent guest is still loading, not dropped");
+}
+
 void TestSpoofedSeat() {
   Net net;
   NetLink host_link(net, 0);
@@ -1585,6 +1618,7 @@ int main() {
   TestGuestWaitsUntilHostReachesGate();
   TestGridFinishedFlagIsIgnored();
   TestInputReachesTheRightKart();
+  TestQuietGuestIsSaid();
   TestSpoofedSeat();
   TestOldRoomTraffic();
   TestLeftSeatIsNeutral();

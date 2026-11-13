@@ -225,6 +225,7 @@ class OnlineMenuDriver final : public rex::ui::ImGuiDialog {
     DrawPanel(io, PanelLines(state, shortcut, screen, now));
     const lobby::Bridge::RaceStatus race = g_lobby.race_status();
     if (race.waiting_for_host) DrawBanner(io, menu::MenuText("Waiting for host", GamePackage()));
+    else if (race.guest_quiet) DrawBanner(io, menu::MenuText("Waiting for a player", GamePackage()));
   }
 
  private:

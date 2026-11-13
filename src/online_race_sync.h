@@ -31,6 +31,9 @@ inline constexpr double kInterpolationDelay = 0.1;  // two snapshots behind, so 
 // worth keeps a hole covered without inventing a jump.
 inline constexpr double kMaxExtrapolation = 0.06;
 inline constexpr double kInputHoldSeconds = 0.25;
+// A guest's pad unheard this long in a running race is a dropped player, not a late packet: the host says so at once
+// instead of waiting out the lobby's seat grace (30 s), and the kart is already neutral after kInputHoldSeconds.
+inline constexpr double kGuestQuietSeconds = 5.0;
 inline constexpr uint32_t kMaxSeqJump = 3000;
 inline constexpr double kLoadWaitSeconds = 20.0;
 inline constexpr double kStartPulseSeconds = 0.1;
@@ -669,6 +672,15 @@ class RaceSync {
     return size_t(seat) < rtt_.size() ? rtt_[size_t(seat)].Ms(now) : std::nullopt;
   }
 
+  // On the host: a guest whose pad has gone quiet in a running race (see kGuestQuietSeconds).
+  bool GuestQuiet(int seat) const { return host() && size_t(seat) < inputs_.size() && inputs_[size_t(seat)].quiet; }
+  bool AnyGuestQuiet() const {
+    for (int slot = 1; slot < config_.humans; ++slot) {
+      if (GuestQuiet(config_.seats[size_t(slot)])) return true;
+    }
+    return false;
+  }
+
   uint32_t last_input_seq(int seat) const { return size_t(seat) < inputs_.size() ? inputs_[size_t(seat)].gate.last() : 0; }
   uint32_t last_snapshot_seq() const { return snapshots_.last(); }
   double LastHeardAge(int seat, double now) const {
@@ -682,7 +694,27 @@ class RaceSync {
     PadState pad;
     double heard = 0;
     bool loaded = false;
+    bool quiet = false;  // unheard for kGuestQuietSeconds in a running race
   };
+
+  void WatchQuiet(int seat, double now, bool running) {
+    SeatInput& entry = inputs_[size_t(seat)];
+    // Only a race that is running: before the start a guest may still be loading (the load wait's business), and after it
+    // a guest on its results screen has nothing to say.
+    if (!running) {
+      entry.quiet = false;
+      return;
+    }
+    const double since = entry.heard > 0 ? entry.heard : started_;
+    const double silence = now - since;
+    if (!entry.quiet && silence >= kGuestQuietSeconds) {
+      entry.quiet = true;
+      notes_.push_back("guest_quiet seat=" + std::to_string(seat) + " silent_ms=" + std::to_string(int(silence * 1000.0)));
+    } else if (entry.quiet && silence < kInputHoldSeconds) {
+      entry.quiet = false;
+      notes_.push_back("guest_back seat=" + std::to_string(seat));
+    }
+  }
 
   bool IsGuestSeat(int seat) const {
     for (int slot = 1; slot < config_.humans; ++slot) {
@@ -920,6 +952,7 @@ class RaceSync {
       if (pad < 0 || pad >= race::kMaxHumans) continue;
       const bool fresh = entry.heard > 0 && in.now - entry.heard <= kInputHoldSeconds;
       out.pads[size_t(pad)] = fresh ? HostSidePad(entry.pad, gate_.begun() && !out.post_race) : PadState{};
+      WatchQuiet(seat, in.now, gate_.begun() && !out.post_race);
     }
     NoteFinishes(in);
     MarkReportedFinishes(in, out);
