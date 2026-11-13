@@ -12,17 +12,60 @@
 #include <vector>
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include "online/random.h"
 #include "online/websocket_frame.h"
 
+// Apple has neither MSG_NOSIGNAL nor SOCK_NONBLOCK/SOCK_CLOEXEC; the socket itself is set up instead (OpenStreamSocket).
+#if !defined(MSG_NOSIGNAL)
+#define MSG_NOSIGNAL 0
+#endif
+
 namespace eck::online {
 namespace {
+
+// A peer that resets the connection turns the next write into SIGPIPE, whose default ends the process. MSG_NOSIGNAL covers
+// plain send(), but OpenSSL writes through write() on the fd, so a wss:// lobby dropping mid-write would close the game on
+// Linux and Android. Ignored once, only while nobody else installed a handler; Apple sockets carry SO_NOSIGPIPE as well.
+void IgnoreSigPipeOnce() {
+  static const bool done = [] {
+    struct sigaction current {};
+    if (sigaction(SIGPIPE, nullptr, &current) == 0 && current.sa_handler == SIG_DFL) {
+      struct sigaction ignore {};
+      ignore.sa_handler = SIG_IGN;
+      sigemptyset(&ignore.sa_mask);
+      sigaction(SIGPIPE, &ignore, nullptr);
+    }
+    return true;
+  }();
+  (void)done;
+}
+
+int OpenStreamSocket(int family, int type, int protocol) {
+#if defined(SOCK_NONBLOCK) && defined(SOCK_CLOEXEC)
+  return socket(family, type | SOCK_CLOEXEC | SOCK_NONBLOCK, protocol);
+#else
+  const int fd = socket(family, type, protocol);
+  if (fd < 0) return fd;
+  const int flags = fcntl(fd, F_GETFL, 0);
+  if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0 || fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) {
+    ::close(fd);
+    return -1;
+  }
+#if defined(SO_NOSIGPIPE)
+  const int on = 1;
+  setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#endif
+  return fd;
+#endif
+}
 
 using ws::Base64;
 
@@ -95,6 +138,7 @@ const OpenSsl* LoadOpenSsl() {
 const OpenSsl& Ssl() { return *LoadOpenSsl(); }
 
 int Connect(const WsUrl& url, int timeout_ms, std::string* error) {
+  IgnoreSigPipeOnce();
   addrinfo hints{};
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -106,7 +150,7 @@ int Connect(const WsUrl& url, int timeout_ms, std::string* error) {
   }
   int fd = -1;
   for (const addrinfo* p = found; p && fd < 0; p = p->ai_next) {
-    fd = socket(p->ai_family, p->ai_socktype | SOCK_CLOEXEC | SOCK_NONBLOCK, p->ai_protocol);
+    fd = OpenStreamSocket(p->ai_family, p->ai_socktype, p->ai_protocol);
     if (fd < 0) continue;
     if (::connect(fd, p->ai_addr, p->ai_addrlen) != 0 && errno != EINPROGRESS) {
       ::close(fd), fd = -1;

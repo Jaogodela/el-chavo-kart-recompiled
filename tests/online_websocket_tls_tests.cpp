@@ -3,6 +3,7 @@
 // Exits 77 (not run) unless ECK_TLS_TEST_URL and ECK_TLS_TEST_CA name that front and its certificate.
 // Run: eck_online_websocket_tls_tests
 
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -71,6 +72,10 @@ void TestTrustedCertificate(const std::string& url, const std::string& ca) {
   CHECK(Has(health.body, "\"status\":\"ok\""));
   auto socket = WebSocket::connect(url, 5000, &error);
   CHECK(socket != nullptr);
+  // OpenSSL writes with write(), which MSG_NOSIGNAL does not cover: a lobby that resets the connection mid-write must not
+  // end the game with SIGPIPE, so the client leaves the signal ignored once it has connected.
+  struct sigaction pipe_action {};
+  CHECK(sigaction(SIGPIPE, nullptr, &pipe_action) == 0 && pipe_action.sa_handler == SIG_IGN);
   if (socket) {
     socket->close();
   }
