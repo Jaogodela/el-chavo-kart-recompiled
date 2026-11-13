@@ -56,11 +56,6 @@ inline constexpr float kFarKartDistance = 3000.0f;   // none past this: interpol
 inline constexpr double kMaxLeadSeconds = 0.25;      // a long lead is a long straight line through a corner
 inline constexpr double kLeadSlewPerSecond = 0.1;    // the round trip moves the lead; it follows slowly so nothing steps back
 inline constexpr double kRttWindowSeconds = 2.0;
-// The item in a guest's own hand is the host's: the guest's game rolls its own item box and fires its own copy at once, but
-// only the host's roll and the host's shot exist for everybody else. A host snapshot speaks for the item only once it has
-// applied the input sent after this PC's last item change plus this many more, so a box just driven through or an item just
-// used here is not undone by a snapshot that left before the host saw it.
-inline constexpr uint32_t kItemAckSlack = 3;
 inline constexpr int kRaceCinematic = 0;
 inline constexpr int kRaceInProgress = 2;
 inline constexpr int kRacePostRace = 4;
@@ -574,7 +569,6 @@ struct KartWrite {
   int slot = 0;
   bool position_only = false;
   bool progress_only = false;  // host: only the race progression (the finish a guest reported), never the kart's place
-  bool item_only = false;      // guest: only the item in its own kart's hand, the host's
   KartSample state;
 };
 
@@ -588,7 +582,7 @@ inline float LeadWeight(float distance) {
 struct FrameOut {
   std::array<std::optional<PadState>, race::kMaxHumans> pads;  // by pad index: what this PC's remote karts read
   GatePad own;
-  std::array<KartWrite, race::kMaxKarts + 1> writes;  // every kart once, plus the own kart's item
+  std::array<KartWrite, race::kMaxKarts> writes;
   int write_count = 0;
   std::array<race::WorldPawnSample, race::kMaxWorldPawns> world_writes;
   int world_write_count = 0;
@@ -621,7 +615,6 @@ struct Traffic {
   uint64_t dropped_old = 0;
   uint64_t rejected = 0;
   uint64_t own_snaps = 0;
-  uint64_t own_item_writes = 0;  // guest: the host's item put in this PC's own hand
   uint64_t remote_jumps = 0;      // a remote kart's target moved past its velocity, and the jump was smoothed out
   uint64_t remote_teleports = 0;  // and past kTeleportDistance: shown as a step (a respawn)
   uint64_t finish_refused = 0;    // a finish report that was not a crossing (the grid's leftover flag, another race's)
@@ -1109,7 +1102,6 @@ class RaceSync {
     const int own = OwnSlot();
     if (own < 0 || !in.karts[size_t(own)]) return;
     const KartSample& mine = *in.karts[size_t(own)];
-    NoteOwnItem(mine.item);
     // The host owns the finish. The local game decides when its own kart crossed the line, and the host's copy is what every
     // other PC shows, so a kart that the host already has as finished is finished here too: otherwise one screen shows a
     // player's results while another still has that player racing.
@@ -1117,7 +1109,6 @@ class RaceSync {
       KartWrite& done = out.writes[size_t(out.write_count)];
       done.slot = own;
       done.state = own_host_;
-      done.state.item = OwnItem(mine.item);
       ++out.write_count;
       return;
     }
@@ -1133,42 +1124,17 @@ class RaceSync {
     if (snap) {
       if (in.race_state == kRaceInProgress) ++traffic_.own_snaps;
       write.state = own_host_;
-      write.state.item = OwnItem(mine.item);
       const float latency = float(rtt_[0].Ms(in.now).value_or(0)) / 2000.0f;
       for (int i = 0; i < 3; ++i) write.state.position[i] += write.state.velocity[i] * latency;
       ++out.write_count;
       return;
     }
     const OwnCorrection correction = reconciler_.Step(in.dt);
-    if (correction.kind == Correction::kNudge) {
-      write.position_only = true;
-      write.state = mine;
-      for (int i = 0; i < 3; ++i) write.state.position[i] += correction.offset[i];
-      ++out.write_count;
-    }
-    const bool racing = in.race_state == kRaceInProgress && host_state_ == kRaceInProgress;
-    if (racing && OwnItem(mine.item) != mine.item) {
-      KartWrite& item = out.writes[size_t(out.write_count++)];
-      item.slot = own;
-      item.item_only = true;
-      item.state = mine;
-      item.state.item = own_host_.item;
-      ++traffic_.own_item_writes;
-    }
-  }
-
-  // The local game changed the item in this PC's own hand (a box rolled, an item used): the host has not seen it yet.
-  void NoteOwnItem(uint8_t item) {
-    if (own_item_known_ && item != own_item_) own_item_change_seq_ = input_seq_ + 1;
-    own_item_ = item;
-    own_item_known_ = true;
-  }
-
-  // The item this PC's own kart should hold: the host's, once the host has seen past this PC's last item change.
-  uint8_t OwnItem(uint8_t mine) {
-    if (!own_seen_ || own_ack_ < own_item_change_seq_ + kItemAckSlack) return mine;
-    own_item_ = own_host_.item;  // what is written is not a change of this PC's own
-    return own_host_.item;
+    if (correction.kind != Correction::kNudge) return;
+    write.position_only = true;
+    write.state = mine;
+    for (int i = 0; i < 3; ++i) write.state.position[i] += correction.offset[i];
+    ++out.write_count;
   }
 
   static constexpr uint16_t out_of_band_ = kPadStart | kPadBack;
@@ -1198,9 +1164,6 @@ class RaceSync {
   uint32_t own_ack_ = 0;
   bool own_fresh_ = false;
   bool own_seen_ = false;  // the host's copy of this kart has arrived at least once
-  uint8_t own_item_ = 0;               // guest: the item last seen in its own kart's hand
-  bool own_item_known_ = false;
-  uint32_t own_item_change_seq_ = 0;  // guest: the first input sent after the local game last changed that item
   bool said_local_first_ = false;
   std::array<FinishEdge, race::kMaxKarts> finish_edges_{};  // host: each kart's crossing in this PC's game
   std::array<uint8_t, race::kMaxKarts> place_of_slot_{};    // host: the order karts crossed in, 0 for not yet

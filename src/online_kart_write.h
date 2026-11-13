@@ -62,14 +62,4 @@ inline bool WriteProgress(uint8_t* base, uint32_t kart, const race::KartSample& 
   return true;
 }
 
-// Only the item in hand, for a guest's own kart: its position and race are its own game's.
-inline bool WriteHeldItem(uint8_t* base, uint32_t kart, uint8_t item) {
-  if (base == nullptr || kart == 0 || item > race::kMaxItemId) return false;
-  namespace layout = online_probe::layout;
-  const uint32_t current = LoadBE32(base, kart + layout::kKartHeldItem);
-  if (current > race::kMaxItemId && current != 0xFFFFFFFFu) return false;  // not the field this layout expects
-  StoreBE32(base, kart + layout::kKartHeldItem, item);
-  return true;
-}
-
 }  // namespace eck::race_sync

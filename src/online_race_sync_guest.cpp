@@ -165,10 +165,6 @@ void ApplyWrite(PPCContext& ctx, uint8_t* base, uint32_t pawn, const race_sync::
     race_sync::WriteProgress(base, pawn, write.state);
     return;
   }
-  if (write.item_only) {
-    race_sync::WriteHeldItem(base, pawn, write.state.item);
-    return;
-  }
   MoveKart(ctx, base, pawn, write.state.position);
   if (write.position_only) return;
   if (race_sync::HasHeading(write.state)) {
@@ -199,9 +195,8 @@ race_sync::SyncConfig ConfigOf(const lobby::CanonicalRace& race, int seat, int o
 void LogSummary(const race_sync::RaceSync& sync, const race_sync::PeerRoutes& routes, int race_state, double now) {
   const race_sync::Traffic& net = sync.traffic();
   REXLOG_INFO("[ONLINE-NET] gameplay tx_packets={} rx_packets={} tx_bytes={} rx_bytes={} dropped_old={} rejected={} "
-              "own_snaps={} own_items={} remote_jumps={} remote_teleports={} finish_refused={} race_state={} begun={}",
+              "own_snaps={} remote_jumps={} remote_teleports={} finish_refused={} race_state={} begun={}",
               net.tx_packets, net.rx_packets, net.tx_bytes, net.rx_bytes, net.dropped_old, net.rejected, net.own_snaps,
-              net.own_item_writes,
               net.remote_jumps, net.remote_teleports, net.finish_refused, race_state, sync.begun() ? "yes" : "no");
   for (const race_sync::PeerRoute& route : routes) {
     if (route.seat < 0) continue;
