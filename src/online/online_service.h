@@ -45,6 +45,9 @@ struct ServiceConfig {
   bool synchronous_probes = false;
   // Tells the service this client can play through its relay (with a gameplay socket only).
   bool relay = true;
+  // Testing only: no direct path is ever taken, so every peer plays through the relay. Lets one machine, or a LAN where
+  // every PC reaches every other, exercise the relay path the way a strict NAT would.
+  bool force_relay = false;
   // The gameplay UDP ports in the order the socket and the connection test try them.
   std::vector<uint16_t> game_ports = GamePortRange();
 };

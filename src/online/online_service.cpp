@@ -1212,13 +1212,17 @@ void OnlineService::PumpSocket(OnlineGameSocket& socket, double now) {
   for (const PeerState& peer : peers) {
     if (!punching_[size_t(peer.seat)]) continue;
     switch (rendezvous_.punch_stage(peer.seat)) {
-      case Rendezvous::Stage::kDone: peers_.DirectProven(peer.seat, rendezvous_.selected(peer.seat).endpoint, now); break;
+      case Rendezvous::Stage::kDone:
+        if (config_.force_relay) peers_.DirectFailed(peer.seat);
+        else peers_.DirectProven(peer.seat, rendezvous_.selected(peer.seat).endpoint, now);
+        break;
       case Rendezvous::Stage::kFailed: peers_.DirectFailed(peer.seat); break;
       default: break;
     }
   }
   // The host heard this side's answer, so this side heard the host: where its punches came from is proven too.
-  if (const PeerState* host = peers_.Find(0); host && !peers_.host() && host->announced == PathKind::kDirect &&
+  if (const PeerState* host = peers_.Find(0); host && !config_.force_relay && !peers_.host() &&
+                                              host->announced == PathKind::kDirect &&
                                               !host->direct_proven && !rendezvous_.heard(0).empty()) {
     peers_.DirectProven(0, rendezvous_.heard(0).front(), now);
   }

@@ -29,6 +29,7 @@ inline constexpr char kOnlineServiceEnv[] = "ECK_LOBBY";
 // Developer only: STUN servers ("host:port,host:port" or "off") and UPnP ("0" or "1") of the connection test.
 inline constexpr char kStunServersEnv[] = "ECK_STUN";
 inline constexpr char kUpnpEnv[] = "ECK_UPNP";
+inline constexpr char kForceRelayEnv[] = "ECK_FORCE_RELAY";  // testing: play through the relay only
 // Developer only: the first UDP port of the gameplay socket's range, so several instances on one PC do not collide.
 inline constexpr char kGamePortEnv[] = "ECK_ONLINE_PORT";
 

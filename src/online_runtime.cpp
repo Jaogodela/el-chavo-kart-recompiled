@@ -74,6 +74,7 @@ online::ServiceConfig MakeConfig() {
   if (const char* url = std::getenv(kOnlineServiceEnv); url && *url) config.url = url;
   if (const char* stun = std::getenv(kStunServersEnv); stun && *stun) config.stun = stun;
   if (const char* upnp = std::getenv(kUpnpEnv); upnp && *upnp) config.upnp = std::string_view(upnp) != "0";
+  if (const char* relay = std::getenv(kForceRelayEnv); relay && *relay) config.force_relay = std::string_view(relay) != "0";
   config.version = PortVersion();
   config.platform = PlatformName();
   config.lan = online::LocalCandidates();

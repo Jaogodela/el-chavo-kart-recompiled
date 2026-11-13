@@ -52,9 +52,10 @@ struct Client {
   std::string player;
   std::vector<std::pair<int, std::vector<uint8_t>>> inbox;
 
-  Client(const std::string& url, char fill, const char* name, const char* platform) {
+  Client(const std::string& url, char fill, const char* name, const char* platform, bool force_relay = false) {
     socket->Open({0}, true);
     ServiceConfig config;
+    config.force_relay = force_relay;
     config.url = url;
     config.version = "0.1.0";
     config.platform = platform;
@@ -305,6 +306,28 @@ void TestFourPlayerRoom(const std::string& url) {
   CHECK(three.service->GamePeers().empty() && !host.Snap().room.has_value());
 }
 
+// Both PCs refuse every direct path, the way two strict NATs would: the room still comes up, through the service's relay,
+// and gameplay datagrams cross it both ways.
+void TestRelayRoom(const std::string& url) {
+  Client host(url, '7', "RelayHost", "Linux", true);
+  Client guest(url, '8', "RelayGuest", "Windows", true);
+  const auto all = {&host, &guest};
+  CHECK(BecomeFriends(host, guest));
+  CHECK(Invite(host, guest, all));
+  CHECK(WaitFor([&] { return host.Snap().paths_ready && guest.Snap().paths_ready; }, all, 30.0));
+  for (const PeerSnapshot& peer : host.Snap().peers) CHECK(peer.path == PeerPath::kRelay && peer.connected);
+  for (const PeerSnapshot& peer : guest.Snap().peers) CHECK(peer.path == PeerPath::kRelay && peer.connected);
+  CHECK(!host.service->GamePeers().empty() && host.service->GamePeers()[0].relay);
+  const race::Message snapshot = HostSnapshot();
+  CHECK(Send(host, guest.Snap().seat, snapshot));
+  CHECK(Receive(guest, all, snapshot, 0));
+  const race::Message input = GuestInput(uint8_t(guest.Snap().seat));
+  CHECK(Send(guest, 0, input));
+  CHECK(Receive(host, all, input, guest.Snap().seat));
+  CHECK(host.service->LeaveSession());
+  CHECK(WaitFor([&] { return !guest.Snap().room.has_value(); }, all));
+}
+
 // ---- Two processes, two platforms ---------------------------------------------------------------------------------
 
 struct Role {
@@ -446,6 +469,7 @@ int main(int argc, char** argv) {
   }
   TestFriendsConnectionTestAndTelemetry(url);
   TestFourPlayerRoom(url);
+  TestRelayRoom(url);
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }
