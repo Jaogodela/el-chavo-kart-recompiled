@@ -134,6 +134,7 @@ struct Pair {
   FrameOut guest_out;
   int host_frames = 0;
   int guest_frames = 0;
+  int guest_item_writes = 0;
 
   // The guest's own kart is parked well off the host's: these races are about how a far kart is drawn. A kart beside the
   // guest's own is carried forward to the present (TestNearKartLead).
@@ -167,6 +168,11 @@ struct Pair {
         for (int i = 0; i < guest_out.write_count; ++i) {
           const KartWrite& write = guest_out.writes[size_t(i)];
           KartSample& kart = *guest_karts[size_t(write.slot)];
+          if (write.item_only) {
+            kart.item = write.state.item;
+            ++guest_item_writes;
+            continue;
+          }
           std::copy(write.state.position, write.state.position + 3, kart.position);
           if (!write.position_only) {
             std::copy(write.state.velocity, write.state.velocity + 3, kart.velocity);
@@ -177,6 +183,7 @@ struct Pair {
             kart.finish_place = write.state.finish_place;
             kart.racing_time = write.state.racing_time;
             kart.finished = write.state.finished;
+            kart.item = write.state.item;
           }
         }
       }
@@ -677,6 +684,45 @@ void TestReportedFinishMarksHostCopy() {
 
 // Side by side, the guest used to draw the host's kart a few hundred units behind, and a bump hit that ghost. Near the
 // guest's own kart a remote kart is carried to the present; far away it is interpolated as before.
+// The item in a guest's own hand is the host's roll and the host's shot. A use here is not undone by a snapshot that left
+// before the host saw it, and the host's answer then settles it.
+void TestOwnItemFromHost() {
+  Pair race;
+  race.host_state = race.guest_state = 2;
+  race.net.delay = 0.05;
+  race.Run(0.5);
+  race.host_karts[1]->item = 3;
+  race.guest_karts[1]->item = 5;  // this PC's box rolled something else
+  race.Run(0.5);
+  Check(race.guest_karts[1]->item == 3, "the guest holds the item the host rolled for it");
+  Check(race.guest_item_writes >= 1, "written as the item alone");
+
+  // Used here: gone at once on this PC, while the host still has it for a round trip.
+  race.guest_karts[1]->item = 0;
+  bool resurrected = false;
+  for (int i = 0; i < 12; ++i) {  // 0.12 s: the host's snapshots in that time left before it saw the use
+    race.Run(0.01);
+    resurrected = resurrected || race.guest_karts[1]->item != 0;
+  }
+  Check(!resurrected, "a used item does not come back from a snapshot older than the use");
+  race.host_karts[1]->item = 0;  // the host's shot
+  race.Run(0.5);
+  Check(race.guest_karts[1]->item == 0, "and stays used once the host has fired it");
+
+  // The host never got the shot (it had no item yet): its later roll wins.
+  race.guest_karts[1]->item = 0;
+  race.host_karts[1]->item = 2;
+  race.Run(0.6);
+  Check(race.guest_karts[1]->item == 2, "an item only the host has reaches the guest's hand");
+
+  // Not before the green light: the grid holds nothing to correct.
+  Pair grid;
+  grid.Run(0.5);
+  grid.host_karts[1]->item = 4;
+  grid.Run(0.5);
+  Check(grid.guest_karts[1]->item == 0 && grid.guest_item_writes == 0, "no item writes before the race is under way");
+}
+
 void TestNearKartLead() {
   Pair race;
   race.host_karts[1]->position[1] = race.guest_karts[1]->position[1] = 200;
@@ -1614,6 +1660,7 @@ int main() {
   TestClockSettlesBeforeTheGreenLight();
   TestReportedFinishMarksHostCopy();
   TestNearKartLead();
+  TestOwnItemFromHost();
   std::printf("%d checks, %d failed\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

@@ -219,7 +219,12 @@ assumes the same simulation runs twice. Everything travels on the session's Dire
   On the begin, the same press reaches its game through its own pad until its `RaceState` moves. The host's Start waits for every
   guest's karts, 20 s at most.
 
-Not synchronized: items and their effects, and the return from the race. Steering and drift animation of a remote kart are not
+Items: the item in every kart's hand is the host's (`kKartHeldItem`). A guest's own kart takes the host's item once the host
+has acknowledged the inputs past the guest's last local change (`kItemAckSlack`), so a use on the guest is not undone by an older
+snapshot and a different roll on the guest is replaced by the host's. Using an item travels as the pad's X button.
+
+Not synchronized: projectiles and other item effects (each PC simulates its own; only their result on the karts, through the
+host's kart states, is shared), and the return from the race. Steering and drift animation of a remote kart are not
 carried either. A host pause stops the race for everyone; a guest cannot pause, and has the multiplayer menu
 instead (see "Leaving").
 
