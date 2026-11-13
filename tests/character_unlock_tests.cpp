@@ -26,11 +26,14 @@ namespace {
 const std::vector<int> kDefaults = {0, 1, 2, 5, 6, 7, 11};  // KartDefaultData_Cups.UnlockedCharacters
 const std::map<int, int> kCupOfSecret = {{3, 1}, {4, 1}, {8, 3}, {9, 5}, {10, 7}};  // Definitions[cup].UnlocksCharacters
 
+// A checkout with CRLF line ends (Git for Windows' default) reads the same as an LF one: the checks are about the text.
 std::string ReadFile(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
   std::stringstream text;
   text << file.rdbuf();
-  return text.str();
+  std::string out = text.str();
+  std::erase(out, '\r');
+  return out;
 }
 
 int Count(const std::string& text, const std::string& what) {

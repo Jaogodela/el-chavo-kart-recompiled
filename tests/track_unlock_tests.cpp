@@ -35,11 +35,14 @@ const std::map<int, int> kTrackOfChallenge = {{3, 10}, {7, 11}, {11, 12}, {15, 1
                                               {23, 15}, {27, 16}, {31, 17}, {35, 18}, {39, 19}};
 constexpr int kChallenges = 40;
 
+// A checkout with CRLF line ends (Git for Windows' default) reads the same as an LF one: the checks are about the text.
 std::string ReadFile(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
   std::stringstream text;
   text << file.rdbuf();
-  return text.str();
+  std::string out = text.str();
+  std::erase(out, '\r');
+  return out;
 }
 
 int Count(const std::string& text, const std::string& what) {

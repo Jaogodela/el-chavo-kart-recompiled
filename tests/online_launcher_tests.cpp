@@ -18,9 +18,12 @@ using online_test::Check;
 
 namespace {
 
+// CRLF and LF checkouts read the same: the checks are about the text, not the line ends.
 std::string Source(const std::string& name) {
   std::ifstream file(std::string(ECK_SRC_DIR) + "/" + name, std::ios::binary);
-  return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  std::string text(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>{});
+  std::erase(text, '\r');
+  return text;
 }
 
 bool Contains(const std::string& text, std::string_view needle) { return text.find(needle) != std::string::npos; }
